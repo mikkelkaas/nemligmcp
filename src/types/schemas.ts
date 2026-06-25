@@ -40,3 +40,32 @@ export const setBasketQuantityShape = {
 export const removeFromBasketShape = {
   productId: z.string().min(1).describe("The product id to remove from the basket."),
 };
+
+export const getTimeslotsShape = {
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD.")
+    .optional()
+    .describe("First day to list (YYYY-MM-DD). Omit to start from today."),
+  days: z
+    .number()
+    .int()
+    .min(1)
+    .max(14)
+    .default(8)
+    .describe("Number of days of timeslots to return."),
+};
+
+export const selectTimeslotShape = {
+  timeslotId: z
+    .number()
+    .int()
+    .describe("The numeric timeslot Id from get_timeslots (the slot's `Id`, not TimeslotUtc)."),
+  force: z
+    .boolean()
+    .default(false)
+    .describe(
+      "If false (default), refuse the change when it would alter the basket and report the diffs. " +
+        "If true, apply the new slot regardless.",
+    ),
+};

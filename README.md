@@ -18,9 +18,14 @@ as tools for **product search** and **basket management**.
 | `add_to_basket` | Add a product at a given quantity. |
 | `set_basket_quantity` | Set a product's absolute quantity (`0` removes it). |
 | `remove_from_basket` | Remove a product from the basket. |
+| `get_timeslots` | List bookable delivery timeslots for the coming days (id, date, hours, price, deadline, availability). |
+| `select_timeslot` | Reserve a delivery timeslot for the basket by its numeric id. |
 
-`search_products`, `quick_search` and `get_product_details` work **anonymously**. The
-basket tools require login (see below).
+`search_products`, `quick_search`, `get_product_details` and `get_timeslots` work
+**anonymously**. The basket tools and `select_timeslot` require login (see below).
+
+After `select_timeslot`, the reserved slot shows up on `get_basket` (delivery
+time/spot), so you can confirm it took.
 
 ## Setup
 

@@ -56,6 +56,46 @@ export interface Basket {
   Id?: string;
   Lines?: BasketLine[];
   TotalProductsPrice?: number;
+  /** The reserved delivery slot, set by select_timeslot; `Reserved` is the key flag. */
+  DeliveryTimeSlot?: {
+    Id?: number;
+    Date?: string;
+    StartTime?: string;
+    EndTime?: string;
+    Reserved?: boolean;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+/** A single bookable delivery timeslot from GetDeliveryDays. */
+export interface DeliveryTimeslot {
+  /** Numeric id passed to reserveTimeslot (distinct from SearchContext.timeslotUtc). */
+  Id?: number;
+  Date?: string;
+  StartHour?: number;
+  EndHour?: number;
+  NumberOfHours?: number;
+  DeliveryPrice?: number;
+  Deadline?: string;
+  /** 0 = Available, 1 = PastDeadline, 2 = SoldOut, 3 = NotActive. */
+  Availability?: number;
+  IsSelected?: boolean;
+  [key: string]: unknown;
+}
+
+/** Response of GetDeliveryDays: slots grouped by day plus the current selection. */
+export interface DeliveryDaysResponse {
+  DayRangeHours?: { DayHours?: DeliveryTimeslot[]; [key: string]: unknown }[];
+  SelectedTimeSlotId?: number | null;
+  SelectedDeliveryTime?: string | null;
+  IsTimeSlotReserved?: boolean;
+  [key: string]: unknown;
+}
+
+/** Response of (Try)UpdateDeliveryTime. `IsReserved` reports whether the slot was taken. */
+export interface ReserveTimeslotResponse {
+  IsReserved?: boolean;
   [key: string]: unknown;
 }
 
