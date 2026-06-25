@@ -58,7 +58,18 @@ Once connected to an MCP client like Claude, you can ask things like:
 - "Reorder everything from my last delivery."
 - "Add the wienerpølser and danskvand from my previous order back to the basket."
 
-## Setup
+## Install
+
+The easiest way is via `npx` — no clone or build needed, it always fetches the
+latest published version:
+
+```bash
+npx -y nemligmcp
+```
+
+(See [Use with an MCP client](#use-with-an-mcp-client) below for wiring it into Claude etc.)
+
+### From source
 
 ```bash
 npm install
@@ -77,14 +88,14 @@ basket tools return a "login required" error.
 
 ## Use with an MCP client
 
-Add to your client's MCP config (stdio):
+Add to your client's MCP config (stdio). Using the published package via `npx`:
 
 ```json
 {
   "mcpServers": {
     "nemlig": {
-      "command": "node",
-      "args": ["/home/mkf/projs/nemligmcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "nemligmcp"],
       "env": {
         "NEMLIG_USER": "you@example.com",
         "NEMLIG_PASS": "your-password"
@@ -94,8 +105,9 @@ Add to your client's MCP config (stdio):
 }
 ```
 
-Omit `env` to run anonymously. For development without building, use
-`"command": "npx", "args": ["tsx", "/home/mkf/projs/nemligmcp/src/index.ts"]`.
+Omit `env` to run anonymously. To run from a local build instead, use
+`"command": "node", "args": ["/path/to/nemligmcp/dist/index.js"]`, or for
+development without building, `"command": "npx", "args": ["tsx", "/path/to/nemligmcp/src/index.ts"]`.
 
 ## Development
 

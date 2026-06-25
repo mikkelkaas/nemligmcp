@@ -1,7 +1,7 @@
 {
   "name": "nemligmcp",
   "version": "0.1.0",
-  "description": "MCP server for nemlig.com — product search and basket management",
+  "description": "MCP server for nemlig.com — product search, basket management, delivery slots and order history",
   "type": "module",
   "bin": {
     "nemligmcp": "dist/index.js"
@@ -14,7 +14,28 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "nemlig",
+    "groceries",
+    "claude",
+    "llm",
+    "ai"
+  ],
+  "author": "Mikkel Kaas Frich",
+  "license": "MIT",
+  "homepage": "https://github.com/mikkelkaas/nemligmcp#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mikkelkaas/nemligmcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mikkelkaas/nemligmcp/issues"
   },
   "engines": {
     "node": ">=20"
