@@ -33,6 +33,31 @@ The order tools chain into a **reorder** flow: `get_order_history` → `get_orde
 After `select_timeslot`, the reserved slot shows up on `get_basket` (delivery
 time/spot), so you can confirm it took.
 
+## Example prompts
+
+Once connected to an MCP client like Claude, you can ask things like:
+
+**Search & products**
+- "Search nemlig for organic bananas and show me the cheapest options."
+- "What's the unit price on the oat milk you found?"
+- "Find gluten-free pasta under 25 kr."
+
+**Basket**
+- "Add 2 of the økologisk letmælk to my basket."
+- "What's in my basket right now and what's the total?"
+- "Change the bananas to 3 and remove the chips."
+- "Empty my basket."
+
+**Delivery**
+- "What delivery slots are available this weekend?"
+- "Book the cheapest slot on Saturday."
+
+**Order history & reordering**
+- "Show me my last 5 orders with totals."
+- "What did I buy in my most recent order?"
+- "Reorder everything from my last delivery."
+- "Add the wienerpølser and danskvand from my previous order back to the basket."
+
 ## Setup
 
 ```bash
