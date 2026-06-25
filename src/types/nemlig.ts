@@ -99,6 +99,80 @@ export interface ReserveTimeslotResponse {
   [key: string]: unknown;
 }
 
+/**
+ * One past order as summarized by GetBasicOrderHistory. `Id` is the numeric order
+ * key passed to GetOrderHistory for the full line-item detail; `OrderNumber` is the
+ * human-facing order reference. `Status`/`DeliveryStatus` are numeric codes.
+ */
+export interface OrderSummary {
+  /** Numeric order id — pass to get_order_details. */
+  Id?: number;
+  /** Human-facing order reference (e.g. "1063029602"). */
+  OrderNumber?: string;
+  /** Grand total incl. delivery/deposit. */
+  Total?: number;
+  /** Products subtotal. */
+  SubTotal?: number;
+  /** Localized order date string (e.g. "25/06-2026 kl. 01-06"). */
+  OrderDate?: string;
+  /** Order lifecycle status code. */
+  Status?: number;
+  /** Delivery progress status code. */
+  DeliveryStatus?: number;
+  DeliveryAddress?: string;
+  DeliveryTime?: { Start?: string; End?: string; [key: string]: unknown };
+  IsEditable?: boolean;
+  IsCancellable?: boolean;
+  [key: string]: unknown;
+}
+
+/** Response of GetBasicOrderHistory: a page of past orders, newest first. */
+export interface OrderHistoryResponse {
+  Orders?: OrderSummary[];
+  [key: string]: unknown;
+}
+
+/**
+ * One line of a past order. `ProductNumber` is the product id usable with the
+ * basket tools (add_to_basket), enabling a reorder workflow. `Quantity` is the
+ * ordered amount; `Amount` is the line total.
+ */
+export interface OrderLine {
+  /** Product id — usable as productId with add_to_basket. */
+  ProductNumber?: string;
+  ProductName?: string;
+  /** Pack/size description (e.g. "2 l", "6 stk."). */
+  Description?: string;
+  Quantity?: number;
+  AverageItemPrice?: number;
+  /** Line total. */
+  Amount?: number;
+  GroupName?: string;
+  MainGroupName?: string;
+  IsProductLine?: boolean;
+  IsDepositLine?: boolean;
+  IsRecipeLine?: boolean;
+  /** 0 = in stock at order time; non-zero indicates it was sold out. */
+  SoldOut?: number;
+  [key: string]: unknown;
+}
+
+/** Response of GetOrderHistory/{id}: full detail for a single past order. */
+export interface OrderDetails {
+  Id?: number;
+  OrderNumber?: string;
+  OrderDate?: string;
+  Lines?: OrderLine[];
+  Total?: number;
+  SubTotal?: number;
+  DeliveryDate?: string;
+  DeliveryTime?: { Start?: string; End?: string; [key: string]: unknown };
+  NumberOfProducts?: number;
+  Status?: number;
+  Notes?: string | null;
+  [key: string]: unknown;
+}
+
 /** Context needed to build search requests, derived from the session. */
 export interface SearchContext {
   deliveryZoneId: string;

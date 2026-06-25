@@ -2,7 +2,7 @@
 
 An [MCP](https://modelcontextprotocol.io) server for **nemlig.com** (Danish online
 grocery delivery). It exposes the nemlig.com public web API to MCP clients (e.g. Claude)
-as tools for **product search** and **basket management**.
+as tools for **product search**, **basket management** and **order history**.
 
 > Unofficial. This talks to the same JSON endpoints the nemlig.com website uses. Use
 > responsibly and at your own risk.
@@ -20,9 +20,15 @@ as tools for **product search** and **basket management**.
 | `remove_from_basket` | Remove a product from the basket. |
 | `get_timeslots` | List bookable delivery timeslots for the coming days (id, date, hours, price, deadline, availability). |
 | `select_timeslot` | Reserve a delivery timeslot for the basket by its numeric id. |
+| `get_order_history` | List past orders (newest first, paged): id, order number, date, totals, delivery info, status. |
+| `get_order_details` | Full line items + totals for one past order by its numeric id. |
 
 `search_products`, `quick_search`, `get_product_details` and `get_timeslots` work
-**anonymously**. The basket tools and `select_timeslot` require login (see below).
+**anonymously**. The basket tools, `select_timeslot` and the order-history tools
+require login (see below).
+
+The order tools chain into a **reorder** flow: `get_order_history` → `get_order_details`
+→ `add_to_basket` for each line (a line's `ProductNumber` is the basket product id).
 
 After `select_timeslot`, the reserved slot shows up on `get_basket` (delivery
 time/spot), so you can confirm it took.

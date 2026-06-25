@@ -56,6 +56,24 @@ export const getTimeslotsShape = {
     .describe("Number of days of timeslots to return."),
 };
 
+export const getOrderHistoryShape = {
+  skip: z.number().int().min(0).default(0).describe("Offset for pagination (number of orders to skip)."),
+  take: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(10)
+    .describe("Max number of past orders to return."),
+};
+
+export const getOrderDetailsShape = {
+  orderId: z
+    .number()
+    .int()
+    .describe("The numeric order Id from get_order_history (the `Id` field, not OrderNumber)."),
+};
+
 export const selectTimeslotShape = {
   timeslotId: z
     .number()
