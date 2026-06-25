@@ -117,6 +117,30 @@ npm run typecheck  # tsc --noEmit
 npm run inspect    # launch the MCP Inspector against the server
 ```
 
+## Releasing (maintainers)
+
+Releases are fully automated from **[Conventional Commits](https://www.conventionalcommits.org)**
+by [semantic-release](https://semantic-release.gitbook.io) (`.github/workflows/publish.yml`).
+You never bump the version or tag by hand — just write commit messages in this form:
+
+| Commit prefix | Example | Resulting release |
+|---|---|---|
+| `fix:` | `fix: handle empty basket` | patch (`0.1.0` → `0.1.1`) |
+| `feat:` | `feat: add favorites tool` | minor (`0.1.0` → `0.2.0`) |
+| `feat!:` / `BREAKING CHANGE:` in body | `feat!: drop Node 18` | major (`0.1.0` → `1.0.0`) |
+| `chore:`, `docs:`, `refactor:`, `test:`, … | `docs: fix typo` | no release |
+
+On every push to `master`, semantic-release looks at the commits since the last
+release, picks the next version, updates `CHANGELOG.md` + `package.json`, tags the
+commit, creates a GitHub Release, and publishes to npm (with provenance). Pushes
+with no release-worthy commits are a no-op.
+
+The `package.json` `version` is intentionally `0.0.0-development` — the real
+version is managed by semantic-release at release time.
+
+Required repo secret: `NPM_TOKEN` (Settings → Secrets and variables → Actions).
+`GITHUB_TOKEN` is provided automatically by Actions.
+
 ## Notes / internals
 
 - **Transport:** stdio. The server logs only to stderr — stdout is the JSON-RPC channel.

@@ -1,6 +1,6 @@
 {
   "name": "nemligmcp",
-  "version": "0.1.0",
+  "version": "0.0.0-development",
   "description": "MCP server for nemlig.com — product search, basket management, delivery slots and order history",
   "type": "module",
   "bin": {
@@ -45,7 +45,10 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
     "@types/node": "^22.0.0",
+    "semantic-release": "^25.0.5",
     "tsx": "^4.16.0",
     "typescript": "^5.5.0"
   }
