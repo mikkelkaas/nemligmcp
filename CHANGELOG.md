@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/mikkelkaas/nemligmcp/compare/v1.0.0...v1.0.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* publish via npm Trusted Publishing (OIDC) instead of a stored token ([7b2a781](https://github.com/mikkelkaas/nemligmcp/commit/7b2a7816d20f579e9fb88cb54a49a86183f93113))
+
 # 1.0.0 (2026-06-29)
 
 
