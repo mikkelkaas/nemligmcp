@@ -1,6 +1,6 @@
 {
   "name": "nemligmcp",
-  "version": "1.0.0",
+  "version": "0.0.0-development",
   "description": "MCP server for nemlig.com — product search, basket management, delivery slots and order history",
   "type": "module",
   "bin": {
@@ -9,6 +9,9 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
