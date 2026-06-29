@@ -14,7 +14,7 @@ permissions:
   contents: write # create tags/releases and commit the version + changelog back
   issues: write
   pull-requests: write
-  id-token: write # npm provenance
+  id-token: write # OIDC: npm Trusted Publishing + provenance (no NPM_TOKEN needed)
 
 jobs:
   release:
@@ -39,10 +39,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Publishes via npm Trusted Publishing (OIDC) — semantic-release exchanges
+      # the GitHub OIDC token for a short-lived npm token, so no NPM_TOKEN secret
+      # is needed. Provenance is attached automatically.
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
         run: npx semantic-release
