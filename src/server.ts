@@ -6,15 +6,17 @@ import { registerAllTools } from "./tools/index.js";
 
 /**
  * Build a fully configured MCP server. Transport-agnostic: the caller wires up
- * stdio (or, later, HTTP) and connects it.
+ * stdio or HTTP and connects it.
  */
-export function createServer(): McpServer {
-  const config = loadConfig();
-  logger.info("starting nemligmcp", {
-    mode: config.hasCredentials ? "login" : "anonymous",
-  });
-
-  const client = new ApiClient(config);
+export function createServer(sharedClient?: ApiClient): McpServer {
+  let client = sharedClient;
+  if (!client) {
+    const config = loadConfig();
+    logger.info("starting nemligmcp", {
+      mode: config.hasCredentials ? "login" : "anonymous",
+    });
+    client = new ApiClient(config);
+  }
 
   const server = new McpServer({
     name: "nemligmcp",
