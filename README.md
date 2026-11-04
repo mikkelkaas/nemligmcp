@@ -20,6 +20,7 @@ as tools for **product search**, **basket management** and **order history**.
 | `remove_from_basket` | Remove a product from the basket. |
 | `get_timeslots` | List bookable delivery timeslots for the coming days (id, date, hours, price, deadline, availability). |
 | `select_timeslot` | Reserve a delivery timeslot for the basket by its numeric id. |
+| `get_delivery_eta` | Check the homepage delivery status, estimated arrival and booked window. Requires login. |
 | `get_order_history` | List past orders (newest first, paged): id, order number, date, totals, delivery info, status. |
 | `get_order_details` | Full line items + totals for one past order by its numeric id. |
 

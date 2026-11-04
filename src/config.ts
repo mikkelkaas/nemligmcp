@@ -3,8 +3,8 @@ import { z } from "zod";
 /** Base host for auth, basket and product-detail pages. */
 export const BASE_URL = "https://www.nemlig.com";
 
-/** Search gateway host (bearer-only, no cookies). */
-export const SEARCH_URL = "https://webapi.prod.knl.nemlig.it";
+/** API gateway host (bearer-only, no cookies). */
+export const GATEWAY_URL = "https://webapi.prod.knl.nemlig.it";
 
 /**
  * Headers sent on (almost) every request. The nemlig.com API expects a

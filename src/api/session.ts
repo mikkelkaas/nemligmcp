@@ -80,6 +80,10 @@ export class Session {
 
     if (this.isLoginMode) {
       await this.login();
+      // The gateway identifies the account from the bearer alone. Exchange the
+      // authenticated session cookie for a new bearer after login.
+      this.invalidateBearer();
+      await this.fetchToken();
     } else {
       logger.info("session: anonymous mode (no credentials; basket disabled)");
     }
