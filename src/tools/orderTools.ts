@@ -1,10 +1,24 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ApiClient } from "../api/client.js";
-import { getOrderDetails, getOrderHistory } from "../api/orders.js";
+import { getDeliveryEta, getOrderDetails, getOrderHistory } from "../api/orders.js";
 import { getOrderDetailsShape, getOrderHistoryShape } from "../types/schemas.js";
 import { tool } from "./helpers.js";
 
 export function registerOrderTools(server: McpServer, client: ApiClient): void {
+  server.registerTool(
+    "get_delivery_eta",
+    {
+      title: "Get delivery estimate",
+      description:
+        "Check the delivery shown on the signed-in Nemlig homepage. Returns the order status, " +
+        "estimated arrival when en route, estimated and booked windows when available, " +
+        "or the actual arrival for a completed delivery. A null order means no delivery to track.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {},
+    },
+    tool("get_delivery_eta", () => getDeliveryEta(client)),
+  );
+
   server.registerTool(
     "get_order_history",
     {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { BASE_URL, SEARCH_URL } from "../config.js";
+import { BASE_URL, GATEWAY_URL } from "../config.js";
 import type { ApiClient } from "./client.js";
 import type { SearchResponse } from "../types/nemlig.js";
 
@@ -16,7 +16,7 @@ export async function searchProducts(
   params: SearchParams,
 ): Promise<SearchResponse> {
   const ctx = await client.getSearchContext();
-  return client.call<SearchResponse>(`${SEARCH_URL}/searchgateway/api/search`, {
+  return client.call<SearchResponse>(`${GATEWAY_URL}/searchgateway/api/search`, {
     useCookies: false,
     query: {
       query: params.query,
@@ -33,7 +33,7 @@ export async function searchProducts(
 
 /** Fast autocomplete suggestions + category hints. */
 export async function quickSearch(client: ApiClient, query: string): Promise<unknown> {
-  return client.call<unknown>(`${SEARCH_URL}/searchgateway/api/quick`, {
+  return client.call<unknown>(`${GATEWAY_URL}/searchgateway/api/quick`, {
     useCookies: false,
     query: { query, correlationId: randomUUID() },
   });

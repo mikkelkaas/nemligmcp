@@ -1,4 +1,4 @@
-import { BASE_URL } from "../config.js";
+import { BASE_URL, GATEWAY_URL } from "../config.js";
 import type { ApiClient } from "./client.js";
 import type { OrderDetails, OrderHistoryResponse } from "../types/nemlig.js";
 
@@ -48,4 +48,36 @@ export async function getOrderDetails(
   return client.call<OrderDetails>(`${BASE_URL}/webapi/v2/order/GetOrderHistory/${orderId}`, {
     requireLogin: true,
   });
+}
+
+interface DeliveryInterval {
+  start: string;
+  end: string;
+}
+
+interface FeaturedOrder {
+  orderStatus: string;
+  deliveryTime?: string | null;
+  deliveryInterval?: DeliveryInterval | null;
+  timeslotInterval?: DeliveryInterval | null;
+}
+
+/** Delivery information shown on the signed-in homepage. */
+export async function getDeliveryEta(client: ApiClient) {
+  const result = await client.call<{ order: FeaturedOrder | null }>(
+    `${GATEWAY_URL}/productbff/api/web/orderHistory/orders/featured`,
+    { requireLogin: true, useCookies: false },
+  );
+  const order = result?.order;
+  if (!order || order.orderStatus === "Reorder") return { order: null };
+
+  return {
+    order: {
+      status: order.orderStatus,
+      estimatedArrival: order.orderStatus === "EnRoute" ? order.deliveryTime ?? null : null,
+      deliveredAt: order.orderStatus === "Delivered" ? order.deliveryTime ?? null : null,
+      estimatedWindow: order.deliveryInterval ?? null,
+      bookedWindow: order.timeslotInterval ?? null,
+    },
+  };
 }
