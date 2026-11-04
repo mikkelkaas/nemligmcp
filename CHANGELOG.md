@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/mikkelkaas/nemligmcp/compare/v1.0.1...v1.1.0) (2026-11-04)
+
+
+### Features
+
+* expose delivery ETA for the featured order ([#2](https://github.com/mikkelkaas/nemligmcp/issues/2)) ([2db9270](https://github.com/mikkelkaas/nemligmcp/commit/2db927014d76afe39a84ab100d7c4de3da704b6a))
+
 ## [1.0.1](https://github.com/mikkelkaas/nemligmcp/compare/v1.0.0...v1.0.1) (2026-06-29)
 
 
