@@ -1,3 +1,10 @@
+## [1.2.1](https://github.com/mikkelkaas/nemligmcp/compare/v1.2.0...v1.2.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* report the package version in serverInfo and the User-Agent ([2f15daf](https://github.com/mikkelkaas/nemligmcp/commit/2f15daf100bd71bbf360a45d48536d02a02a0a12))
+
 # [1.2.0](https://github.com/mikkelkaas/nemligmcp/compare/v1.1.0...v1.2.0) (2026-11-05)
 
 
