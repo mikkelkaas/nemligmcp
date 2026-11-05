@@ -170,18 +170,24 @@ DELETE alike; the secret is part of the single endpoint URL.
 
   ```nginx
   access_log off;
-  error_log /data/logs/proxy-host-41_error.log crit;
-  proxy_buffering off;
-  proxy_read_timeout 86400s;
+  location = /mcp { return 404; }
+  location /mcp/ {
+      error_log /dev/null crit;
+      proxy_buffering off;
+      proxy_read_timeout 86400s;
+      include conf.d/include/proxy.conf;
+  }
   ```
 
   The read timeout is raised because PR #1 holds a standalone SSE stream per
   session that nginx would otherwise cut every 5 minutes; clients reconnect,
-  so 300s is not broken, only noisy. The error log is raised to `crit`
-  because nginx writes the full request line, secret included, at `error`
-  level on upstream connect failures and read-timeout expiry (reviewer
-  finding; builder's call, costs upstream-error visibility for this host
-  only). Force-SSL is turned on for host 41 as part of deployment.
+  so 300s is not broken, only noisy. The MCP location discards its
+  error log (`error_log /dev/null crit;`) because nginx writes the full request
+  line, secret included, on upstream errors; NPM already emits a server-level
+  `error_log`, so a second server-level line would only add a logger, while a
+  location-level one replaces the inherited one. The block keeps
+  `include conf.d/include/proxy.conf` (NPM's proxy headers and `proxy_pass`);
+  NPM's default `location /` stays, since only a bare `location /` replaces it. Force-SSL is turned on for host 41 as part of deployment.
 
 ### Process
 

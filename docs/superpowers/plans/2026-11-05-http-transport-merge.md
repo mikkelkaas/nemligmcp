@@ -366,7 +366,7 @@ git commit -m "ci: build and push the container image to ghcr.io on release"
 
 - [ ] **Step 1: Restructure the HTTP documentation**
 
-Under a `## Streamable HTTP` heading: a short intro (stdio is default), then the env table from the spec, then three subsections: **Local shared process** (PR #1's text, now mentioning the opt-out for LAN binds), **Remote single-user endpoint** (the stashed "Remote (HTTP) mode" text, updated to `MCP_SECRET` + `--http`, the session note replaced), **Docker behind Nginx Proxy Manager** (image `ghcr.io/mikkelkaas/nemligmcp`, built on every release for amd64 and arm64, `docker compose pull && docker compose up -d`) with the advanced config block from the spec (`access_log off; error_log ... crit; proxy_buffering off; proxy_read_timeout 86400s;`) and the "Connecting clients" bullets for claude.ai and ChatGPT. Update the "Notes / internals" transport bullet to describe one transport with sessions. Mention `npm test`.
+Under a `## Streamable HTTP` heading: a short intro (stdio is default), then the env table from the spec, then three subsections: **Local shared process** (PR #1's text, now mentioning the opt-out for LAN binds), **Remote single-user endpoint** (the stashed "Remote (HTTP) mode" text, updated to `MCP_SECRET` + `--http`, the session note replaced), **Docker behind Nginx Proxy Manager** (image `ghcr.io/mikkelkaas/nemligmcp`, built on every release for amd64 and arm64, `docker compose pull && docker compose up -d`) with the advanced config block from the spec (`access_log off;` plus `location = /mcp { return 404; }` and a `location /mcp/` block with `error_log /dev/null crit;`, `proxy_buffering off;`, `proxy_read_timeout 86400s;` and `include conf.d/include/proxy.conf;`) and the "Connecting clients" bullets for claude.ai and ChatGPT. Update the "Notes / internals" transport bullet to describe one transport with sessions. Mention `npm test`.
 
 - [ ] **Step 2: Check the README renders and references are right**
 
@@ -422,7 +422,7 @@ Expected: `healthz 200`, `bare mcp 404`, `wrong 404`, `HTTP/2 200` with an `mcp-
 
 - [ ] **Step 4: Patch NPM host 41**
 
-PUT to `localhost:81/api/nginx/proxy-hosts/41` with the existing body changed to `ssl_forced: true` and `advanced_config` equal to the spec's four-line block (`access_log off;`, `error_log /data/logs/proxy-host-41_error.log crit;`, `proxy_buffering off;`, `proxy_read_timeout 86400s;`). Re-run Step 3; additionally `curl -s -o /dev/null -w '%{http_code}' http://nemlig.kaasfrich.dk/healthz` must be `301`.
+PUT to `localhost:81/api/nginx/proxy-hosts/41` with the existing body changed to `ssl_forced: true` and `advanced_config` equal to the spec's block (`access_log off;` plus `location = /mcp { return 404; } location /mcp/ { error_log /dev/null crit; proxy_buffering off; proxy_read_timeout 86400s; include conf.d/include/proxy.conf; }`). Re-run Step 3; additionally `curl -s -o /dev/null -w '%{http_code}' http://nemlig.kaasfrich.dk/healthz` must be `301`.
 
 - [ ] **Step 5: Hand to the maintainer for the client check**
 

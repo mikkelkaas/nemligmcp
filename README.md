@@ -158,8 +158,8 @@ Web and mobile clients can't spawn a local process; they need a remote MCP serve
 HTTPS. Run it with a secret path:
 
 ```bash
-MCP_SECRET=$(openssl rand -hex 24) MCP_HTTP_HOST=0.0.0.0 \
-  NEMLIG_USER=... NEMLIG_PASS=... npx -y nemligmcp --http
+export MCP_SECRET=$(openssl rand -hex 24); echo "$MCP_SECRET"   # keep this; it is part of the URL
+MCP_HTTP_HOST=0.0.0.0 NEMLIG_USER=... NEMLIG_PASS=... npx -y nemligmcp --http
 ```
 
 - MCP is served at `/mcp/<MCP_SECRET>` for POST, GET (SSE) and DELETE alike.
@@ -185,14 +185,26 @@ advanced config:
 
 ```nginx
 access_log off;
-error_log /data/logs/proxy-host-<id>_error.log crit;
-proxy_buffering off;
-proxy_read_timeout 86400s;
+location = /mcp { return 404; }
+location /mcp/ {
+    error_log /dev/null crit;
+    proxy_buffering off;
+    proxy_read_timeout 86400s;
+    include conf.d/include/proxy.conf;
+}
 ```
 
-- `access_log off` and an error log at `crit` keep the secret URL out of nginx's logs.
-- `proxy_buffering off` and the long `proxy_read_timeout` keep the SSE stream flowing
-  and open.
+- The access log is off for the host. The MCP location discards its error log because
+  nginx writes the full request line, secret included, on upstream errors; a
+  server-level `error_log` line would only add a second logger next to NPM's own.
+- The exact-match line stops nginx from answering bare `/mcp` with a 301 to `/mcp/`, so an
+  unauthenticated scan sees 404 everywhere.
+- `proxy_buffering off` and the long `proxy_read_timeout` are for the per-session SSE
+  stream.
+- `include conf.d/include/proxy.conf` is what NPM's own location uses to set the proxy
+  headers and `proxy_pass`, so the block must keep it.
+- NPM keeps its default `location /` (which serves `/healthz`), because only a bare
+  `location /` in the advanced config replaces it.
 
 Don't put forward-auth (e.g. Authelia) in front of it: MCP clients can't follow a
 browser login redirect.
@@ -234,7 +246,7 @@ with no release-worthy commits are a no-op.
 The `package.json` `version` is intentionally `0.0.0-development` — the real
 version is managed by semantic-release at release time.
 
-Required repo secret: `NPM_TOKEN` (Settings → Secrets and variables → Actions).
+No npm token secret is needed: publishing uses npm Trusted Publishing (OIDC).
 `GITHUB_TOKEN` is provided automatically by Actions.
 
 ## Notes / internals
