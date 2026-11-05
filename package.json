@@ -19,7 +19,8 @@
     "inspect": "npx @modelcontextprotocol/inspector tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "test": "node --import tsx --test test/*.test.ts"
   },
   "keywords": [
     "mcp",
@@ -49,6 +50,7 @@
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^10.0.1",
     "@types/node": "^22.0.0",
     "semantic-release": "^25.0.5",
