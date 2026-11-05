@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { BlockList, isIP, type AddressInfo } from "node:net";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -137,7 +137,8 @@ export interface HttpHandle {
 }
 
 export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions): Promise<HttpHandle> {
-  const path = opts.path ?? "/mcp";
+  const basePath = opts.path ?? "/mcp";
+  const secretBytes = opts.secret === undefined ? undefined : Buffer.from(opts.secret);
   const idleTimeoutMs = opts.idleTimeoutMs ?? 24 * 60 * 60 * 1000;
   const maxBodyBytes = opts.maxBodyBytes ?? 4 * 1024 * 1024;
   const log = opts.log ?? ((msg: string) => console.error(msg));
@@ -160,6 +161,15 @@ export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions)
     },
     10 * 60 * 1000,
   ).unref();
+
+  /** Matches the MCP endpoint, tolerating one trailing slash; the secret is compared in constant time. */
+  function pathMatches(pathname: string): boolean {
+    const p = pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+    if (secretBytes === undefined) return p === basePath;
+    if (!p.startsWith(`${basePath}/`)) return false;
+    const given = Buffer.from(p.slice(basePath.length + 1));
+    return given.length === secretBytes.length && timingSafeEqual(given, secretBytes);
+  }
 
   const sessionFor = (sessionId: string | string[] | undefined): Session | undefined =>
     typeof sessionId === "string" ? sessions.get(sessionId) : undefined;
@@ -209,7 +219,7 @@ export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions)
         res.writeHead(200, { "Content-Type": "text/plain" }).end("ok");
         return;
       }
-      if (url.pathname !== path) return sendError(res, 404, "Not found");
+      if (!pathMatches(url.pathname)) return void res.writeHead(404).end();
       if (validateHost && !isLoopbackRequest(req)) return sendError(res, 403, "Forbidden host or origin");
       const canonicalHost = parseHost(req.headers.host)?.host;
       if (canonicalHost) req.headers.host = canonicalHost;
@@ -265,6 +275,6 @@ export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions)
   const bound = httpServer.address() as AddressInfo;
   validateHost = isLoopbackAddress(bound.address);
   const shownHost = opts.host.includes(":") ? `[${opts.host}]` : opts.host;
-  log(`listening on http://${shownHost}:${bound.port}${path}${validateHost ? "" : " (no Host/Origin check)"}`);
+  log(`listening on http://${shownHost}:${bound.port}${secretBytes ? `${basePath}/<MCP_SECRET>` : basePath}${validateHost ? "" : " (no Host/Origin check)"}`);
   return { server: httpServer, close };
 }

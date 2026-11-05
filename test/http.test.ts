@@ -352,3 +352,83 @@ describe("lifecycle", () => {
     }
   });
 });
+
+describe("secret path", () => {
+  const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";
+  const at = `/mcp/${SECRET}`;
+  const withSecret = async (fn: (server: Server) => Promise<void>, build?: () => McpServer): Promise<void> => {
+    const server = (await start("127.0.0.1", build, { secret: SECRET }))!;
+    try {
+      await fn(server);
+    } finally {
+      await stop(server);
+    }
+  };
+  const post = (server: Server, path: string, headers: Record<string, string> = {}, body = INIT) =>
+    send(server, "POST", { ...MCP_HEADERS, Host: hostOf(server), ...headers }, body, path);
+
+  it("initializes at /mcp/<secret>", () =>
+    withSecret(async (server) => {
+      const r = await post(server, at);
+      assert.equal(r.status, 200, r.body);
+    }));
+
+  it("accepts a trailing slash", () =>
+    withSecret(async (server) => {
+      const r = await post(server, `${at}/`);
+      assert.equal(r.status, 200, r.body);
+    }));
+
+  it("returns a bare 404 for /mcp", () =>
+    withSecret(async (server) => {
+      const r = await post(server, "/mcp");
+      assert.equal(r.status, 404);
+      assert.equal(r.body, "");
+    }));
+
+  it("returns a bare 404 for a wrong secret of the same length", () =>
+    withSecret(async (server) => {
+      const r = await post(server, `/mcp/${SECRET.slice(0, -1)}0`);
+      assert.equal(r.status, 404);
+      assert.equal(r.body, "");
+    }));
+
+  it("returns a bare 404 for a wrong secret of a different length", () =>
+    withSecret(async (server) => {
+      const r = await post(server, `/mcp/${SECRET}x`);
+      assert.equal(r.status, 404);
+      assert.equal(r.body, "");
+    }));
+
+  it("keeps the Host guard on a loopback bind", () =>
+    withSecret(async (server) => {
+      const r = await post(server, at, { Host: hostOf(server, "evil.com") });
+      assert.equal(r.status, 403);
+    }));
+
+  it("serves tools/list through a session at the secret path", () =>
+    withSecret(async (server) => {
+      const init = await post(server, at);
+      assert.equal(init.status, 200, init.body);
+      const session = { "mcp-session-id": init.headers["mcp-session-id"] as string, "mcp-protocol-version": "2025-03-26" };
+      const ack = await post(server, at, session, JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
+      assert.equal(ack.status, 202, ack.body);
+      const list = await post(server, at, session, JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }));
+      assert.equal(list.status, 200, list.body);
+      const [msg] = rpcMessages(list);
+      const tools = (msg.result as { tools: Array<{ name: string }> }).tools.map((t) => t.name);
+      assert.ok(tools.includes("search_products"), tools.join(","));
+    }, () => createServer({} as ApiClient)));
+
+  it("logs the listen line without the secret", async () => {
+    const lines: string[] = [];
+    const server = (await start("127.0.0.1", undefined, { secret: SECRET, log: (m) => lines.push(m) }))!;
+    try {
+      const line = lines.find((l) => l.startsWith("listening on"))!;
+      assert.ok(line.endsWith("/mcp/<MCP_SECRET>"), line);
+      assert.ok(!lines.some((l) => l.includes(SECRET)));
+    } finally {
+      await stop(server);
+    }
+  });
+});
