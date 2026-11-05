@@ -110,6 +110,20 @@ Omit `env` to run anonymously. To run from a local build instead, use
 `"command": "node", "args": ["/path/to/nemligmcp/dist/index.js"]`, or for
 development without building, `"command": "npx", "args": ["tsx", "/path/to/nemligmcp/src/index.ts"]`.
 
+### Streamable HTTP
+
+stdio is the default. To serve several clients from one process (sharing a single
+nemlig login), start it with the Streamable HTTP transport instead:
+
+```bash
+MCP_TRANSPORT=http MCP_HTTP_PORT=3000 npx -y nemligmcp
+```
+
+It listens on `http://127.0.0.1:3000/mcp` (override the bind address with
+`MCP_HTTP_HOST`). On a loopback bind, requests whose `Host` or `Origin` is not
+localhost are rejected to block DNS-rebinding attacks. There is no authentication,
+so only bind to a non-loopback address behind something that provides it.
+
 ## Development
 
 ```bash
@@ -144,11 +158,11 @@ Required repo secret: `NPM_TOKEN` (Settings → Secrets and variables → Action
 
 ## Notes / internals
 
-- **Transport:** stdio. The server logs only to stderr — stdout is the JSON-RPC channel.
+- **Transport:** stdio by default, Streamable HTTP with `MCP_TRANSPORT=http`. The server logs only to stderr — stdout is the JSON-RPC channel in stdio mode.
 - **Session:** a 3-step flow (anti-forgery token → bearer token → login) with transparent
   refresh of the short-lived (5 min) bearer token. Cookies are kept in-process.
 - **Cookies:** handled by a minimal in-process jar using `fetch` + `Headers.getSetCookie()`
   (Node 20+). If you hit cookie edge cases, swap `src/api/cookieJar.ts` internals for
   `tough-cookie`.
-- The codebase keeps the MCP server transport-agnostic (`src/server.ts`) so an HTTP
-  transport can be added later without changing tool logic.
+- The codebase keeps the MCP server transport-agnostic (`src/server.ts`); `src/http.ts`
+  builds one server per HTTP session on top of a shared `ApiClient`.
