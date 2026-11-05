@@ -1,0 +1,23 @@
+# Self-hosted HTTP MCP server behind an existing Nginx Proxy Manager on the
+# npm_default network. No host port is published; the proxy forwards to
+# http://nemligmcp:3000. Configure NEMLIG_USER, NEMLIG_PASS and MCP_SECRET in .env.
+# The image is pulled from ghcr.io; to build it locally instead, run
+#   docker build -t ghcr.io/mikkelkaas/nemligmcp:latest .
+services:
+  nemligmcp:
+    image: ghcr.io/mikkelkaas/nemligmcp:latest
+    container_name: nemligmcp
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    networks:
+      - proxy
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-npm_default}
