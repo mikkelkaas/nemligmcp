@@ -159,13 +159,17 @@ DELETE alike; the secret is part of the single endpoint URL.
   no-new-privileges, `init: true` so SIGTERM reaches node and PR #1's
   graceful shutdown runs). For the pre-merge check the image is built on
   alpha by hand under that same tag.
-- Release workflow: after `npx semantic-release`, a step guarded by
-  "a release happened" logs in to ghcr with `GITHUB_TOKEN`
-  (`packages: write`), sets up QEMU and buildx, and builds and pushes the
-  multi-arch image. The build runs from the workspace after semantic-release
-  has updated `package.json`, so the image reports the released version.
-  The version and the "released" flag reach the step through
-  `@semantic-release/exec`'s `publishCmd` writing to `$GITHUB_OUTPUT`.
+- Release workflow: the `release` job runs `npx semantic-release` and
+  exposes `released` and `version` as job outputs (set by
+  `@semantic-release/exec`'s `publishCmd` writing to `$GITHUB_OUTPUT`). A
+  separate `image` job, `needs: release` and guarded by
+  `released == 'true'`, with only `contents: read` and `packages: write`,
+  checks out the release tag `v<version>`, logs in to ghcr with
+  `GITHUB_TOKEN`, sets up QEMU and buildx, and builds and pushes the
+  multi-arch image. The tag already carries the bumped `package.json`, so
+  the image reports the released version. Keeping the jobs separate means
+  the third-party docker actions never run with the npm OIDC token, and a
+  failed push can be re-run without re-running the release.
 - NPM proxy host advanced config becomes:
 
   ```nginx
