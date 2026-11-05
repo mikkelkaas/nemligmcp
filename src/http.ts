@@ -9,6 +9,10 @@ export interface HttpOptions {
   host: string;
   port: number;
   path?: string;
+  /** Shared secret; trimmed, at least 32 characters. */
+  secret?: string;
+  /** True only when MCP_ALLOW_UNAUTHENTICATED is exactly "1". */
+  allowUnauthenticated?: boolean;
   idleTimeoutMs?: number;
   maxBodyBytes?: number;
   log?: (msg: string) => void;
@@ -16,9 +20,17 @@ export interface HttpOptions {
 
 export function httpOptionsFromEnv(): HttpOptions | undefined {
   if (process.env.MCP_TRANSPORT !== "http") return undefined;
-  const port = Number(process.env.MCP_HTTP_PORT);
-  if (!Number.isInteger(port) || port <= 0) throw new Error("MCP_TRANSPORT=http requires a valid MCP_HTTP_PORT");
-  return { host: process.env.MCP_HTTP_HOST ?? "127.0.0.1", port };
+  const rawPort = process.env.MCP_HTTP_PORT ?? process.env.PORT ?? "3000";
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port <= 0) throw new Error(`invalid port: ${JSON.stringify(rawPort)}`);
+  const secret = process.env.MCP_SECRET?.trim() || undefined;
+  if (secret !== undefined && secret.length < 32) throw new Error("MCP_SECRET must be at least 32 characters");
+  return {
+    host: process.env.MCP_HTTP_HOST ?? "127.0.0.1",
+    port,
+    secret,
+    allowUnauthenticated: process.env.MCP_ALLOW_UNAUTHENTICATED === "1",
+  };
 }
 
 const loopback = new BlockList();

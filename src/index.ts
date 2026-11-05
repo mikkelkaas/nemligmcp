@@ -7,6 +7,7 @@ import { createServer } from "./server.js";
 import { logger } from "./logger.js";
 
 async function main(): Promise<void> {
+  if (process.argv.includes("--http")) process.env.MCP_TRANSPORT = "http";
   const http = httpOptionsFromEnv();
   if (http) {
     const config = loadConfig();
