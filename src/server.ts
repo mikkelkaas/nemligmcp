@@ -3,6 +3,7 @@ import { ApiClient } from "./api/client.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./logger.js";
 import { registerAllTools } from "./tools/index.js";
+import { PACKAGE_VERSION } from "./version.js";
 
 /**
  * Build a fully configured MCP server. Transport-agnostic: the caller wires up
@@ -20,7 +21,7 @@ export function createServer(sharedClient?: ApiClient): McpServer {
 
   const server = new McpServer({
     name: "nemligmcp",
-    version: "0.1.0",
+    version: PACKAGE_VERSION,
   });
 
   registerAllTools(server, client);

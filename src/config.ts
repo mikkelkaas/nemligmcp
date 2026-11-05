@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PACKAGE_VERSION } from "./version.js";
 
 /** Base host for auth, basket and product-detail pages. */
 export const BASE_URL = "https://www.nemlig.com";
@@ -16,7 +17,7 @@ export const DEFAULT_HEADERS: Record<string, string> = {
   // A non-browser User-Agent. A browser-like UA causes nemlig.com to route the
   // homepage through its Queue-it virtual waiting-room (302 -> nemlig.queue-it.net),
   // which breaks the JSON page-settings fetch. A plain identifier bypasses it.
-  "User-Agent": "nemligmcp/0.1.0 (+https://github.com/nemlig/nemligmcp)",
+  "User-Agent": `nemligmcp/${PACKAGE_VERSION} (+https://github.com/mikkelkaas/nemligmcp)`,
   "Device-Size": "desktop",
   Platform: "web",
   // The nemlig.com client version string; some endpoints (notably the search
