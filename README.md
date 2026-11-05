@@ -110,25 +110,106 @@ Omit `env` to run anonymously. To run from a local build instead, use
 `"command": "node", "args": ["/path/to/nemligmcp/dist/index.js"]`, or for
 development without building, `"command": "npx", "args": ["tsx", "/path/to/nemligmcp/src/index.ts"]`.
 
-### Streamable HTTP
+## Streamable HTTP
 
 stdio is the default. To serve several clients from one process (sharing a single
-nemlig login), start it with the Streamable HTTP transport instead:
+nemlig login), or to reach the server from claude.ai, ChatGPT and your phone, start it
+with the Streamable HTTP transport. The same transport covers a trusted LAN (no secret)
+and a public endpoint behind a reverse proxy (secret URL path). Each client gets its own
+MCP session; all sessions share one nemlig login.
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `MCP_TRANSPORT` | `http` to serve HTTP; unset means stdio | unset |
+| `--http` (CLI flag) | Alias for `MCP_TRANSPORT=http` | |
+| `MCP_HTTP_HOST` | Bind address | `127.0.0.1` |
+| `MCP_HTTP_PORT` | Port; falls back to `PORT`, then `3000` | `3000` |
+| `MCP_SECRET` | If set, the endpoint is `/mcp/<secret>`; at least 32 characters | unset |
+| `MCP_ALLOW_UNAUTHENTICATED` | `1` to allow a non-loopback bind with no secret | unset |
+
+What happens at startup:
+
+| Bind | `MCP_SECRET` | `MCP_ALLOW_UNAUTHENTICATED` | Result |
+|---|---|---|---|
+| loopback | unset | any | serves `/mcp`, Host/Origin guard on |
+| loopback | set | any | serves `/mcp/<secret>`, Host/Origin guard on |
+| non-loopback | set | any | serves `/mcp/<secret>` |
+| non-loopback | unset | `1` | serves `/mcp`, logs a warning that the server is open |
+| non-loopback | unset | unset | refuses to start |
+
+`GET /healthz` returns `ok` in every mode. With a secret, every other path, including
+bare `/mcp`, returns `404`.
+
+### Local shared process
 
 ```bash
-MCP_TRANSPORT=http MCP_HTTP_PORT=3000 npx -y nemligmcp
+MCP_TRANSPORT=http npx -y nemligmcp
 ```
 
-It listens on `http://127.0.0.1:3000/mcp` (override the bind address with
-`MCP_HTTP_HOST`). On a loopback bind, requests whose `Host` or `Origin` is not
-localhost are rejected to block DNS-rebinding attacks. There is no authentication,
-so only bind to a non-loopback address behind something that provides it.
+It listens on `http://127.0.0.1:3000/mcp` (change the port with `MCP_HTTP_PORT`). On a
+loopback bind, requests whose `Host` or `Origin` is not localhost are rejected to block
+DNS-rebinding attacks, and no secret is needed. To share it on a trusted LAN, set
+`MCP_HTTP_HOST=0.0.0.0` and either `MCP_SECRET` or `MCP_ALLOW_UNAUTHENTICATED=1`;
+without one of them the server refuses to start.
+
+### Remote single-user endpoint
+
+Web and mobile clients can't spawn a local process; they need a remote MCP server over
+HTTPS. Run it with a secret path:
+
+```bash
+MCP_SECRET=$(openssl rand -hex 24) MCP_HTTP_HOST=0.0.0.0 \
+  NEMLIG_USER=... NEMLIG_PASS=... npx -y nemligmcp --http
+```
+
+- MCP is served at `/mcp/<MCP_SECRET>` for POST, GET (SSE) and DELETE alike.
+- The secret path is the **only** access control, and it guards your basket, orders
+  and address. Use at least 32 random characters, serve it over HTTPS only, and keep
+  it out of logs on the reverse proxy. The server itself never logs the secret.
+- The secret is matched against the raw URL path, so it must consist of URL-safe
+  characters (letters, digits, `-`, `_`, `.`, `~`). `openssl rand -hex 24` does.
+
+### Docker behind Nginx Proxy Manager
+
+The image `ghcr.io/mikkelkaas/nemligmcp` is built on every release for amd64 and arm64
+(tags `latest`, the full version and the major version). `compose.yaml` pulls it and
+joins the external `npm_default` network without publishing a host port. Put
+`MCP_SECRET`, `NEMLIG_USER` and `NEMLIG_PASS` in `.env`, then:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Add an NPM proxy host forwarding to `http://nemligmcp:3000` with SSL forced and this
+advanced config:
+
+```nginx
+access_log off;
+error_log /data/logs/proxy-host-<id>_error.log crit;
+proxy_buffering off;
+proxy_read_timeout 86400s;
+```
+
+- `access_log off` and an error log at `crit` keep the secret URL out of nginx's logs.
+- `proxy_buffering off` and the long `proxy_read_timeout` keep the SSE stream flowing
+  and open.
+
+Don't put forward-auth (e.g. Authelia) in front of it: MCP clients can't follow a
+browser login redirect.
+
+### Connecting clients
+
+- **Claude:** claude.ai → Settings → Connectors → *Add custom connector* → paste
+  `https://your-host/mcp/<MCP_SECRET>`. It then also shows up in the mobile apps.
+- **ChatGPT:** Settings → Apps & Connectors → Advanced → enable *Developer mode*,
+  then create a connector with the same URL and authentication *No authentication*.
 
 ## Development
 
 ```bash
 npm run dev        # run from source with auto-reload (tsx watch)
 npm run typecheck  # tsc --noEmit
+npm test           # run the test suite
 npm run inspect    # launch the MCP Inspector against the server
 ```
 
@@ -158,7 +239,7 @@ Required repo secret: `NPM_TOKEN` (Settings → Secrets and variables → Action
 
 ## Notes / internals
 
-- **Transport:** stdio by default, Streamable HTTP with `MCP_TRANSPORT=http`. The server logs only to stderr — stdout is the JSON-RPC channel in stdio mode.
+- **Transport:** stdio by default; one Streamable HTTP transport (`MCP_TRANSPORT=http` or `--http`) with per-client sessions, serving either a trusted LAN or a secret-path public endpoint. The server logs only to stderr — stdout is the JSON-RPC channel in stdio mode.
 - **Session:** a 3-step flow (anti-forgery token → bearer token → login) with transparent
   refresh of the short-lived (5 min) bearer token. Cookies are kept in-process.
 - **Cookies:** handled by a minimal in-process jar using `fetch` + `Headers.getSetCookie()`
