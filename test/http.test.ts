@@ -5,7 +5,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { after, before, describe, it } from "node:test";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ApiClient } from "../src/api/client.js";
-import { isLoopbackAddress, serveHttp, type HttpHandle as Server } from "../src/http.js";
+import { isLoopbackAddress, serveHttp, type HttpHandle as Server, type HttpOptions } from "../src/http.js";
 import { createServer } from "../src/server.js";
 
 const INIT = JSON.stringify({
@@ -28,9 +28,9 @@ interface Pending {
   reply: Promise<Reply>;
 }
 
-function open(server: Server, method: string, headers: Record<string, string>): Pending {
+function open(server: Server, method: string, headers: Record<string, string>, path = "/mcp"): Pending {
   const { address, port } = server.server.address() as AddressInfo;
-  const req = request({ host: address, port, method, path: "/mcp", headers, agent: false });
+  const req = request({ host: address, port, method, path, headers, agent: false });
   const reply = new Promise<Reply>((resolve, reject) => {
     req.setTimeout(3000, () => req.destroy(new Error(`${method} timed out`)));
     req.on("error", reject);
@@ -46,8 +46,14 @@ function open(server: Server, method: string, headers: Record<string, string>): 
   return { req, reply };
 }
 
-async function send(server: Server, method: string, headers: Record<string, string>, body?: string): Promise<Reply> {
-  const p = open(server, method, headers);
+async function send(
+  server: Server,
+  method: string,
+  headers: Record<string, string>,
+  body?: string,
+  path = "/mcp",
+): Promise<Reply> {
+  const p = open(server, method, headers, path);
   p.req.end(body);
   try {
     return await p.reply;
@@ -68,6 +74,7 @@ function rpcMessages(r: Reply): Array<Record<string, unknown>> {
 async function start(
   host: string,
   build: () => McpServer = () => new McpServer({ name: "test", version: "0" }),
+  extra: Partial<HttpOptions> = {},
 ): Promise<Server | undefined> {
   try {
     return await serveHttp(build, {
@@ -75,6 +82,7 @@ async function start(
       port: 0,
       maxBodyBytes: MAX_BODY,
       log: () => {},
+      ...extra,
     });
   } catch (e) {
     const code = (e as NodeJS.ErrnoException).code;
@@ -94,6 +102,49 @@ describe("isLoopbackAddress", () => {
     }
     for (const a of ["0.0.0.0", "::", "10.0.0.1", "localhost", "::ffff:10.0.0.1", "127.0.0.1.nip.io"]) {
       assert.ok(!isLoopbackAddress(a), a);
+    }
+  });
+});
+
+describe("healthz", () => {
+  const get = (server: Server, method: string, host: string) => send(server, method, { Host: host }, undefined, "/healthz");
+
+  it("answers 200 ok on a loopback bind", async () => {
+    const server = (await start("127.0.0.1"))!;
+    try {
+      const r = await get(server, "GET", hostOf(server));
+      assert.equal(r.status, 200);
+      assert.equal(r.body, "ok");
+      assert.match(String(r.headers["content-type"]), /^text\/plain/);
+    } finally {
+      await stop(server);
+    }
+  });
+
+  it("ignores a hostile Host header", async () => {
+    const server = (await start("127.0.0.1"))!;
+    try {
+      assert.equal((await get(server, "GET", "evil.com")).status, 200);
+    } finally {
+      await stop(server);
+    }
+  });
+
+  it("is not affected by a configured secret", async () => {
+    const server = (await start("127.0.0.1", undefined, { secret: "s".repeat(32) }))!;
+    try {
+      assert.equal((await get(server, "GET", hostOf(server))).status, 200);
+    } finally {
+      await stop(server);
+    }
+  });
+
+  it("still 404s POST /healthz", async () => {
+    const server = (await start("127.0.0.1"))!;
+    try {
+      assert.equal((await get(server, "POST", hostOf(server))).status, 404);
+    } finally {
+      await stop(server);
     }
   });
 });

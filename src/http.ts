@@ -205,6 +205,10 @@ export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions)
   const httpServer = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", "http://localhost");
+      if (url.pathname === "/healthz" && (req.method === "GET" || req.method === "HEAD")) {
+        res.writeHead(200, { "Content-Type": "text/plain" }).end("ok");
+        return;
+      }
       if (url.pathname !== path) return sendError(res, 404, "Not found");
       if (validateHost && !isLoopbackRequest(req)) return sendError(res, 403, "Forbidden host or origin");
       const canonicalHost = parseHost(req.headers.host)?.host;
