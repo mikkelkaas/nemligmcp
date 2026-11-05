@@ -91,6 +91,7 @@ async function start(
   }
 }
 
+const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";
 const stop = (server: Server): Promise<void> => server.close();
 const portOf = (server: Server): number => (server.server.address() as AddressInfo).port;
 const hostOf = (server: Server, name = "localhost"): string => `${name}:${portOf(server)}`;
@@ -299,9 +300,34 @@ describe("loopback alias binds keep the guard", () => {
 
 describe("non-loopback bind", () => {
   it("does not check Host", async () => {
-    const server = (await start("0.0.0.0"))!;
+    const server = (await start("0.0.0.0", undefined, { allowUnauthenticated: true }))!;
     try {
       assert.equal((await send(server, "POST", { ...MCP_HEADERS, Host: "evil.com" }, INIT)).status, 200);
+    } finally {
+      await stop(server);
+    }
+  });
+
+  it("refuses 0.0.0.0 without a secret or opt-out", async () => {
+    const before = process.listenerCount("SIGTERM");
+    await assert.rejects(start("0.0.0.0"), /MCP_ALLOW_UNAUTHENTICATED/);
+    assert.equal(process.listenerCount("SIGTERM"), before);
+  });
+
+  it("accepts 0.0.0.0 with a secret and no opt-out", async () => {
+    const server = (await start("0.0.0.0", undefined, { secret: SECRET }))!;
+    try {
+      assert.equal((await send(server, "POST", MCP_HEADERS, INIT, `/mcp/${SECRET}`)).status, 200);
+    } finally {
+      await stop(server);
+    }
+  });
+
+  it("logs a warning when opted in", async () => {
+    const lines: string[] = [];
+    const server = (await start("0.0.0.0", undefined, { allowUnauthenticated: true, log: (m) => lines.push(m) }))!;
+    try {
+      assert.equal(lines.filter((l) => l.includes("without authentication")).length, 1);
     } finally {
       await stop(server);
     }
@@ -354,7 +380,6 @@ describe("lifecycle", () => {
 });
 
 describe("secret path", () => {
-  const SECRET = "0123456789abcdef0123456789abcdef0123456789abcdef";
   const at = `/mcp/${SECRET}`;
   const withSecret = async (fn: (server: Server) => Promise<void>, build?: () => McpServer): Promise<void> => {
     const server = (await start("127.0.0.1", build, { secret: SECRET }))!;

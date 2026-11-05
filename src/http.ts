@@ -275,6 +275,14 @@ export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions)
   const bound = httpServer.address() as AddressInfo;
   validateHost = isLoopbackAddress(bound.address);
   const shownHost = opts.host.includes(":") ? `[${opts.host}]` : opts.host;
+  if (!validateHost && !opts.secret && !opts.allowUnauthenticated) {
+    dispose();
+    await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    throw new Error(
+      `refusing to serve MCP without authentication on non-loopback ${shownHost}:${bound.port}; set MCP_SECRET or MCP_ALLOW_UNAUTHENTICATED=1`,
+    );
+  }
   log(`listening on http://${shownHost}:${bound.port}${secretBytes ? `${basePath}/<MCP_SECRET>` : basePath}${validateHost ? "" : " (no Host/Origin check)"}`);
+  if (!validateHost && !opts.secret) log(`warning: MCP is reachable without authentication on ${shownHost}:${bound.port}`);
   return { server: httpServer, close };
 }
