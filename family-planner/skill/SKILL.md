@@ -1,6 +1,6 @@
 ---
 name: nemlig-basket
-description: Use when asked to build, plan, suggest or add a Nemlig grocery basket for the next 7-8 days (dinner, breakfast, 3-year-old lunch boxes, snacks, household items), or to pick a delivery timeslot.
+description: Use when asked to build, plan, suggest or add a Nemlig grocery basket for the next 7-8 days (dinner, breakfast, a child's lunch boxes, snacks, household items), or to pick a delivery timeslot.
 ---
 
 ## What this does
@@ -9,22 +9,33 @@ Builds a deterministic basket plan for the next 7-8 days from the real Namlig or
 history, shows it for approval, then writes it to the real basket. Nothing is ordered.
 The family confirms in the app.
 
-Scripts: `/opt/docker/scripts/nemlig/`. Read `MODEL.md` for the model (household -> nights -> needs -> packs -> budget) and `README.md` for the commands. Service: container
-`nemligmcp`, compose service `nemligmcp` in `/opt/docker/infra-stack.yml`. Check it with
-`hsudo docker compose -f /opt/docker/infra-stack.yml ps nemligmcp` and expect
+Run every command from the folder you cloned, in its `family-planner/` part. On this
+host, for example, that folder also answers to `/opt/docker/scripts/nemlig`; a new host
+uses its own clone path and needs nothing else. Read `MODEL.md` for the model (household
+-> nights -> needs -> packs -> budget) and `README.md` for the commands.
+
+The planner talks to the MCP server over HTTP. On this host, for example, that server is
+the container `nemligmcp`, service `nemligmcp` in `/opt/docker/infra-stack.yml`: check it
+with `hsudo docker compose -f /opt/docker/infra-stack.yml ps nemligmcp` and expect
 `Up ... (healthy)`. Plain `docker compose` does not exist on this host - use `hsudo`.
+Another host runs the server its own way: point `NEMLIG_MCP_URL` at it and use that host's
+own command to check it.
 
 **Only `apply.mjs` writes to the basket. Never call `add_to_basket`,
 `set_basket_quantity`, `remove_from_basket` or `clear_basket` by hand.**
 
 ## Step 1 — ask the questions
 
-Ask all five in one message. Pre-fill with the defaults in `profiles/household.json`.
+Ask all five in one message. Pre-fill with the values in the family profile
+(`profiles/family-<name>.json`, chosen by `--family` or `NEMLIG_FAMILY_PROFILE`). A fresh
+clone has no profile: run `node init-family.mjs` first, or plan on the `--days` default and
+say so in the report.
 
-1. **Days?** 7 or 8 (default 8). One dinner covers 2 days.
+1. **Days?** 7 or 8 (the `--days` default is 8). One dinner covers the evenings in the
+   profile's `dinners.maxNightsPerDinner`.
 2. **Breakfast?** yes / no (default yes).
 3. **Dinner?** "Choose for me" is the normal answer: the rotation picks the menu from
-   `profiles/recipe-pool.json` and `plan.mjs` prints what it chose. Only when Marco names
+   `profiles/recipe-pool.json` and `plan.mjs` prints what it chose. Only when the user names
    dishes add `--dinners "<name>,<name>"`, using a name from the plan's `## Menu` list or a
    recipe url. A pinned-core id works only together with `--cores`, which skips the
    rotation. An id the pool does not have is reported as `warn:` and skipped - never
@@ -48,9 +59,9 @@ plan, report the numbers, and do not mention Step 3 as an option you are about t
 ## Step 2 — plan (dry run, always first)
 
 ```bash
-cd /opt/docker/scripts/nemlig
+cd <your-clone>/family-planner        # on this host, for example: /opt/docker/scripts/nemlig
 node plan.mjs --days 8 --breakfast yes --lunchbox yes --snacks no \
-  --household auto --dinners pasta-bolognese,kyllingcurry-ris
+  --household auto --dinners "<core-id>,<core-id>"
 ```
 
 `--dinners` only selects from the pinned cores, so add `--cores` to use it. Without
@@ -73,18 +84,18 @@ Read `data/plans/plan-latest.md`, then report:
 
 - the dinners and the day pairs they cover;
 - item count and total in kr;
-- anything above the 1500 kr soft cap;
+- anything above the profile's `budget.softCapKr`;
 - every `NOT FOUND` intent that is not a recipe line — these block `apply.mjs`. A line a
   recipe names that Namlig has nothing for at all is listed under `Left out of the
   recipes` and does not block;
 - every line under `Proposed substitution` (out-of-stock: the cheapest alternative is
-  suggested, NOT added). Ask Marco to accept or ignore; on accept, re-run the plan
+  suggested, NOT added). Ask the user to accept or ignore; on accept, re-run the plan
   with the printed `--extra "Name:qty"` flag;
 - every line under `Bulk offers` and `Stale favourite SKUs` — one short line each;
 - the `## Menu` list: it names the dinner per day pair with the protein and a link to the
   Namlig recipe, and it alternates a dish the family has never cooked with a known one;
 - the `## Left out of the recipes` list: fresh herbs and things we never buy, per recipe.
-  Mention it in one line; it is Marco's call if he wants any of them anyway;
+  Mention it in one line; it is the user's call whether they want any of them;
 - every line under `Swapped by the profile's alt queries` — say what was swapped;
 - the count of products on sale, and the `valgt pga. tilbud` notes;
 - the approval line at the end of the plan file.
@@ -94,9 +105,9 @@ score it saw. Then fix the profile: a shelf product that is ours under another w
 to `exclusions.queryAliases`; a product we buy in several kinds (rice, parboiled or
 basmati) goes to `purchasing.qualifierWords` so the price rule chooses; a line whose extra
 words are a second choice is cut by `exclusions.queryAsides`; a family that wants closer
-names accepted lowers `purchasing.minNameScore` from its 0,7; a dried spice or anything else
+names accepted lowers `purchasing.minNameScore`; a dried spice or anything else
 the cupboard already holds goes to `exclusions.pantryWords`. Re-plan after any of these.
-Do not swap in a product Marco did not ask for. If the task forbids editing a profile,
+Do not swap in a product the user did not ask for. If the task forbids editing a profile,
 report the unresolved lines and stop - `apply.mjs` refuses them anyway.
 
 A section of the plan file that is not there was empty, not skipped: no substitutions, no
@@ -104,14 +115,14 @@ bulk offers, no stale favourites, no learnings yet.
 
 ## Step 3 — wait for approval
 
-Say the basket was not touched, and wait. Only after Marco approves in chat:
+Say the basket was not touched, and wait. Only after the user approves in chat:
 
 ```bash
-cd /opt/docker/scripts/nemlig
+cd <your-clone>/family-planner        # on this host, for example: /opt/docker/scripts/nemlig
 node apply.mjs --plan data/plans/plan-latest.json --approve I-APPROVE-THIS-BASKET --slot <id>
 ```
 
-`--slot` takes the id Marco chose. It is optional; without it the delivery stays as it
+`--slot` takes the id the user chose. It is optional; without it the delivery stays as it
 is in the app.
 
 ## Step 4 — report
@@ -130,10 +141,11 @@ Report every `FAIL` line with product name and error text.
 
 - Never clear or reduce the basket. `apply.mjs` is keep-and-top-up only.
 - Never place an order, never confirm payment, never change the delivery address.
-- Never print `NEMLIG_PASS`. Never copy `/opt/docker/.env` anywhere.
-- Never add alcohol, medicine or gift cards unless Marco named the item in chat.
+- Never print `NEMLIG_PASS`. Never copy a `.env` anywhere - on this host, for example,
+  `/opt/docker/.env`.
+- Never add alcohol, medicine or gift cards unless the user named the item in chat.
 - Prices and stock change daily: re-plan any plan older than 2 hours before apply.
-- If the container is unhealthy or login fails, say so and stop. Do not scrape the
+- If the MCP server is unhealthy or login fails, say so and stop. Do not scrape the
   website as a fallback.
 
 ## Maintenance

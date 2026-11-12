@@ -170,9 +170,9 @@ function firstCommand() {
 async function main() {
   const out = [];
   checkNode(out);
+  checkEnv(out);        // credentials first: every step below needs them, so say so before asking for them
   checkProfile(out);
   checkData(out);
-  checkEnv(out);
   checkWritable(out);
   checkDocker(out);
   if (process.argv.includes("--online")) await checkEndpoint(out);

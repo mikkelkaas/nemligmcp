@@ -39,7 +39,7 @@ const PANTRY_WORDS = ["salt", "peber", "olie", "vand", "sukker", "bouillon", "me
 // Fresh herbs this family does not use; they wilt in the fridge and go in the bin.
 // Bought for other meals, never for a recipe: the planner leaves them out of a recipe.
 const HERB_WORDS = ["persille", "purløg", "forårsløg", "koriander", "basilikum", "mynte", "dild", "rosmarin", "timian", "salvie", "dragon"];
-// Products that never appear in 66 orders. Folded form, because fold() rewrites the
+// Products absent from the family's own order history. Folded form, because fold() rewrites
 // Danish letters before the comparison. A recipe that asks for one of these is odd for
 // two adults and a small child, and the odd item is not put in the basket.
 const ODD_WORDS = ["capers", "kapers", "bla ost", "gorgonzola", "roquefort", "stilton", "prosciutto", "nduja", "ymer", "kvaerk", "quinoa", "kamut", "kikaerter", "linser", "granataeble", "feta", "lyonnais", "chioggia", "røget ost", "vindruer", "truffel", "trøffel", "vafrer", "røgede oste"];

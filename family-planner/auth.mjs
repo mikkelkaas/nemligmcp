@@ -21,7 +21,7 @@ function baseHeaders() {
   return {
     Accept: "application/json, text/plain, */*",
     "Accept-Language": "da-DK,da;q=0.9,en;q=0.8",
-    "User-Agent": "nemlig-family-planner/1.0 (+https://github.com/MarcoM-M/homeserver-iac)",
+    "User-Agent": "nemlig-family-planner/1.0 (+https://github.com/mikkelkaas/nemligmcp)",
     "Device-Size": "desktop",
     Platform: "web",
     Version: CLIENT_VERSION,

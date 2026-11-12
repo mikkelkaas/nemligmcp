@@ -429,10 +429,12 @@ test("a single-night format covers one day and the period is still filled", () =
   assert.ok(r.coveredDays >= 4);
 });
 
-test("an out-of-stock protein can be swapped by the profile's alt queries", () => {
-  const fam = loadFamily();
-  const rejer = fam.meat.rules.find((r) => r.id === "rejer");
-  assert.ok(rejer.alt.length >= 3);
+test("an out-of-stock protein has more than one name to fall back on", () => {
+  // The fixture, not a real profile: a clone carries none, so this threw there.
+  const fam = demoFamily();
+  const swappable = fam.meat.rules.filter((r) => r.alt.length > 0);
+  assert.ok(swappable.length >= 2, "a profile with no alternatives cannot swap a sold-out protein");
+  assert.ok(swappable.every((r) => r.alt.length >= 2), `${fam.name} names one fallback at most somewhere`);
 });
 
 // --- measures, not pack counts: 1 pære is not a 1 kg bag --------------------------

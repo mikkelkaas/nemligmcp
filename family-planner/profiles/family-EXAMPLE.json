@@ -1,11 +1,14 @@
 {
-  "_readme": "Example only. Copy nothing from this file by hand: run node init-family.mjs --name <your-name> --adults 2 --children 1 --days 8 and it writes profiles/family-<your-name>.json from YOUR orders. Every key here is what that command fills in, so you know what to look for and what is yours to change.",
+  "_readme": "Example only. Copy nothing from this file by hand: run node init-family.mjs --name <your-name> --adults <n> --children <n> --days <n> and it writes profiles/family-<your-name>.json from YOUR orders. Every key here is a key the planner reads, so you know what to look for. The _note lines say which numbers the miners measure and which are yours to change.",
   "schemaVersion": 1,
   "name": "family-example",
   "at": "2026-11-11",
-  "edited": "Marco, 2026-11-11",
+  "edited": "you, 2026-11-11",
   "household": {
-    "_note": "members are who eats and how much; appetite 1.0 is an adult, 0.6 a 3-year-old, 1.2 a teenager.",
+    "_note": "timezone is where the planner counts days; who eats and how much is under dinners.members.",
+    "timezone": "Europe/Copenhagen"
+  },
+  "dinners": {
     "members": [
       {
         "role": "adult",
@@ -18,9 +21,7 @@
         "appetite": 0.6
       }
     ],
-    "timezone": "Europe/Copenhagen"
-  },
-  "dinners": {
+    "_members_note": "appetite 1.0 is an adult, 0.6 a small child, 1.2 a teenager; the planner sums count x appetite for the portions a night.",
     "servingsPerDinner": "derived: members x appetite x nights",
     "maxRecipeMinutes": 30,
     "preferLeftovers": true,
@@ -139,7 +140,7 @@
       "fat": "lean mince: 8-12% for beef and pork, 7-10% for poultry; never buy the 19-23% mince",
       "quality": "no organic premium unless it is within 10% of the conventional price per kg",
       "cut": "the cut we buy is the cheap one per kg: chicken breast instead of tenderloin, dark fish fillet instead of salmon, unless salmon is on sale",
-      "child": "no whole bones in a dinner for the 3-year-old: mince, fillet or strips only"
+      "child": "no whole bones in a dinner for a small child: mince, fillet or strips only"
     },
     "perProtein": {
       "_note": "buy / fatBands / maxKrPerKg / never, per protein, from your cart"

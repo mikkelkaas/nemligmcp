@@ -2,21 +2,90 @@
 
 ## Where this lives
 
-This folder is part of the Namlig MCP repository (`nemligmcp/family-planner/`). On this
-server it also answers to the older path `/opt/docker/scripts/nemlig`, which is a symlink
-to it. Credentials come from the `.env` the MCP container reads; `paths.mjs` finds it, and
-`NEMLIG_HOME` moves the whole folder somewhere else without an edit.
+This folder is part of the Namlig MCP repository (`nemligmcp/family-planner/`). Clone that
+repository and run the planner from this folder. On this host, for example, it also answers
+to the older path `/opt/docker/scripts/nemlig`, which is a symlink; a new host uses its own
+clone path and changes nothing. Credentials come from the `.env` the MCP server reads;
+`paths.mjs` finds it, and `NEMLIG_HOME` moves the whole folder somewhere else without an
+edit. Read "Environment variables" and "First run on another host" before your first plan.
 
-Nothing here needs installing: no `npm install`, the planner runs on plain Node.
+Nothing here needs installing: no `npm install`, the planner runs on plain Node. The planner
+needs two things that are not code: your own `.env` with your Nemlig login, and your own
+household profile in `profiles/`. Git ignores both, so a clone arrives with neither, and
+`node doctor.mjs` says exactly that. If anything fails, run `node doctor.mjs` first: one line
+per check, and the command that answers it.
+
+## Environment variables
+
+The table lists every name the code reads, with the place that reads it. A value from a
+`.env` is never printed by any script here. `NEMLIG_USER` and `NEMLIG_PASS` are read from
+the `.env` file by `auth.mjs`; the others come from the process environment.
+
+| Name | Read by | Default | Purpose |
+|---|---|---|---|
+| `NEMLIG_HOME` | planner, `paths.mjs:18` | the folder `paths.mjs` lives in | moves the planner home (`data/`, `profiles/`) |
+| `NEMLIG_ENV` | planner, `paths.mjs:35` | unset, then the search order below | points at one `.env` file |
+| `NEMLIG_MCP_URL` | planner, `lib.mjs:48,77` | unset, then the two candidates in `lib.mjs:13` | base URL of the MCP endpoint, for example `http://127.0.0.1:3900/mcp` |
+| `NEMLIG_USER` | planner `auth.mjs:116`; server `src/config.ts:38` | unset | login name; unset means anonymous mode upstream |
+| `NEMLIG_PASS` | planner `auth.mjs:117`; server `src/config.ts:39` | unset | the password; never printed |
+| `MCP_SECRET` | planner `lib.mjs:49`; server `src/http.ts:26` | unset | the endpoint path secret; at least 32 characters |
+| `NEMLIG_CONCURRENCY` | planner, `lib.mjs:445` | 4, clamped 1-8 | calls in flight to the shop |
+| `NEMLIG_MAX_MINUTES` | planner, `plan.mjs:634` | 15 | wall clock a run may take; `--max-minutes` wins |
+| `NEMLIG_MAX_CALLS` | planner, `plan.mjs:555` | 400 | calls one run may make |
+| `NEMLIG_FAMILY_PROFILE` | planner, `family.mjs:23` | unset | which `profiles/family-*.json` to load |
+| `NEMLIG_CONTAINER` | planner, `lib.mjs:19` | `nemligmcp` | container name the endpoint probe asks Docker about |
+| `NEMLIG_NET` | planner, `lib.mjs:20` | `docker_infra_net` | Docker network that name lives on |
+
+On this host, for example, the probe finds the container by name; a new host that does not
+run Docker gets one `warn:` line and the HTTP candidates decide. The server's own transport
+switches are `MCP_TRANSPORT`, `MCP_HTTP_PORT` or `PORT`, `MCP_HTTP_HOST` and
+`MCP_ALLOW_UNAUTHENTICATED`, all in `src/http.ts:22-32`, and the upstream README documents
+them.
+
+## First run on another host
+
+1. Install Node 20 or newer. Upstream `package.json` states engines `>=20` and its
+   `Dockerfile` runs `node:22-alpine`. `--test-name-pattern`, used in `test/golden.test.mjs:14`,
+   needs at least Node 18.11, so an older Node loses one documented command.
+2. Copy the credential template: `cp .env.example .env` in the repository root. Fill it with
+   the names in the table above: a name no code reads is accepted silently, so check each one
+   there. `MCP_SECRET` needs at least 32 characters: `openssl rand -hex 32` gives one. The
+   server refuses a shorter one (`src/http.ts:27`), and so does the planner (`lib.mjs:50`).
+3. Run the offline suite before you trust anything else: `node --test test/*.test.mjs`. It
+   needs no login, no shop and no container.
+4. Run the golden set the same way: `node --test test/golden.test.mjs`. It starts its own stub
+   shop on loopback. Before the first run, write its baseline:
+   `node tools/golden-baseline.mjs --write`.
+5. `.env` may live in four places, and `paths.mjs:34-39` takes the first that exists: the file
+   `NEMLIG_ENV` names, `<planner>/.env`, the repository root above it, and on this host for
+   example `/opt/docker/.env`. Git ignores every `.env`: `.gitignore` lists it.
+6. Run the server with the upstream `compose.yaml`. It joins an external Docker network named
+   `npm_default`, which must exist already: create it with `docker network create npm_default`,
+   or point `PROXY_NETWORK` at a network you have. Without it, Compose stops before any
+   container starts, with a message such as `network npm_default ... could not be found`.
+   If the endpoint is not on container DNS, set `NEMLIG_MCP_URL` to where it runs.
+7. Build your profile from your own orders, then check and plan:
+
+   ```bash
+   node mine-history.mjs && node mine-recipes.mjs && node mine-recipes-fetch.mjs
+   node mine-recipes-analyze.mjs      # init-family.mjs reads what these four write
+   node init-family.mjs --name <your-name> --adults 2 --children 2
+   node doctor.mjs                    # one line per check; exit 1 when something blocks
+   node plan.mjs --days 8
+   ```
+
+   `node doctor.mjs --online` also probes the server (one `GET /healthz`), and
+   `node doctor.mjs --json` gives the same findings as one object. "One profile to tweak"
+   lists the miners in full.
 
 ## Recipe cards in the basket
 
 `node recipes.mjs` adds the dinner recipe itself to the basket, so the card is openable in
 the Namlig app while you cook. `POST /webapi/basket/AddRecipeToBasket` with
-`{ RecipeId: "<guid>", NumberOfPeople: 5 }`; `GetBasket` then returns the card under
-`Recipes[]` with Namlig's own `RecipeLineItems`. The GUID comes from `search_products`,
-never from the recipe URL - the URL only holds the Umbraco number, which the endpoint
-rejects. The run is a dry run until `--write --approve I-APPROVE-THIS-BASKET`.
+`{ RecipeId: "<guid>", NumberOfPeople: <portions a night> }`. `GetBasket` then returns the
+card under `Recipes[]` with Namlig's own `RecipeLineItems`. The GUID comes from
+`search_products`, never from the recipe URL - the URL only holds the Umbraco number, which
+the endpoint rejects. The run is a dry run until `--write --approve I-APPROVE-THIS-BASKET`.
 
 Order matters: add the card, then `apply.mjs` overwrites the quantities. `AddToBasket` sets
 an absolute quantity, so a plan line replaces the recipe's line instead of doubling it, and
@@ -25,17 +94,20 @@ that upstream needs (`add_recipe_to_basket` in `src/api/basket.ts`).
 
 # Nemlig basket planner
 
-Deterministic 7-8 day basket planner for namely.com (5 people, 30-minute recipes,
-cheapest option). Skill entry point: `skill/SKILL.md`.
+Deterministic 7-8 day basket planner for namely.com (your household, recipes of the
+profile's `dinners.maxRecipeMinutes` or less, cheapest option). Skill entry point:
+`skill/SKILL.md`.
 
-Credentials: `NEMLIG_USER` / `NEMLIG_PASS` in `/opt/docker/.env`, read by the
-`nemligmcp` container. No script here prints them. `lib.mjs` finds the MCP endpoint
-from `/opt/docker/.env` (`MCP_SECRET`, `HOST_IP`).
+Credentials: `NEMLIG_USER` / `NEMLIG_PASS` in the `.env` the MCP server reads. On this host,
+for example, that is `/opt/docker/.env`, read by the container `nemligmcp`; a new host puts
+them in any `.env` `paths.mjs` finds. No script here prints them. `lib.mjs` needs
+`MCP_SECRET` from that file, and picks the MCP endpoint from `NEMLIG_MCP_URL` or its two
+candidates.
 
 ## Run it
 
 ```bash
-cd /opt/docker/scripts/nemlig
+cd <your-clone>/family-planner    # on this host, for example: /opt/docker/scripts/nemlig
 node plan.mjs --days 8 --breakfast yes --lunchbox yes --snacks no --household auto
 node slots.mjs --days 8                       # which timeslot, and what it costs
 node apply.mjs --plan data/plans/plan-latest.json --approve I-APPROVE-THIS-BASKET --slot <id>
@@ -60,13 +132,19 @@ and it refuses to run without `--approve I-APPROVE-THIS-BASKET`.
 
 ## Profiles (edit these, they are the memory)
 
-- `profiles/household.json` — 5 people, 3-year-old lunch box, 1500 kr soft cap,
-  `neverClearBasket`, delivery preference (15-21 window, søn/man/tir, min 3 t).
+Everything here is built from your own order history, and `.gitignore` keeps all of it out
+of git except `profiles/family-EXAMPLE.json`. A clone therefore arrives with no profile:
+write yours with `init-family.mjs`, as "One profile to tweak" describes.
+
+- `profiles/family-<name>.json` — the file you edit: who eats and how much, the soft budget
+  in `budget.softCapKr`, `basket.neverClearBasket`, and the delivery preference (window,
+  weekdays, `delivery.minWindowHours`). `profiles/family-EXAMPLE.json` shows the shape.
 - `profiles/pantry.json` — rebuy staples per block: `breakfast`, `kidLunchbox`,
   `snacks`, `household`. Each item has `query`, `qtyPerCycle`, `everyNDays`, `mode`
   (`cheapest` or `history`), optional `sku` and `alt`.
-- `profiles/dinners.json` — 6 dinner cores learned from the history, each ≤ 30 min,
-  covering 2 days for 5 people, with `query`, `need` and optional `alt` per ingredient.
+- `profiles/dinners.json` — the dinner cores your history supports, each within the
+  profile's `dinners.maxRecipeMinutes`, each covering `dinners.maxNightsPerDinner` evenings
+  for your household's portions, with `query`, `need` and optional `alt` per ingredient.
 
 Stock-cycle gate: an item with `everyNDays` is skipped when `data/staples.json`
 shows it was bought more recently than the cycle. The gate looks up the pinned `sku`
@@ -112,7 +190,8 @@ anyone keeping a list.
   always wins, so "saltet" smør stays fresh even though "salt" is in the other list.
   `tieBreakKr` (3): a difference under that goes to the offer on sale, then to the one
   that wastes least.
-- `minNameScore` (0,7) is how sure the planner must be that a shelf name is the product
+- `minNameScore` (default 0,7, `family.mjs:144`) is how sure the planner must be that a
+  shelf name is the product
   the recipe asked for: the share of the query's words the name has to contain. Lower
   accepts closer names, higher blocks more lines into the plan's `NOT FOUND` list. The
   plan prints the best name and score it saw, so a blocked line is a decision you can
@@ -147,17 +226,18 @@ anyone keeping a list.
 
 ## Dinners (`profiles/dinners.json`)
 
-Five cores, each a warm evening meal for 5 covering 2 days: `pasta-bolognese`,
-`kyllingcurry-ris`, `fiskefrikadeller`, `pizza-dej`, `tortellini-floede`.
-Cold bread toppings (makrelsalat, spegepølse, ost) are lunch-box items in
-`pantry.json` — they were moved out of the dinner list on 2026-11-11 after Marco
-pointed out that a mackerel salad is not evening food.
+The cores are the meals your history supports, one warm evening meal each. A core covers
+`dinners.maxNightsPerDinner` evenings for your household's portions, and `--cores` plans from
+this list instead of the rotation.
+
+A cold bread topping is not evening food, so `pantry.json` holds those items as lunch-box
+lines instead: no one cooks a fish salad for dinner.
 
 ## Guarantees and known limits
 
 - Delivery slots whose deadline has passed are dropped before ranking (Copenhagen
   wall clock, because Namlig sends deadlines without a time zone). Slots shorter than
-  `deliveryPreference.minWindowHours` are dropped too, unless nothing else is open.
+  the profile's `delivery.minWindowHours` are dropped too, unless nothing else is open.
 - Quantities sent to Namlig are absolute and take the larger of basket vs plan, so a
   plan never removes an app addition.
 - Every add is verified against a fresh `get_basket`; a mismatch is reported, not hidden.
@@ -189,27 +269,29 @@ pointed out that a mackerel salad is not evening food.
   gate, 1,6 s when the 24 h price cache answers 46 of 52 intents.
 - If a name has no in-stock match, the intent lands in `unresolved` and `apply.mjs`
   refuses until it is fixed or passed with `--ignore-unresolved`.
-- Verified: 8-day dry run on 2026-11-11 → 51 products, 1113,49 kr, 0 unresolved,
-  basket untouched. Not verified: a real `apply.mjs` run (no basket write has been made).
+- Verified: an 8-day dry run finished with 0 unresolved lines and the basket untouched.
+  Not verified on your account: a real `apply.mjs` run writes the basket.
 
 ## Refresh
 
 ```bash
 node mine-history.mjs            # after 5+ new orders
 node pin-skus.mjs --write        # re-pin favourite SKUs
-node --test test/*.test.mjs      # 70 cases, incl. a stubbed search (no network)
+node --test test/*.test.mjs      # the suite, incl. a stubbed search (no network)
 rm -f data/product-cache.json    # if prices or ranges look stale
+node doctor.mjs                  # one line per check, and the command that answers it
 ```
 
 ## One profile to tweak
 
-`profiles/family-of-3.json` is the only file a family edits. It holds who you shop for,
+`profiles/family-<your-name>.json` is the only file a family edits. `profiles/family-EXAMPLE.json`
+shows its shape, and git ignores the real one. It holds who you shop for,
 portions per dinner, the soft budget, the rotation rules, the basket policy, the delivery
 preference, the fat band and kr-per-kg ceiling per protein, and the three recipe filters
 (fresh herbs, pantry staples, never-bought items) with their word lists. `family.mjs` reads
 it and hands the rest of the planner the shapes it already knows, so the profile always
 wins. `plan.mjs`, `apply.mjs` and `slots.mjs` print the profile they used; `--family of-4`
-picks another one when several exist.
+picks another one when several exist, and `NEMLIG_FAMILY_PROFILE` picks one for every script.
 
 The other files in `profiles/` are generated data with the evidence next to the numbers, and
 you leave them alone: `amounts.json` (mined quantities), `recipe-pool.json` (the rotation),
@@ -219,11 +301,17 @@ you leave them alone: `amounts.json` (mined quantities), `recipe-pool.json` (the
 A new family gets their own profile like this, in this order:
 
 ```bash
+cp .env.example .env                       # your login, your MCP_SECRET: see "First run"
 node mine-history.mjs && node mine-recipes.mjs && node mine-recipes-fetch.mjs
 node mine-recipes-analyze.mjs            # their own orders, so their own history first
-node init-family.mjs --name family-of-4 --adults 2 --children 2 --days 8
-node plan.mjs --family of-4 --days 8     # dry run
+node init-family.mjs --name <your-name> --adults 2 --children 2 --days 8
+node doctor.mjs                          # one line per check; exit 1 when something blocks
+node plan.mjs --family <your-name> --days 8   # dry run
 ```
+
+`init-family.mjs` reads only what those four miners write, so it fails until they have run.
+Its flags are `--name` (needed), `--adults`, `--children`, `--days`, `--timezone`,
+`--max-minutes` and `--force`; `--force` rewrites a profile that already exists.
 
 `init-family.mjs` fills the profile from the numbers it can measure - portions, the soft cap
 from the median order and the gap between orders, the fat percentage and the 75th-percentile
@@ -234,24 +322,31 @@ words the family's own history contradicts.
 
 ## Recipe rotation
 
-One dinner is cooked once and eaten twice, so a plan buys 5 servings for a household of
-2 adults and 1 child. `profiles/recipe-pool.json` holds 21 dinners: 13 this family has
-ordered before and 8 new ones from Namlig's recipes of 30 minutes or less. `plan.mjs`
-takes them in rotation, least recently cooked first, alternating a new dish with a known
-one, at most 2 dinners per protein and at least one fish dish in an 8-day plan.
+One dinner is cooked once and eaten twice, so the servings a plan buys come from the
+profile: `dinners.members` with their appetites, times the evenings in
+`dinners.maxNightsPerDinner`. `profiles/recipe-pool.json` holds the pool: `rotation.poolSize`
+dinners, split between the dishes your history already knows and new ones from Namlig's
+recipes of `dinners.maxRecipeMinutes` or less. `plan.mjs` takes them in rotation, least
+recently cooked first, alternating a new dish with a known one, at most
+`rotation.maxPerProtein` dinners per protein and at least `rotation.minFishDishes` fish dish
+in the plan.
 
 Rebuild the generated data with these, in this order, about once a month:
 
 ```bash
 node mine-history.mjs            # order history to data/staples.json + profiles/pantry.json
 node mine-recipes.mjs            # every order's raw lines, recipe lines included
-node mine-recipes-fetch.mjs      # the recipe page of every recipe we have ordered
-node mine-recipes-analyze.mjs    # recipe ingredients vs what we actually bought
+node mine-recipes-fetch.mjs      # the recipe page of every recipe you have ordered
+node mine-recipes-analyze.mjs    # recipe ingredients vs what you actually bought
 node mine-recipe-pool.mjs        # Namlig's quick main dishes, with ingredients
 node pick-recipe-pool.mjs        # score them and write profiles/recipe-pool.json
-node mine-amounts.mjs            # amounts per basket and per dinner, from 66 orders
-node init-family.mjs --family-of-3 --force   # refresh the measured knobs, keep the taste
+node mine-amounts.mjs            # amounts per basket and per dinner, from your own orders
+node init-family.mjs --name <your-name> --adults 2 --children 2 --days 8 --force
+                                 # refresh the measured knobs, keep the taste
 ```
+
+Each step reads what the step before it wrote: `pick-recipe-pool.mjs` needs the candidates
+`mine-recipe-pool.mjs` collected, and `mine-amounts.mjs` needs the pool.
 
 The clash rule lives in `similarity.mjs`: two dishes are the same dinner when the FORMAT
 (spaghetti, pasta salad, noodles, pizza, wrap, rice, potato, stew, tray bake) and the PROTEIN
@@ -262,9 +357,10 @@ one period. The protein comes from the dish name three times over the tags and o
 ingredients, so a single "Rejer" line cannot turn "Nudler med kylling" into a fish dish.
 
 - `profiles/meat.json` answers a recipe's protein with the fat band and the cheap cut per
-  kg this family uses, and refuses anything above a kr-per-kg ceiling.
-- `profiles/exclusions.json` leaves out fresh herbs (Marco's rule), pantry staples such as
-  salt and oil, and products absent from 66 orders. What is left out is named in the plan.
+  kg your profile records, and refuses anything above a kr-per-kg ceiling.
+- `profiles/exclusions.json` leaves out fresh herbs when your profile says you do not cook
+  with them, pantry staples such as salt and oil, and products absent from your own order
+  history. What is left out is named in the plan.
   Dried spices belong to the same list (paprika, spidskommen, gurkemeje, kanel, oregano):
   the cupboard has them, and when it does not, `--extra "Oregano:1 pk"` buys them once.
   `queryAsides` adds words that open a second choice inside a recipe line ("Spinat
@@ -273,7 +369,7 @@ ingredients, so a single "Rejer" line cannot turn "Nudler med kylling" into a fi
 - `profiles/amounts.json` holds the mined amounts; every dinner line in the plan file
   prints the arithmetic behind its quantity.
 - `data/rotation.json` is written by `apply.mjs` after a successful write, so a dry run
-  never consumes the rotation. `--cores` goes back to the five pinned cores in
+  never consumes the rotation. `--cores` goes back to the pinned cores in
   `profiles/dinners.json`; `--covers 2`, `--max-per-protein 2` and `--dinners <name>`
   steer the rotation.
 

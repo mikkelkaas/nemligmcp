@@ -17,7 +17,7 @@ Nothing in the chain is a fixed constant. Each step reads the step before it.
 
 ## 1. Household: portions, not heads
 
-`household.members` lists who eats and how much:
+The profile lists who eats and how much, under `dinners.members` (`family.mjs:72`):
 
 ```json
 "members": [ { "role": "adult", "count": 2, "appetite": 1.0 },
@@ -27,6 +27,9 @@ Nothing in the chain is a fixed constant. Each step reads the step before it.
 2 x 1.0 + 1 x 0.6 = **2.6 portions a night**. A family with two teenagers is
 `[{adult,2,1.0},{teen,2,1.2}]` = 4.4. Appetite is the only diet knob that matters for
 quantity; what the family eats is handled by the exclusions and the meat rules.
+`init-family.mjs` writes the simpler `household.adults` plus `household.children` pair; the
+planner then derives portions a night from `dinners.servingsPerDinner` divided by
+`dinners.daysPerDinner` (`family.mjs:47-49`).
 
 ## 2. Dinners: nights, decided per dish
 
@@ -181,13 +184,22 @@ budget, rotation caps, meat rules and ceilings, the three recipe filters, the pa
 
 The code contains no customer names, no Danish product names and no fixed family size.
 Danish words live in the profile (exclusions, aliases, meat queries) or in the data the
-miners pull from the family's own orders. A new family:
+miners pull from the family's own orders. `test/hygiene.test.mjs` is the guard: it greps
+every tracked file for these patterns, so the sentence above is checked and not hoped for.
+Two collectors keep a word list of shelf names to filter out: `HERB_WORDS` and `PANTRY_WORDS`
+in `init-family.mjs`, `HERB_WORDS` and `ODD_WORDS` in `pick-recipe-pool.mjs`. Nothing in such
+a list is bought by name; it only says what a recipe line must not become.
+
+A new family, in the order the scripts need. Each step reads what the step before it wrote,
+and the first three need the shop, so read the `.env` rows in `README.md` first:
 
 ```bash
+cp .env.example .env              # your login and your own MCP_SECRET
 node mine-history.mjs && node mine-recipes.mjs && node mine-recipes-fetch.mjs
 node mine-recipes-analyze.mjs
-node init-family.mjs --name family-of-4 --adults 2 --children 2 --days 8
-node plan.mjs --family of-4 --days 8
+node init-family.mjs --name <your-name> --adults 2 --children 2 --days 8
+node doctor.mjs                   # one line per check; exit 1 when something blocks
+node plan.mjs --family <your-name> --days 8
 node refresh.mjs            # after shopping twice from a plan: re-read the orders, learn from them
 ```
 
