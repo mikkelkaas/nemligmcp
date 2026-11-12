@@ -1,0 +1,162 @@
+{
+  "_readme": "Example only. Copy nothing from this file by hand: run node init-family.mjs --name <your-name> --adults 2 --children 1 --days 8 and it writes profiles/family-<your-name>.json from YOUR orders. Every key here is what that command fills in, so you know what to look for and what is yours to change.",
+  "schemaVersion": 1,
+  "name": "family-example",
+  "at": "2026-11-11",
+  "edited": "Marco, 2026-11-11",
+  "household": {
+    "_note": "members are who eats and how much; appetite 1.0 is an adult, 0.6 a 3-year-old, 1.2 a teenager.",
+    "members": [
+      {
+        "role": "adult",
+        "count": 2,
+        "appetite": 1.0
+      },
+      {
+        "role": "child",
+        "count": 1,
+        "appetite": 0.6
+      }
+    ],
+    "timezone": "Europe/Copenhagen"
+  },
+  "dinners": {
+    "servingsPerDinner": "derived: members x appetite x nights",
+    "maxRecipeMinutes": 30,
+    "preferLeftovers": true,
+    "maxNightsPerDinner": 2,
+    "reheatByFormat": {
+      "gryde": "great",
+      "suppe": "great",
+      "fad": "great",
+      "pasta": "ok",
+      "pizza": "fresh",
+      "aeg": "fresh"
+    },
+    "nightsOverride": {}
+  },
+  "budget": {
+    "currency": "DKK",
+    "softCapKr": "median order x orders per period",
+    "maxDaysPerPlan": 8
+  },
+  "rotation": {
+    "poolSize": 21,
+    "maxPerProtein": 2,
+    "minFishDishes": 1,
+    "alternateNewAndKnown": true,
+    "neverTwoVariantsOfTheSameDinner": true
+  },
+  "learning": {
+    "enabled": true,
+    "minObservations": 2,
+    "maxQuantityFactor": 2,
+    "autoAddMissing": true,
+    "exploration": {
+      "cooldownTimes": 3,
+      "cooldownDays": 42
+    },
+    "_note": "learn.mjs compares each plan with the basket that followed it. Nothing here is edited by it; it writes profiles/learned.json, which your profile always outranks."
+  },
+  "basket": {
+    "mode": "keep-and-top-up",
+    "neverClearBasket": true,
+    "existingQuantityRule": "max(existing, planned) except for a line that came with a recipe card, which the plan overwrites",
+    "checkout": "basket-and-slot-only",
+    "preferSale": true,
+    "saleTolerancePct": 10,
+    "recipeCards": true,
+    "_note": "The same basket is shared with the phone app, so nothing is ever deleted automatically."
+  },
+  "purchasing": {
+    "_note": "How a pack is chosen. The planner covers the need for the lowest TOTAL price, never for the best price per unit. A food that keeps may overrun the need by a lot, because the price rule already stops it from costing more; fresh food may only overrun it by overshootPctFresh.",
+    "overshootPctFresh": 25,
+    "overshootPctStable": 400,
+    "tieBreakKr": 3,
+    "stableWords": [
+      "æg",
+      "ris",
+      "pasta",
+      "mel",
+      "sukker",
+      "kaffe",
+      "the",
+      "pulver",
+      "konserves",
+      "tørret",
+      "toilet",
+      "køkkenrulle",
+      "serviet",
+      "sæbe",
+      "fryse",
+      "bouillon",
+      "havregryn"
+    ],
+    "_stableWords_note": "Words in a product name that mean extra of it is not waste. Eggs keep for weeks, so 15 bought for a need of 12 is a saving; 400 g of salmon for 300 g needed is waste. Matching is by substring, so freshWords are checked FIRST and always win: 'salt' would otherwise read inside 'saltet' and call butter a keepsake. Anything neither list names is treated as fresh.",
+    "freshWords": [
+      "mælk",
+      "fløde",
+      "smør",
+      "yoghurt",
+      "ost",
+      "fisk",
+      "laks",
+      "ørken",
+      "rejer",
+      "musling",
+      "filet",
+      "hakket",
+      "kogt",
+      "stegt",
+      "spinat",
+      "salat",
+      "urter",
+      "persille",
+      "dild",
+      "agurk",
+      "tomat",
+      "peberfrugt",
+      "svamp",
+      "avocado",
+      "banan",
+      "æble",
+      "pære",
+      "melon"
+    ],
+    "maxOverrunFreshMl": 150,
+    "_maxOverrunFreshMl_note": "A little extra of a fresh thing is not waste: 40 g of curry powder for a need of 50 g is cheaper than the smaller pack, 400 g of extra salmon is not. Grams and millilitres both count."
+  },
+  "delivery": {
+    "minWindowHours": 3,
+    "deliveryType": "attended",
+    "pricePriority": "cheap-over-time"
+  },
+  "meat": {
+    "rule": {
+      "always": "compare price per kg (Namlig UnitPriceCalc), not the pack price",
+      "fat": "lean mince: 8-12% for beef and pork, 7-10% for poultry; never buy the 19-23% mince",
+      "quality": "no organic premium unless it is within 10% of the conventional price per kg",
+      "cut": "the cut we buy is the cheap one per kg: chicken breast instead of tenderloin, dark fish fillet instead of salmon, unless salmon is on sale",
+      "child": "no whole bones in a dinner for the 3-year-old: mince, fillet or strips only"
+    },
+    "perProtein": {
+      "_note": "buy / fatBands / maxKrPerKg / never, per protein, from your cart"
+    },
+    "priceRule": "always compare price per kg, never the pack price"
+  },
+  "exclusions": {
+    "freshHerbs": "never buy the fresh herbs a recipe asks for",
+    "herbWords": [
+      "fill in"
+    ],
+    "pantryWords": [
+      "fill in"
+    ],
+    "neverBought": [
+      "fill in"
+    ],
+    "queryAliases": {},
+    "_open": "yours to answer"
+  },
+  "neverBuy": []
+}

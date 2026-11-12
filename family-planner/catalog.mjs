@@ -1,0 +1,293 @@
+#!/usr/bin/env node
+// catalog.mjs — turn a shopping intent into one concrete Namlig product.
+//
+// Two modes:
+//   history (default for staples)  prefer the exact sku this family always buys;
+//                                  fall back to cheapest when that sku is gone.
+//   cheapest (default for recipe ingredients) lowest price per base unit.
+//
+// Results are cached in data/product-cache.json for CACHE_TTL hours so a repeat
+// run does not re-query the same 60 searches.
+//
+// CLI:
+//   node catalog.mjs search "<query>" [--take 12]
+//   node catalog.mjs pick "<query>" [--need 300g] [--mode cheapest|history] [--sku 5053034]
+// Everything prints JSON. Only read-only MCP tools are used (search_products).
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { connect, sleep } from "./lib.mjs";
+import { parsePack, packsFor, cheapest, choosePack, pieceGrams } from "./units.mjs";
+import { nameMatches, norm, tokens, score as nameScore } from "./match.mjs";
+
+import { CACHE_PATH } from "./paths.mjs";
+const CACHE_TTL_H = 24;
+const SEARCH_DELAY_MS = 250;
+const CALL_TIMEOUT = 45000;
+const NEED_RE = /^(\d+(?:[.,]\d+)?)\s*(kg|g|l|ml|stk|styk|dåse|dåser|flaske|fl|pose|pos|karton|skive|skiver|glas|bakke|bundt|bdt|rl|ruller)?$/i;
+
+/** "300g" -> { qty: 300, unit: "g" }. null when unparseable. */
+export function parseNeed(text) {
+  if (!text) return null;
+  const m = NEED_RE.exec(String(text).trim());
+  if (!m) return null;
+  const qty = Number(String(m[1]).replace(",", "."));
+  if (!Number.isFinite(qty) || qty <= 0) return null;
+  const unit = (m[2] || "stk").toLowerCase();
+  const alias = { styk: "stk", fl: "flaske", pos: "pose", bdt: "bundt", rl: "stk", dåser: "dåse" };
+  return { qty, unit: alias[unit] || unit };
+}
+
+/** Map a raw Namlig search product to the shape the planner uses. */
+export function mapProduct(p) {
+  return {
+    id: String(p.Id ?? ""),
+    name: String(p.Name ?? "").trim(),
+    brand: p.Brand ?? "",
+    price: Number(p.Price ?? 0),
+    unitPrice: Number(p.UnitPriceCalc ?? 0),
+    unitLabel: p.UnitPriceLabel ?? "",
+    description: String(p.Description ?? ""),
+    pack: parsePack(p.Description),
+    url: p.Url ?? "",
+    mainGroup: p.ProductMainGroupName ?? "",
+    subGroup: p.ProductSubGroupName ?? "",
+    availability: p.Availability || {},
+    labels: p.Labels || [],
+    favorite: !!p.Favorite,
+    onSale: saleFlag(p),
+    saleLabels: (p.Labels || []).filter((l) => /discount|prisfald|tilbud|kampagne/i.test(String(l))),
+    campaign: campaignOf(p),
+  };
+}
+
+/** Namlig marks a discounted product with DiscountItem and a Discount/Prisfald label. */
+function saleFlag(p) {
+  if (p.DiscountItem === true) return true;
+  return (p.Labels || []).some((l) => /discount|prisfald|tilbud|kampagne/i.test(String(l)));
+}
+
+/** A campaign only bites at a minimum quantity: "5 stk for 39 kr". Keep the numbers. */
+function campaignOf(p) {
+  const c = p.Campaign;
+  if (!c || typeof c !== "object") return null;
+  const min = Number(c.MinQuantity || 0);
+  const total = Number(c.TotalPrice ?? c.CampaignPrice ?? 0);
+  if (!Number.isFinite(min) || min <= 0 || !Number.isFinite(total) || total <= 0) return null;
+  return { min, totalPrice: total, type: String(c.Type || c.Attribute || "") };
+}
+
+export function loadCache(path = CACHE_PATH) {
+  try {
+    const j = JSON.parse(readFileSync(path, "utf8"));
+    return j && typeof j === "object" ? j : {};
+  } catch {
+    return {};
+  }
+}
+
+export function saveCache(cache, path = CACHE_PATH) {
+  mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
+  writeFileSync(path, JSON.stringify(cache, null, 1));
+}
+
+/** Run one search. Returns mapped products, from cache when fresh. */
+export async function search(mcp, query, { take = 12, cache = null, force = false } = {}) {
+  const key = norm(query) + "|" + take;
+  if (!force && cache) {
+    const c = cache[key];
+    if (c && Date.now() - c.ts < CACHE_TTL_H * 3600 * 1000) {
+      return { products: c.products, cached: true, ageMs: Date.now() - c.ts };
+    }
+  }
+  let r = await mcp.call("search_products", { query, take }, { timeoutMs: CALL_TIMEOUT });
+  if (r.isError) {
+    // One retry: a single 500 from the search backend must not kill a 60-intent plan.
+    await sleep(1500);
+    r = await mcp.call("search_products", { query, take }, { timeoutMs: CALL_TIMEOUT });
+    if (r.isError) throw new Error(`search "${query}" failed twice: ${r.text.slice(0, 160)}`);
+  }
+  const list = (r.json && r.json.Products && r.json.Products.Products) || [];
+  const products = list.map(mapProduct);
+  if (cache) {
+    cache[key] = { ts: Date.now(), products };
+    await sleep(SEARCH_DELAY_MS);
+  }
+  return { products, cached: false, ageMs: 0 };
+}
+
+/**
+ * Resolve one intent to one product.
+ * intent: { query, need?, mode?, sku?, avoidBrands?, avoidWords?, maxUnitPrice? }
+ * Returns { ok, pick, packs, need, why, candidates, alternatives }
+ */
+export async function resolveIntent(mcp, intent, { cache = null } = {}) {
+  const primary = String(intent.query || intent.name || "").trim();
+  if (!primary) return { ok: false, why: "empty query" };
+  const tries = [primary, ...(intent.alt || [])].map((q) => String(q || "").trim()).filter(Boolean);
+  const notes = [];
+  let substitution = null;
+  let candidates = 0;
+  for (const query of tries) {
+    const r = await attempt(mcp, query, intent, cache);
+    if (r.ok) {
+      if (query !== primary) {
+        r.why = `swapped from "${primary}" to the profile alt "${query}": ` + r.why;
+        r.substitutedFrom = primary;
+      }
+      return r;
+    }
+    notes.push(`${query} -> ${r.why}`);
+    if (!substitution && r.substitution) substitution = r.substitution;
+    candidates = Math.max(candidates, Number(r.candidates) || 0);
+  }
+  // The proposal survives to the plan file: Marco approves it with the printed --extra flag.
+  return { ok: false, query: primary, why: notes.join(" | "), candidates, attempts: tries.length, substitution };
+}
+
+/** One search, one selection. Returns ok:false with a reason instead of throwing. */
+async function attempt(mcp, query, intent, cache) {
+  const mode = intent.mode || "cheapest";
+  const { products, cached, ageMs } = await search(mcp, query, { take: intent.take || 12, cache, force: !!intent.force });
+  if (products.length === 0) return { ok: false, query, why: "search returned nothing", candidates: 0 };
+  const matching = products.filter((p) => nameMatches(query, p.name));
+  if (matching.length === 0) {
+    const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name)})`).join(", ");
+    return { ok: false, query, why: `no result passed the name match (best: ${top})`, candidates: products.length };
+  }
+  const need = intent.need ? (typeof intent.need === "string" ? parseNeed(intent.need) : intent.need) : null;
+  const pinned = mode === "history" && intent.sku ? matching.find((p) => String(p.id) === String(intent.sku)) : null;
+  const pinMissed = mode === "history" && intent.sku && !pinned ? String(intent.sku) : null;
+  if (pinned) {
+    const packs = need ? packsFor(need, pinned.pack, { pieceGrams: pieceGrams(pinned.name), name: pinned.name }) : 1;
+    return {
+      ok: true, query, mode, pick: pickOf(pinned), packs, need,
+      total: Number((pinned.price * packs).toFixed(2)),
+      why: "family favourite sku, still in stock" + (pinned.onSale ? "; tilbud" : ""), compare: "sku-pin",
+      candidates: matching.length, cached, ageMs,
+      alternatives: matching.filter((p) => p.id !== pinned.id).slice(0, 3).map(altOf),
+    };
+  }
+  const res = cheapest(matching, {
+    avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
+    preferSale: intent.preferSale, saleTolerancePct: intent.saleTolerancePct,
+  });
+  if (!res.pick) {
+    const sub = await proposeSubstitute(mcp, query, intent, cache);
+    return { ok: false, query, why: "all " + matching.length + " name matches were unavailable" + (sub ? " - cheapest alternative found, see substitution" : ""),
+      candidates: matching.length, substitution: sub };
+  }
+  // One decision over the whole shelf, as a person does: cover the need for the lowest
+  // total price, with bounded slack. Falls back to ceil(need/pack) when the need cannot
+  // be compared with any pack on the shelf.
+  const bought = need && (res.pool || []).length > 0
+    ? choosePack(need, res.pool, { name: res.pick.name, ...(intent.purchasing || {}) })
+    : null;
+  const chosen = bought ? bought.candidate : res.pick;
+  const packs = bought ? bought.packs : (need ? packsFor(need, res.pick.pack, { pieceGrams: pieceGrams(res.pick.name), name: res.pick.name }) : 1);
+  // Warn only when the need was a weight/volume and the pack is a different scale.
+  // A need in pieces ("2 stk") is always satisfied as 2 packs, so it is not a mismatch.
+  const SCALE = new Set(["g", "kg", "ml", "l", "cl"]);
+  const mismatch = !bought && need && res.pick.pack.qty === null && SCALE.has(need.unit)
+    ? `pack size unreadable, bought ${packs} pack`
+    : !bought && need && SCALE.has(need.unit) && res.pick.pack.unit && SCALE.has(res.pick.pack.unit) && res.pick.pack.unit !== need.unit
+      ? `need ${need.qty} ${need.unit}, pack is ${res.pick.pack.qty} ${res.pick.pack.unit} - bought ${packs} pack`
+      : null;
+  const bits = [];
+  bits.push(mode === "history" && intent.sku ? `usual sku ${intent.sku} not offered today — cheapest option used` : "cheapest per unit");
+  if (res.saleNote) bits.push(res.saleNote);
+  if (bought) bits.push(bought.why);
+
+  const why = bits.join("; ");
+  return {
+    ok: true, query, mode, pick: pickOf(chosen), packs, need,
+    total: Number((chosen.price * packs).toFixed(2)),
+    why: mismatch ? why + "; " + mismatch : why,
+    compare: res.mode, candidates: matching.length, cached, ageMs, pinMissed, campaignTip: res.campaignTip || null,
+    alternatives: (res.alternatives || []).map(altOf),
+  };
+}
+
+/**
+ * Nothing in stock under this name: find the nearest product and PROPOSE it.
+ * A proposal is never added to the basket - Marco accepts it by re-running the
+ * plan with the printed --extra flag.
+ */
+async function proposeSubstitute(mcp, query, intent, cache) {
+  for (const q of substitutionQueries(query, intent.alt || [])) {
+    let products;
+    try {
+      ({ products } = await search(mcp, q, { take: 12, cache, force: false }));
+    } catch {
+      continue;
+    }
+    const pool = products.filter((p) => nameMatches(q, p.name));
+    const res = cheapest(pool, {
+      avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
+    preferSale: intent.preferSale, saleTolerancePct: intent.saleTolerancePct,
+    });
+    if (!res.pick) continue;
+    const need = intent.need ? parseNeed(intent.need) : null;
+    return {
+      query: q, sku: res.pick.id, name: res.pick.name, brand: res.pick.brand, price: res.pick.price,
+      unitPrice: res.pick.unitPrice, unitLabel: res.pick.unitLabel, onSale: !!res.pick.onSale,
+      packs: need ? packsFor(need, res.pick.pack) : 1,
+      accept: `--extra "${res.pick.name}:${intent.need || "1 stk"}"`,
+    };
+  }
+  return null;
+}
+
+/** Search strings for a substitute: the profile alts first, then the head noun. */
+function substitutionQueries(query, alt) {
+  const out = [...(alt || []), ...tokens(query).slice(0, 2), norm(query).split(" ")[0]];
+  return [...new Set(out.map((s) => String(s || "").trim()).filter(Boolean))].slice(0, 3);
+}
+
+function pickOf(p) {
+  return {
+    sku: p.id, name: p.name, brand: p.brand, price: p.price, unitPrice: p.unitPrice,
+    unitLabel: p.unitLabel, pack: p.pack, url: p.url, mainGroup: p.mainGroup, favorite: p.favorite,
+    onSale: !!p.onSale, saleLabels: p.saleLabels || [],
+  };
+}
+function altOf(a) {
+  return { sku: a.id, name: a.name, price: a.price, unitPrice: a.unitPrice };
+}
+function arg(name, dflt) {
+  const i = process.argv.indexOf("--" + name);
+  return i > -1 ? process.argv[i + 1] : dflt;
+}
+
+async function cli() {
+  const cmd = process.argv[2];
+  const q = process.argv[3];
+  if (!cmd || !q) {
+    console.log('usage: node catalog.mjs search "<query>" [--take N] | pick "<query>" [--need 300g] [--mode cheapest|history] [--sku S]');
+    process.exitCode = 2;
+    return;
+  }
+  const { mcp } = await connect();
+  const cache = loadCache();
+  if (cmd === "search") {
+    const r = await search(mcp, q, { take: Number(arg("take", "12")), cache });
+    saveCache(cache);
+    console.log(JSON.stringify(r.products.map((p) => ({
+      sku: p.id, name: p.name, brand: p.brand, price: p.price, unitPrice: p.unitPrice,
+      unitLabel: p.unitLabel, pack: p.pack.raw, available: p.availability.IsDeliveryAvailable && p.availability.IsAvailableInStock,
+    })), null, 1));
+    return;
+  }
+  if (cmd === "pick") {
+    const r = await resolveIntent(mcp, {
+      query: q, need: arg("need", null), mode: arg("mode", "cheapest"), sku: arg("sku", null),
+      avoidBrands: (arg("avoid", "") || "").split(",").filter(Boolean),
+    }, { cache });
+    saveCache(cache);
+    console.log(JSON.stringify(r, null, 1));
+    if (!r.ok) process.exitCode = 1;
+    return;
+  }
+  console.log("unknown command " + cmd);
+  process.exitCode = 2;
+}
+
+if (import.meta.url === "file://" + process.argv[1]) cli().catch((e) => { console.error("FAILED:", e.message); process.exitCode = 1; });

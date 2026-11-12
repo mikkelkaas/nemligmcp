@@ -1,0 +1,7 @@
+# Everything in here is generated from one family's own order history. It is their
+# shopping life, not part of the library, and it would bloat the repository.
+data/
+profiles/*.json
+!profiles/family-EXAMPLE.json
+.env
+*.log
