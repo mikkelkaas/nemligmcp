@@ -152,6 +152,21 @@ pointed out that a mackerel salad is not evening food.
   plan never removes an app addition.
 - Every add is verified against a fresh `get_basket`; a mismatch is reported, not hidden.
 - Matching is name-token based. A wrong pick shows in the plan table before apply — read it.
+- Shop traffic goes through one gate (`lib.mjs`): at most 4 calls at once, at least 120 ms
+  between two starts, exponential backoff when the shop pushes back, one lane after
+  trouble, and a breaker that ends the run after 8 failed calls. Tune it with
+  `NEMLIG_CONCURRENCY` (1-8), `--serial` (one call at a time, wider spacing) and
+  `--max-minutes` (default 15): a slow evening ends with a named reason, not a hang.
+- A write to the basket is never retried: a lost answer to an add must not come back as
+  two of the same product. Only reads are retried, with a bounded number of attempts.
+- `apply.mjs` reads the plan file as untrusted: product number shape, one line per
+  product, whole packs between 1 and 99, a plausible kr price, and totals that add up to
+  `planTotal` - any problem is a refusal with the list of lines. It then takes
+  `data/locks/apply.lock` so two runs cannot write the same basket, and every state file
+  (cache, rotation, plan, report) is written to a temp file and renamed, so a crash
+  cannot leave half a file behind.
+- Measured 2026-11-12, 8 days, one family: 45 s with one call at a time, 10 s through the
+  gate, 1,6 s when the 24 h price cache answers 46 of 52 intents.
 - If a name has no in-stock match, the intent lands in `unresolved` and `apply.mjs`
   refuses until it is fixed or passed with `--ignore-unresolved`.
 - Verified: 8-day dry run on 2026-11-11 → 51 products, 1113,49 kr, 0 unresolved,
@@ -162,7 +177,7 @@ pointed out that a mackerel salad is not evening food.
 ```bash
 node mine-history.mjs            # after 5+ new orders
 node pin-skus.mjs --write        # re-pin favourite SKUs
-node --test test/match.test.mjs  # 18 cases, incl. a stubbed search (no network)
+node --test test/*.test.mjs      # 70 cases, incl. a stubbed search (no network)
 rm -f data/product-cache.json    # if prices or ranges look stale
 ```
 

@@ -16,14 +16,14 @@
 // Output:
 //   data/plans/plan-<timestamp>.json + .md, and copies named plan-latest.{json,md}
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { connect } from "./lib.mjs";
+import { connect, loadEnv, Limiter, mapPool, readConcurrency } from "./lib.mjs";
 import { resolveIntent, parseNeed, loadCache, saveCache } from "./catalog.mjs";
 import { toBaseMeasure, choosePack } from "./units.mjs";
 import { chooseDinners, recipeIntents, readRotation, readCookHistory } from "./dinners.mjs";
 import { biasIntent, addIntentsOf, productWord } from "./learn.mjs";
 import { loadFamily } from "./family.mjs";
 
-import { HOME as BASE } from "./paths.mjs";
+import { HOME as BASE, writeJsonAtomic } from "./paths.mjs";
 const CALL_TIMEOUT = 60000;
 
 function arg(name, dflt) {
@@ -191,12 +191,18 @@ export function applyLearning(intents, fam, options, rules) {
 }
 
 /** Merge duplicate queries so the same product is bought once with summed packs. */
-function mergeItems(resolved, purchase) {
+/** Public for the test: what a resolved answer list becomes (items, gaps, blockers). */
+export function mergeItems(resolved, purchase) {
   const bySku = new Map();
   const unresolved = [];
+  const gaps = [];
   const substitutedAway = [];
   for (const r of resolved) {
-    if (!r.ok) { unresolved.push(r); continue; }
+    if (!r.ok) {
+      if (recipeGapOf(r)) gaps.push(r);
+      else unresolved.push(r);
+      continue;
+    }
     if (r.substitutedFrom) substitutedAway.push({ wanted: r.substitutedFrom, got: r.pick.name, source: r.source });
     const key = r.pick.sku;
     const e = bySku.get(key) || {
@@ -241,7 +247,19 @@ function mergeItems(resolved, purchase) {
   const substitutions = unresolved.filter((u) => u.substitution)
     .map((u) => ({ wanted: u.query, source: u.source, why: u.why, ...u.substitution }));
   const flat = unresolved.map((u) => ({ query: u.query, source: u.source, why: u.why }));
-  return { items, unresolved: flat, substitutions, substitutedAway };
+  const flatGaps = gaps.map((u) => ({ query: u.query, source: u.source, why: u.why, sourceLabel: u.sourceLabel || null }));
+  return { items, unresolved: flat, recipeGaps: flatGaps, substitutions, substitutedAway };
+}
+
+/**
+ * A line from a recipe card that Namlig has no product for at all - "add yourself to the
+ * basket", "see the recipe link", an ingredient the shop simply does not carry. It is a
+ * gap in the card, not a product the planner forgot, and it must not block writing the
+ * basket. A line that returned products we could not buy stays a problem to fix, and so
+ * does anything from breakfast, the lunch box or the household.
+ */
+function recipeGapOf(r) {
+  return String(r.source || "").startsWith("dinner:") && Number(r.candidates) === 0;
 }
 
 /** Diff the plan against what is already in the live basket (keep-and-top-up). */
@@ -317,9 +335,13 @@ function markdown(plan, diff) {
 /** Ingredients the recipes ask for that this family does not buy: visible, not silent. */
 function markdownLeftOut(plan) {
   const rows = plan.dinnerLeftOut || [];
-  if (!rows.length) return [];
+  const gaps = plan.recipeGaps || [];
+  if (!rows.length && !gaps.length) return [];
   const L = ["", "## Left out of the recipes", ""];
   for (const r of rows) L.push(`- ${r.recipe}: ${r.text} — ${r.reason}`);
+  for (const g of gaps) {
+    L.push(`- ${g.sourceLabel || "a dinner"}: "${g.query}" — Namlig has no product with that name (${g.why}). Not counted as a missing item.`);
+  }
   return L;
 }
 
@@ -486,24 +508,53 @@ function poolDinnerIntents(options, wanted, rules) {
 }
 
 /** Resolve every live intent against Namlig, pacing and caching each search. */
+/**
+ * Ask Namlig about every intent. The gate in lib.mjs keeps the traffic polite: a bounded
+ * number of calls at once, a minimum spacing between two starts, a backoff when the shop
+ * pushes back, and a deadline so a slow evening ends with a message instead of a hang.
+ * Results keep the order the intents came in, so the plan reads the same every time.
+ */
 async function resolveAll(live, options) {
-  const { mcp } = await connect();
+  const lanes = options.serial ? 1 : readConcurrency();
+  const limiter = new Limiter({
+    concurrency: lanes,
+    minIntervalMs: options.serial ? 400 : 120,
+    deadlineAtMs: Date.now() + options.maxMinutes * 60000,
+  });
+  const t0 = Date.now();
+  const { mcp } = await connect(loadEnv(), { limiter });
+  const connectMs = Date.now() - t0;
   const cache = loadCache();
-  const resolved = [];
-  let oldestCacheMs = 0;
-  for (const it of live) {
+  const t1 = Date.now();
+  const resolved = await mapPool(live, async (it) => {
     const r = await resolveIntent(mcp, {
       query: it.query, need: it.need, mode: it.mode, sku: it.sku, alt: it.alt || [],
       avoidBrands: options.avoid, force: options.fresh,
       preferSale: it.preferSale, saleTolerancePct: it.saleTolerancePct, purchasing: options.purchasing,
     }, { cache });
-    if (Number.isFinite(r.ageMs) && r.ageMs > oldestCacheMs) oldestCacheMs = r.ageMs;
-    resolved.push({ ...r, source: it.source, sourceLabel: it.sourceLabel || null, needText: it.need || null, rationale: it.rationale || null });
     const tag = r.ok ? `${r.pick.name} x${r.packs} = ${r.total} kr` : "NOT FOUND";
     console.log(`  ${it.source.padEnd(28)} ${String(it.query).slice(0, 34).padEnd(34)} ${tag}`);
-  }
+    return { ...r, source: it.source, sourceLabel: it.sourceLabel || null, needText: it.need || null, rationale: it.rationale || null };
+  }, { concurrency: lanes });
   saveCache(cache);
-  return { mcp, resolved, oldestCacheMs };
+  let oldestCacheMs = 0;
+  let fromCache = 0;
+  for (const r of resolved) {
+    if (Number.isFinite(r.ageMs) && r.ageMs > oldestCacheMs) oldestCacheMs = r.ageMs;
+    if (r.cached) fromCache++;
+  }
+  const timing = {
+    connectMs, catalogMs: Date.now() - t1, intents: live.length, fromCache,
+    gate: limiter.summary(), lanes, serial: options.serial, maxMinutes: options.maxMinutes,
+  };
+  console.log(timingLine(timing));
+  return { mcp, resolved, oldestCacheMs, timing };
+}
+
+/** One line a person reads to know where the time went, and what the gate did. */
+function timingLine(t) {
+  return `Timing: connect ${(t.connectMs / 1000).toFixed(1)}s, catalog ${(t.catalogMs / 1000).toFixed(1)}s for `
+    + `${t.intents} intent(s) — ${t.fromCache} answered from cache, gate: ${t.gate}${t.serial ? ", serial" : ""}.`;
 }
 
 /** Console summary: the headline numbers, the warnings, and where to read more. */
@@ -518,6 +569,7 @@ function printSummary(plan, diff, options, planTotal, jsonPath, mdPath) {
   console.log(`PLAN (dry run): ${diff.adds.length} purchases, ${plan.saleItems} on sale, ${planTotal.toFixed(2)} kr added. Basket now ${plan.basketBefore.lines} lines / ${plan.basketBefore.totalProducts} kr.`);
   if (plan.overSoftCap) console.log(`WARNING: over the ${options.softCapKr} kr soft cap by ${(planTotal - options.softCapKr).toFixed(2)} kr.`);
   if (plan.unresolved.length) console.log(`WARNING: ${plan.unresolved.length} intent(s) found no product — fix them before applying.`);
+  if ((plan.recipeGaps || []).length) console.log(`NOTE: ${plan.recipeGaps.length} recipe line(s) name something Namlig has no product for (an "add yourself" line, a link) — listed under Left out, they do not block applying.`);
   if (plan.skipped.length) console.log(`Stock cycle skipped ${plan.skipped.length} item(s).`);
   if ((plan.stalePins || []).length) console.log(`NOTE: ${plan.stalePins.length} pinned favourite sku(s) were not offered - cheapest used, see the plan file.`);
   if ((plan.bulkOffers || []).length) console.log(`Bulk offers (cheaper in quantity, not applied): ${plan.bulkOffers.length} - see the plan file.`);
@@ -537,10 +589,22 @@ function readOptions() {
     softCapKr: Number(a("soft-cap", "1500")) || 1500,
     avoid: (a("avoid", "") || "").split(",").map((s) => s.trim()).filter(Boolean),
     fresh: process.argv.includes("--fresh"),
+    // --serial is the polite switch: one call at a time, wider spacing. Use it when the
+    // shop answers slowly or pushes back. maxMinutes ends the run instead of hanging.
+    serial: process.argv.includes("--serial"),
+    maxMinutes: maxRunMinutes(a("max-minutes", process.env.NEMLIG_MAX_MINUTES || "15")),
   };
 }
 
+/** A run may not spend more than this much wall clock on shop calls. */
+function maxRunMinutes(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 15;
+  return Math.max(1, Math.min(60, Math.floor(n)));
+}
+
 async function main() {
+  const tRun = Date.now();
   const options = readOptions();
   const fam = loadFamily({ name: arg("family", null) });
   options.family = fam;
@@ -569,8 +633,9 @@ async function main() {
   const live = grouped.intents;
   console.log(`Resolving ${live.length} intents (${grouped.collapsed} product(s) summed across lines, ${skipped.length} skipped by stock cycle) against Namlig...`);
 
-  const { mcp, resolved, oldestCacheMs } = await resolveAll(live, options);
-  const { items, unresolved, substitutions, substitutedAway } = mergeItems(resolved, options.purchasing);
+  const { mcp, resolved, oldestCacheMs, timing } = await resolveAll(live, options);
+  const tAfterResolve = Date.now();
+  const { items, unresolved, recipeGaps, substitutions, substitutedAway } = mergeItems(resolved, options.purchasing);
   const basket = await mcp.call("get_basket", {}, { timeoutMs: CALL_TIMEOUT });
   if (basket.isError) throw new Error("get_basket failed: " + basket.text.slice(0, 200));
   const bJson = basket.json || {};
@@ -597,12 +662,14 @@ async function main() {
     items,
     skipped,
     unresolved,
+    recipeGaps,
     substitutions,
     substitutedAway,
     bulkOffers: bulkOffersOf(resolved),
     stalePins: stalePinsOf(resolved),
     saleItems: items.filter((i) => i.onSale).length,
     priceCacheAgeHours: Number((oldestCacheMs / 3600000).toFixed(1)),
+    timing,
     planTotal,
     overSoftCap: planTotal > options.softCapKr,
     basketBefore: { lines: (bJson.Lines || []).length, totalProducts: Number(bJson.TotalProductsPrice ?? 0), minOrder: bJson.MinimumOrderTotal ?? null },
@@ -613,6 +680,7 @@ async function main() {
   };
 
   const paths = writePlan(plan, diff);
+  console.log(`Timing: plan written in ${((Date.now() - tAfterResolve) / 1000).toFixed(1)}s, whole run ${((Date.now() - tRun) / 1000).toFixed(1)}s.`);
   printSummary(plan, diff, options, planTotal, paths.jsonPath, paths.mdPath);
 }
 
@@ -622,9 +690,9 @@ function writePlan(plan, diff) {
   const stamp = new Date().toISOString().replace(/[:T]/g, "").slice(0, 15);
   const jsonPath = BASE + "/data/plans/plan-" + stamp + ".json";
   const mdPath = BASE + "/data/plans/plan-" + stamp + ".md";
-  writeFileSync(jsonPath, JSON.stringify(plan, null, 1));
+  writeJsonAtomic(jsonPath, plan);
   writeFileSync(mdPath, markdown(plan, diff));
-  writeFileSync(BASE + "/data/plans/plan-latest.json", JSON.stringify(plan, null, 1));
+  writeJsonAtomic(BASE + "/data/plans/plan-latest.json", plan);
   writeFileSync(BASE + "/data/plans/plan-latest.md", markdown(plan, diff));
   return { jsonPath, mdPath };
 }

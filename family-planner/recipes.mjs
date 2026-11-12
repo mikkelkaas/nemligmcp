@@ -17,7 +17,7 @@
 //   node recipes.mjs                    dry run: cards, GUIDs and what they would add
 //   node recipes.mjs --write --approve I-APPROVE-THIS-BASKET
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { connect } from "./lib.mjs";
+import { connectGated } from "./lib.mjs";
 import { login } from "./auth.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
@@ -98,7 +98,8 @@ async function main() {
   const plan = readJson(PLAN, null);
   if (!plan?.dinnerMenu?.length) throw new Error(`no dinnerMenu in ${PLAN} - run plan.mjs first`);
 
-  const { mcp } = await connect();
+  // A card write is never retried: the same card twice in a basket is worse than a retry.
+  const { mcp } = await connectGated({ concurrency: 1, minIntervalMs: 350, attempts: 1 });
   const dishes = await resolvePlanRecipes(mcp, plan);
   console.log(`Recipes in the plan (${plan.dinnerMenu.length}):`);
   for (const d of dishes) {

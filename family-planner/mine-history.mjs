@@ -14,7 +14,7 @@
 // Safety: read-only MCP calls (get_order_history, get_order_details). Nothing here
 // touches the basket. Calls are paced, every loop is bounded, every result is checked.
 import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
-import { connect, sleep } from "./lib.mjs";
+import { connectGated, sleep } from "./lib.mjs";
 
 const PAGE = 10;          // get_order_history page size
 const MAX_PAGES = 100;    // 1000 orders ceiling, hard stop
@@ -231,7 +231,7 @@ function buildPatterns(orders, staples) {
 }
 
 async function main() {
-  const { mcp, info } = await connect();
+  const { mcp, info } = await connectGated({ minIntervalMs: 200 });
   log(`connected to ${info.name} ${info.version}`);
   const listed = await listOrders(mcp);
   log(`${listed.length} orders listed`);

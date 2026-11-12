@@ -13,7 +13,7 @@
 // interrupted run can resume. Re-run any time; finished orders are skipped.
 
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import { connect } from "./lib.mjs";
+import { connectGated } from "./lib.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
 const RAW_PATH = BASE + "/data/order-lines-raw.jsonl";
@@ -60,7 +60,7 @@ async function main() {
   console.log(`Orders in history: ${orders.length}, already stored: ${have.size}, to fetch: ${todo.length}`);
   if (todo.length === 0) { report(); return; }
 
-  const { mcp } = await connect();
+  const { mcp } = await connectGated({ minIntervalMs: 0 });
   let fetched = 0;
   const failed = [];
   for (const o of todo) {

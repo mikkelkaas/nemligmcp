@@ -13,15 +13,16 @@
 //   node catalog.mjs search "<query>" [--take 12]
 //   node catalog.mjs pick "<query>" [--need 300g] [--mode cheapest|history] [--sku 5053034]
 // Everything prints JSON. Only read-only MCP tools are used (search_products).
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { connect, sleep } from "./lib.mjs";
+import { readFileSync, mkdirSync } from "node:fs";
+import { connectGated } from "./lib.mjs";
 import { parsePack, packsFor, cheapest, choosePack, pieceGrams } from "./units.mjs";
 import { nameMatches, norm, tokens, score as nameScore } from "./match.mjs";
 
-import { CACHE_PATH } from "./paths.mjs";
+import { CACHE_PATH, writeJsonAtomic } from "./paths.mjs";
 const CACHE_TTL_H = 24;
-const SEARCH_DELAY_MS = 250;
+const CACHE_KEEP_H = 24 * 7;   // an entry nobody asks for again is dropped after a week
 const CALL_TIMEOUT = 45000;
+const TAKE_MAX = 40;
 const NEED_RE = /^(\d+(?:[.,]\d+)?)\s*(kg|g|l|ml|stk|styk|dåse|dåser|flaske|fl|pose|pos|karton|skive|skiver|glas|bakke|bundt|bdt|rl|ruller)?$/i;
 
 /** "300g" -> { qty: 300, unit: "g" }. null when unparseable. */
@@ -86,31 +87,62 @@ export function loadCache(path = CACHE_PATH) {
 
 export function saveCache(cache, path = CACHE_PATH) {
   mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
-  writeFileSync(path, JSON.stringify(cache, null, 1));
+  writeJsonAtomic(path, pruneCache(cache));
 }
 
-/** Run one search. Returns mapped products, from cache when fresh. */
+/** Keep the cache file from growing forever: drop what no run has wanted for a week. */
+export function pruneCache(cache, keepHours = CACHE_KEEP_H) {
+  const keep = keepHours * 3600 * 1000;
+  const out = {};
+  for (const [key, entry] of Object.entries(cache || {})) {
+    if (entry && Number.isFinite(entry.ts) && Date.now() - entry.ts < keep) out[key] = entry;
+  }
+  return out;
+}
+
+// One query is searched once, even when the gate has four lanes and four intents ask for
+// the same milk. The first caller's promise is handed to the others.
+const inFlight = new Map();
+
+/** Run one search. Returns mapped products, from cache when fresh, once per query. */
 export async function search(mcp, query, { take = 12, cache = null, force = false } = {}) {
-  const key = norm(query) + "|" + take;
+  const wanted = clampTake(take);
+  const key = norm(query) + "|" + wanted;
   if (!force && cache) {
     const c = cache[key];
     if (c && Date.now() - c.ts < CACHE_TTL_H * 3600 * 1000) {
       return { products: c.products, cached: true, ageMs: Date.now() - c.ts };
     }
   }
+  const running = inFlight.get(key);
+  if (running) return running;
+  const job = fetchSearch(mcp, query, wanted, key, cache);
+  inFlight.set(key, job);
+  try {
+    return await job;
+  } finally {
+    inFlight.delete(key);
+  }
+}
+
+/** The number of products to ask for: 1-40, whatever the caller wrote. */
+function clampTake(take) {
+  const n = Math.round(Number(take));
+  if (!Number.isFinite(n)) return 12;
+  return Math.max(1, Math.min(TAKE_MAX, n));
+}
+
+/** One live search, one retry, then the shelf is written to the cache. */
+async function fetchSearch(mcp, query, take, key, cache) {
   let r = await mcp.call("search_products", { query, take }, { timeoutMs: CALL_TIMEOUT });
   if (r.isError) {
     // One retry: a single 500 from the search backend must not kill a 60-intent plan.
-    await sleep(1500);
     r = await mcp.call("search_products", { query, take }, { timeoutMs: CALL_TIMEOUT });
     if (r.isError) throw new Error(`search "${query}" failed twice: ${r.text.slice(0, 160)}`);
   }
   const list = (r.json && r.json.Products && r.json.Products.Products) || [];
   const products = list.map(mapProduct);
-  if (cache) {
-    cache[key] = { ts: Date.now(), products };
-    await sleep(SEARCH_DELAY_MS);
-  }
+  if (cache) cache[key] = { ts: Date.now(), products };
   return { products, cached: false, ageMs: 0 };
 }
 
@@ -147,11 +179,11 @@ export async function resolveIntent(mcp, intent, { cache = null } = {}) {
 async function attempt(mcp, query, intent, cache) {
   const mode = intent.mode || "cheapest";
   const { products, cached, ageMs } = await search(mcp, query, { take: intent.take || 12, cache, force: !!intent.force });
-  if (products.length === 0) return { ok: false, query, why: "search returned nothing", candidates: 0 };
+  if (products.length === 0) return { ok: false, query, why: "search returned nothing", candidates: 0, cached, ageMs };
   const matching = products.filter((p) => nameMatches(query, p.name));
   if (matching.length === 0) {
     const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name)})`).join(", ");
-    return { ok: false, query, why: `no result passed the name match (best: ${top})`, candidates: products.length };
+    return { ok: false, query, why: `no result passed the name match (best: ${top})`, candidates: products.length, cached, ageMs };
   }
   const need = intent.need ? (typeof intent.need === "string" ? parseNeed(intent.need) : intent.need) : null;
   const pinned = mode === "history" && intent.sku ? matching.find((p) => String(p.id) === String(intent.sku)) : null;
@@ -173,7 +205,7 @@ async function attempt(mcp, query, intent, cache) {
   if (!res.pick) {
     const sub = await proposeSubstitute(mcp, query, intent, cache);
     return { ok: false, query, why: "all " + matching.length + " name matches were unavailable" + (sub ? " - cheapest alternative found, see substitution" : ""),
-      candidates: matching.length, substitution: sub };
+      candidates: matching.length, substitution: sub, cached, ageMs };
   }
   // One decision over the whole shelf, as a person does: cover the need for the lowest
   // total price, with bounded slack. Falls back to ceil(need/pack) when the need cannot
@@ -265,7 +297,7 @@ async function cli() {
     process.exitCode = 2;
     return;
   }
-  const { mcp } = await connect();
+  const { mcp } = await connectGated({ minIntervalMs: 120 });
   const cache = loadCache();
   if (cmd === "search") {
     const r = await search(mcp, q, { take: Number(arg("take", "12")), cache });

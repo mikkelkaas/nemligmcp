@@ -23,15 +23,21 @@
 //      touched, so what you added in the app stays.
 // Use --recipes no to skip the cards.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
-import { connect, sleep } from "./lib.mjs";
+import { connect, loadEnv, Limiter, sleep } from "./lib.mjs";
 import { writeRotation } from "./dinners.mjs";
 import { login } from "./auth.mjs";
 import { resolvePlanRecipes, recipeLines } from "./recipes.mjs";
 import { loadFamily } from "./family.mjs";
 
-import { HOME as BASE } from "./paths.mjs";
+import { HOME as BASE, writeJsonAtomic, withLock } from "./paths.mjs";
 const TOKEN = "I-APPROVE-THIS-BASKET";
 const CALL_TIMEOUT = 60000;
+// A write is never retried automatically: a lost answer to add_to_basket must not become
+// two of the same product. The gate only paces the writes and ends a stuck run.
+const WRITE_GATE = { concurrency: 1, minIntervalMs: 350, attempts: 1, deadlineAtMs: 10 * 60 * 1000 };
+// Recipe cards go through the shop's own web API with its own session, so the gate above
+// does not reach them. They keep their own fixed spacing.
+const WEB_STEP_DELAY_MS = 350;
 
 /**
  * One line per dinner, appended when a plan really goes into the basket. This is the
@@ -45,7 +51,6 @@ function appendCookLog(file, menu, day) {
   if (lines.length === 0) return;
   appendFileSync(file, lines.join("\n") + "\n");
 }
-const WRITE_DELAY_MS = 350;
 
 function arg(name, dflt) {
   const i = process.argv.indexOf("--" + name);
@@ -98,7 +103,6 @@ async function writeItems(mcp, items, existing, keepGoing, recipeSkus = new Set(
     adds.push({ sku: item.sku, name: item.name, packs: item.packs, price: item.price, total: item.total,
       tool: res.tool, had: existingQty, setTo: res.want });
     console.log(`  add   ${String(item.name).slice(0, 42).padEnd(42)} ${existingQty} -> ${res.want} (${res.tool})`);
-    await sleep(WRITE_DELAY_MS);
   }
   return { adds, failed };
 }
@@ -148,7 +152,7 @@ async function addRecipeCards(mcp, plan) {
     const ok = res.status >= 200 && res.status < 300;
     console.log(`  card  ${String(dish.name).slice(0, 42).padEnd(42)} ${ok ? `added for ${people} people` : `FAILED HTTP ${res.status} ${res.text.slice(0, 120)}`}`);
     cards.push({ name: dish.name, url: dish.url || dish.id, guid: dish.guid, ok });
-    if (ok) await sleep(WRITE_DELAY_MS);
+    if (ok) await sleep(WEB_STEP_DELAY_MS); // the web session is not covered by the MCP gate
   }
   const basket = await session.get("/webapi/basket/GetBasket");
   const lines = recipeLines(basket.body).map((l) => ({ sku: l.sku ?? l.productNumber, name: l.name, qty: l.quantity }));
@@ -170,7 +174,6 @@ async function zeroExtras(mcp, extras, keepGoing) {
     }
     zeroed.push(extra);
     console.log(`  zero  ${extra.name.slice(0, 42).padEnd(42)} from the recipe card, not in the plan`);
-    await sleep(WRITE_DELAY_MS);
   }
   return { zeroed, failed };
 }
@@ -181,8 +184,20 @@ async function main() {
   const slotId = arg("slot", null);
   const keepGoing = process.argv.includes("--keep-going");
   if (!existsSync(planPath)) throw new Error("no plan file at " + planPath + " — run plan.mjs first");
-  const plan = JSON.parse(readFileSync(planPath, "utf8"));
-  if (plan.kind !== "nemlig-plan") throw new Error("not a Nemlig plan: " + planPath);
+  let plan;
+  try {
+    plan = JSON.parse(readFileSync(planPath, "utf8"));
+  } catch (e) {
+    throw new Error(`plan file is not readable JSON (${planPath}): ${e.message}`);
+  }
+  const problems = validatePlan(plan);
+  if (problems.length) {
+    console.error(`REFUSED: the plan file does not hold up (${planPath}):`);
+    for (const p of problems) console.error("  - " + p);
+    console.error("Fix it with a fresh plan.mjs run.");
+    process.exitCode = 6;
+    return;
+  }
   if (approve !== TOKEN) {
     console.error(`REFUSED. This writes to your real basket.`);
     console.error(`Re-run with  --approve ${TOKEN}  after you have read ${planPath}`);
@@ -203,7 +218,12 @@ async function main() {
 
   const defaultCards = household.recipeCards === false ? "no" : "yes";
   const wantCards = arg("recipes", defaultCards) !== "no" && (plan.dinnerMenu || []).length > 0;
-  const { mcp } = await connect();
+  await withLock("apply", () => writeBasket({ plan, planPath, slotId, keepGoing, wantCards, household, fam }));
+}
+
+/** Everything that touches the live basket, in one bounded sequence. */
+async function writeBasket({ plan, planPath, slotId, keepGoing, wantCards, household, fam }) {
+  const { mcp } = await connect(loadEnv(), { limiter: new Limiter(WRITE_GATE) });
   const before = await basketMap(mcp);
   const beforeSkus = new Set(before.map.keys());
   console.log(`Basket before: ${before.map.size} line(s), ${before.json.TotalProductsPrice ?? 0} kr products.`);
@@ -253,7 +273,7 @@ async function main() {
     console.log(`Rotation updated: ${cooked.length} dinner(s) marked cooked on ${day}, so the next plan rotates away from them.`);
   }
   const written = saveReport(report);
-  printResult(adds, failed, after, report, missing, written);
+  printResult(adds, failed, after, report, missing, written, cards, dropped);
   if (failed.length) process.exitCode = 1;
 }
 
@@ -273,6 +293,8 @@ function refusalReason(plan, planMaxAgeHours) {
 
 /** Hours since the plan was created, or null when the stamp cannot be read. */
 function planAgeHours(plan) {
+  const stamped = Date.parse(String(plan.atIso || ""));
+  if (Number.isFinite(stamped)) return (Date.now() - stamped) / 3600000;
   const m = /^(\d{2})\.(\d{2})\.(\d{4}), (\d{2})\.(\d{2})\.(\d{2})/.exec(String(plan.createdAt || ""));
   if (!m) return null;
   const iso = `${m[3]}-${m[2]}-${m[1]}T${m[5]}:${m[6]}:${m[7]}Z`;
@@ -311,11 +333,11 @@ function saveReport(report) {
   mkdirSync(BASE + "/data/plans", { recursive: true });
   const stamp = new Date().toISOString().replace(/[:T]/g, "").slice(0, 15);
   const file = BASE + "/data/plans/applied-" + stamp + ".json";
-  writeFileSync(file, JSON.stringify(report, null, 1));
+  writeJsonAtomic(file, report);
   return { file, stamp };
 }
 
-function printResult(adds, failed, after, report, missing, written) {
+function printResult(adds, failed, after, report, missing, written, cards, dropped) {
   console.log("");
   console.log(`APPLIED: ${adds.length} product(s) written. Basket now ${after.map.size} lines, ${after.json.TotalProductsPrice ?? "?"} kr products, ${after.json.TotalPrice ?? "?"} kr total (delivery ${after.json.DeliveryPrice ?? "?"} kr).`);
   if (after.json.MinimumOrderTotal && after.json.IsMinTotalValid === false) {
@@ -332,4 +354,42 @@ function printResult(adds, failed, after, report, missing, written) {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   main().catch((e) => { console.error("FAILED:", e.message); process.exitCode = 1; });
+}
+
+/**
+ * Does this plan hold up as a shopping list? Structural checks only, before anything is
+ * written: a plan file is hand-editable and a wrong number here becomes a wrong basket.
+ * Returns a list of problems; empty means the plan may go to the shop.
+ */
+export function validatePlan(plan) {
+  const problems = [];
+  if (!plan || typeof plan !== "object") return ["file is not an object"];
+  if (plan.kind !== "nemlig-plan") problems.push(`kind is "${plan.kind}", expected "nemlig-plan"`);
+  if (Number(plan.schemaVersion) !== 1) problems.push(`schemaVersion ${plan.schemaVersion} is not 1`);
+  if (!Array.isArray(plan.items)) return problems.concat(["items is not a list"]);
+  if (plan.items.length === 0) problems.push("the plan has no products");
+  if (plan.items.length > 400) problems.push(`${plan.items.length} products is more than one basket should hold`);
+  const skus = new Map();
+  for (const [i, it] of plan.items.entries()) {
+    const at = `item ${i + 1} (${String(it && it.name || "?").slice(0, 40)})`;
+    const sku = String((it && it.sku) || "");
+    if (!/^\d{3,10}$/.test(sku)) problems.push(`${at}: sku "${sku}" is not a product number`);
+    else if (skus.has(sku)) problems.push(`${at}: sku ${sku} is already planned as "${skus.get(sku)}" — two lines for one product`);
+    else skus.set(sku, String(it.name || ""));
+    if (!String((it && it.name) || "").trim()) problems.push(`${at}: no name`);
+    const packs = Number(it && it.packs);
+    if (!Number.isInteger(packs) || packs < 1 || packs > 99) problems.push(`${at}: packs "${it && it.packs}" is not a whole number between 1 and 99`);
+    const price = Number(it && it.price);
+    if (!Number.isFinite(price) || price < 0 || price > 5000) problems.push(`${at}: price "${it && it.price}" is not a plausible kr amount`);
+    const total = Number(it && it.total);
+    if (Number.isFinite(price) && Number.isInteger(packs) && Math.abs(total - price * packs) > 0.02) {
+      problems.push(`${at}: total ${total} is not ${packs} x ${price}`);
+    }
+  }
+  if (!Number.isFinite(Number(plan.planTotal)) || Number(plan.planTotal) < 0) problems.push("planTotal is missing or negative");
+  if (problems.length === 0 && Number.isFinite(Number(plan.planTotal))) {
+    const sum = Number(plan.items.reduce((t, it) => t + Number(it.total), 0).toFixed(2));
+    if (Math.abs(sum - Number(plan.planTotal)) > 0.5) problems.push(`planTotal ${plan.planTotal} does not match the items, which add up to ${sum}`);
+  }
+  return problems;
 }

@@ -14,7 +14,7 @@
 // Safety: read-only MCP calls.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { connect } from "./lib.mjs";
+import { connectGated } from "./lib.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
 const OUT = BASE + "/data/recipe-candidates.json";
@@ -75,7 +75,7 @@ function knownPages() {
 }
 
 async function main() {
-  const { mcp } = await connect();
+  const { mcp } = await connectGated({ minIntervalMs: 0 });
   const orders = historyCounts();
   const pages = knownPages();
   const by = new Map();

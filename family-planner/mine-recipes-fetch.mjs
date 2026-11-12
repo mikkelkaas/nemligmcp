@@ -11,7 +11,7 @@
 // Output: data/recipes-raw.jsonl, one JSON object per recipe url, appended, resumable.
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { connect } from "./lib.mjs";
+import { connectGated } from "./lib.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
 const LINES = BASE + "/data/order-lines-raw.jsonl";
@@ -100,7 +100,7 @@ async function main() {
   const todo = wanted.filter((r) => !have.has(r.url));
   console.log(`Recipes in history: ${wanted.length}, stored: ${have.size}, to fetch: ${todo.length}`);
   if (todo.length === 0) return;
-  const { mcp } = await connect();
+  const { mcp } = await connectGated({ minIntervalMs: 0 });
   let ok = 0;
   const failed = [];
   for (const r of todo) {

@@ -10,7 +10,7 @@
 //
 // Read-only: this script only calls get_timeslots. It never reserves anything.
 import { readFileSync } from "node:fs";
-import { connect } from "./lib.mjs";
+import { connectGated } from "./lib.mjs";
 import { loadFamily } from "./family.mjs";
 const CALL_TIMEOUT = 60000;
 const WEEKDAYS = ["søndag", "mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag"];
@@ -140,7 +140,7 @@ async function main() {
   const limit = Number(arg("limit", "12")) || 12;
   const asJson = process.argv.includes("--json");
   const pref = loadFamily({ name: i18nArg("family") }).household.deliveryPreference || {};
-  const { mcp } = await connect();
+  const { mcp } = await connectGated({ minIntervalMs: 200 });
   const args = { days };
   if (from) args.startDate = from;
   const r = await mcp.call("get_timeslots", args, { timeoutMs: CALL_TIMEOUT });

@@ -110,6 +110,13 @@ Report every `FAIL` line with product name and error text.
 - Learn new staples: `node mine-history.mjs` (writes `data/staples.json` and
   `profiles/pantry.json`). Run after 5 or more new orders.
 - Re-pin favourite SKUs: `node pin-skus.mjs --write`.
-- Matcher regression test: `node --test test/match.test.mjs` (18 cases).
-- Search cache: `data/product-cache.json`, 24 h. Force live search with `--fresh`.
+- Regression suite: `node --test test/*.test.mjs` (70 cases: matcher, packs, learning, the
+  traffic gate, the plan check - all without network).
+- Search cache: `data/product-cache.json`, 24 h, pruned after a week. Force live search with
+  `--fresh`. A warm run takes seconds, a fresh one tens of seconds.
+- Shop traffic is gated: 4 calls at once (1-8 with `NEMLIG_CONCURRENCY`), 120 ms between
+  starts, backoff then one lane on trouble, breaker after 8 failed calls, `--serial` for
+  one lane on purpose, `--max-minutes` (default 15) as the stop. Reads retry, basket
+  writes never retry. `apply.mjs` validates the plan file and holds `data/locks/apply.lock`.
+- The plan prints its own timing line: connect, catalog, intents, cache answers, gate work.
 - All files, logs and times are Europe/Copenhagen.
