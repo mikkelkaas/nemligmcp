@@ -2,7 +2,7 @@
 //
 // The rotation lives in profiles/recipe-pool.json (pick-recipe-pool.mjs builds it). The
 // household cooks one recipe once and eats it twice, so the shopping amount is the
-// recipe amount scaled from Namlig's servings to 5 servings: 2 adults + 1 child, two
+// recipe amount scaled from Namlig's servings to the household's servings, two
 // evenings, nothing cooked twice (profiles/amounts.json).
 //
 // Three filters run before a product is put on the list (profiles/exclusions.json):

@@ -193,3 +193,15 @@ test("the plan check refuses what cannot go to the shop", () => {
   empty.items = [];
   assert.match(validatePlan(empty).join("; "), /no products/);
 });
+
+// --- plan.mjs: the budget a run is measured against belongs to the family ---------
+import { softCapOf } from "../plan.mjs";
+
+test("the soft cap comes from the flag, then the profile, then nowhere", () => {
+  assert.equal(softCapOf("50", 1200), 50, "--soft-cap wins when it is given");
+  assert.equal(softCapOf(null, 1200), 1200, "no flag, so the profile decides");
+  assert.equal(softCapOf("", 1200), 1200, "an empty flag is not a flag");
+  assert.equal(softCapOf("abc", 900), 900, "a flag that is not a number falls back to the profile");
+  assert.equal(softCapOf("0", null), null, "a zero cap is not a cap");
+  assert.equal(softCapOf(null, null), null, "a family that set no budget gets no cap and no warning");
+});

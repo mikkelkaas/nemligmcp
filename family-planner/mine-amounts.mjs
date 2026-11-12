@@ -7,7 +7,7 @@
 //      number can be read as a rate per week.
 //   2. How much protein and sides per dinner? Answered with the recipe amounts in
 //      profiles/recipe-pool.json, scaled from Namlig's 4 persons to the 5 servings
-//      this family cooks: 2 adults and 1 child, one pot, eaten two evenings.
+//      this family cooks: the members in the profile, one pot, eaten two evenings.
 //
 // Output: profiles/amounts.json, with the evidence next to every number.
 
@@ -138,7 +138,7 @@ function perDinner(POOL_FILE) {
       gramsForHouseholdDinner: Math.round(med * HOUSEHOLD.people),
       gramsWhenCookingOnceForTwoDinners: Math.round(med * HOUSEHOLD.cookServings),
       fromRecipes: rows.length,
-      note: "median of the recipe amounts in profiles/recipe-pool.json, per person; 5 servings = 2 adults + 1 child eating the same pot twice",
+      note: "median of the recipe amounts in profiles/recipe-pool.json, per person; one pot is eaten on two evenings",
     };
   }
   return out;

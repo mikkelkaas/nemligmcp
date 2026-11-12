@@ -41,7 +41,7 @@ const PANTRY_WORDS = ["salt", "peber", "olie", "vand", "sukker", "bouillon", "me
 const HERB_WORDS = ["persille", "purløg", "forårsløg", "koriander", "basilikum", "mynte", "dild", "rosmarin", "timian", "salvie", "dragon"];
 // Products absent from the family's own order history. Folded form, because fold() rewrites
 // Danish letters before the comparison. A recipe that asks for one of these is odd for
-// two adults and a small child, and the odd item is not put in the basket.
+// the household that reads this file, and the odd item is not put in the basket.
 const ODD_WORDS = ["capers", "kapers", "bla ost", "gorgonzola", "roquefort", "stilton", "prosciutto", "nduja", "ymer", "kvaerk", "quinoa", "kamut", "kikaerter", "linser", "granataeble", "feta", "lyonnais", "chioggia", "røget ost", "vindruer", "truffel", "trøffel", "vafrer", "røgede oste"];
 
 const fold = (s) => String(s || "").toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
@@ -180,7 +180,7 @@ function main() {
   writeFileSync(OUT, JSON.stringify({
     schemaVersion: 1,
     at: new Date().toISOString(),
-    note: "Dinner rotation. One recipe is cooked once and eaten twice, so quantities are scaled to 5 servings for a household of 2 adults and 1 child.",
+    note: "Dinner rotation. One recipe is cooked once and eaten twice, so quantities are scaled to the servings a night this household eats, not to the recipe's own pot.",
     poolSize: pool.length,
     mix,
     proteinCaps: PROTEIN_CAPS,

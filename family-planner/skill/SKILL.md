@@ -10,13 +10,13 @@ history, shows it for approval, then writes it to the real basket. Nothing is or
 The family confirms in the app.
 
 Run every command from the folder you cloned, in its `family-planner/` part. On this
-host, for example, that folder also answers to `/opt/docker/scripts/nemlig`; a new host
+host, for example, that folder also answers to `/opt/docker/scripts/nemlig`. A new host
 uses its own clone path and needs nothing else. Read `MODEL.md` for the model (household
 -> nights -> needs -> packs -> budget) and `README.md` for the commands.
 
-The planner talks to the MCP server over HTTP. On this host, for example, that server is
-the container `nemligmcp`, service `nemligmcp` in `/opt/docker/infra-stack.yml`: check it
-with `hsudo docker compose -f /opt/docker/infra-stack.yml ps nemligmcp` and expect
+The planner talks to the MCP server over HTTP. On this host, for example, that server is the
+container `nemligmcp`, service `nemligmcp` in `/opt/docker/infra-stack.yml`. Check it with
+`hsudo docker compose -f /opt/docker/infra-stack.yml ps nemligmcp` and expect
 `Up ... (healthy)`. Plain `docker compose` does not exist on this host - use `hsudo`.
 Another host runs the server its own way: point `NEMLIG_MCP_URL` at it and use that host's
 own command to check it.

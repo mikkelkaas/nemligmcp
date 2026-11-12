@@ -10,8 +10,8 @@
 //   data/staples.json         last purchase dates (used by the stock-cycle gate)
 //
 // Usage (all flags optional):
-//   node plan.mjs --days 8 --people 5 --breakfast yes --lunchbox yes --snacks no \
-//                 --household auto --dinners pasta-bolognese,pizza-dej \
+//   node plan.mjs --days 8 --breakfast yes --lunchbox yes --snacks no \
+//                 --household auto --dinners <core-id>,<core-id> \
 //                 --extra "Kyllingelår:1 stk" --avoid "wine,alkohol"
 // Output:
 //   data/plans/plan-<timestamp>.json + .md, and copies named plan-latest.{json,md}
@@ -329,6 +329,16 @@ function stalePinsOf(resolved) {
   return out;
 }
 
+/** The cap a run is measured against: --soft-cap wins, else the profile, else none.
+ *  Exported for the suite: a family that set no budget must get no warning, and that
+ *  needs a profile without a budget to prove, which is cheaper to test than to run. */
+export function softCapOf(flagValue, profileValue) {
+  const flag = Number(flagValue);
+  if (Number.isFinite(flag) && flag > 0) return flag;
+  const profile = Number(profileValue);
+  return Number.isFinite(profile) && profile > 0 ? profile : null;
+}
+
 /** Sale policy, read from the household profile so a family tunes it in one place. */
 function saleRules(household) {
   const r = (household && household.purchaseRules) || {};
@@ -389,7 +399,7 @@ function markdownHeader(plan, diff) {
   }
   if (plan.uncoveredDays > 0) L.push(`- WARNING: ${plan.uncoveredDays} evening(s) have no dinner - name one with --dinners`);
   L.push("", `${plan.saleItems} of ${plan.items.length} products are on sale.${plan.priceCacheAgeHours ? ` Prices are at most ${plan.priceCacheAgeHours} h old (search cache).` : ""}`, "");
-  L.push(`**Planned spend: ${plan.planTotal.toFixed(2)} kr** for ${diff.adds.length} purchases (${plan.items.length} products). Soft cap ${o.softCapKr} kr: ${plan.overSoftCap ? "EXCEEDED - confirm before applying" : "ok"}.`);
+  L.push(`**Planned spend: ${plan.planTotal.toFixed(2)} kr** for ${diff.adds.length} purchases (${plan.items.length} products). Soft cap: ${o.softCapKr === null ? "none set (budget.softCapKr)" : o.softCapKr + " kr - " + (plan.overSoftCap ? "EXCEEDED - confirm before applying" : "ok")}.`);
   if (plan.keptInFull) L.push(`${plan.keptInFull} product(s) already in the basket at the planned quantity or more - nothing added for those.`);
   if (plan.untouchedInBasket.length) L.push(`${plan.untouchedInBasket.length} product(s) in the basket are not in the plan and are left untouched: ${plan.untouchedInBasket.map((u) => u.name + " x" + u.qty).join(", ")}`);
   L.push("");
@@ -625,7 +635,7 @@ function readOptions() {
     lunchbox: yesNo(a("lunchbox", null), true),
     snacks: yesNo(a("snacks", null), false),
     household: householdMode(a("household", "auto")),
-    softCapKr: Number(a("soft-cap", "1500")) || 1500,
+    softCapKr: a("soft-cap", null),   // no default: the profile decides, see softCapOf
     avoid: (a("avoid", "") || "").split(",").map((s) => s.trim()).filter(Boolean),
     fresh: process.argv.includes("--fresh"),
     // --serial is the polite switch: one call at a time, wider spacing. Use it when the
@@ -645,7 +655,7 @@ function maxRunMinutes(value) {
 const USAGE = [
   "usage: node plan.mjs [options]  (dry run: nothing is written to the basket)",
   "  --days 8                1-14 evenings        --breakfast|--lunchbox|--snacks yes|no",
-  "  --household auto|off    --people N           --soft-cap 1500",
+  "  --household auto|off    --people N           --soft-cap <kr>  (default: the profile's budget.softCapKr)",
   "  --family <name>         --covers 2           --dinners <name>    (a menu name)",
   "  --cores                 --max-per-protein N  --avoid \"brand,word\"",
   "  --extra \"Name:300g\"    --fresh (ignore the 24 h price cache)",
@@ -670,7 +680,7 @@ async function main() {
   const household = fam.household;
   const pantry = fam.pantry;
   const dinners = fam.dinners;
-  console.log(`Profile: ${fam.name} (${fam.file}) - ${household.people} portions per dinner, soft cap ${household.softCapKr} ${household.currency}.`);
+  console.log(`Profile: ${fam.name} (${fam.file}) - ${household.people} portions per dinner, soft cap ${household.softCapKr === null ? "none set - budget.softCapKr decides" : household.softCapKr + " " + household.currency}.`);
   const staples = readJson(BASE + "/data/staples.json");
   const famText = `${(fam.household.members || []).map((x) => `${x.count} ${x.role}${x.count > 1 ? "s" : ""}`).join(" + ") || fam.household.people + " people"} = ${(fam.household.portionsPerNight || 0).toFixed(1)} portions a night`;
   console.log(`Household: ${famText}.`);
@@ -702,6 +712,11 @@ async function main() {
   const diff = basketDiff(items, bJson.Lines || []);
   const planTotal = Number(diff.adds.reduce((sum, i) => sum + i.total, 0).toFixed(2));
   const menu = poolMenu || menuOf(dinners.cores, wantedIds, options.days, dinners.coversDays);
+  // One number for the whole run. Until now the flag carried a budget copied from one
+  // family, so the profile's own budget.softCapKr was printed on the profile line and
+  // never applied to the warning. Writing it back means the plan file, the report and the
+  // warning all carry the number that was actually used.
+  options.softCapKr = softCapOf(options.softCapKr, household.softCapKr);
 
   const plan = {
     schemaVersion: 1,
@@ -731,7 +746,7 @@ async function main() {
     priceCacheAgeHours: Number((oldestCacheMs / 3600000).toFixed(1)),
     timing,
     planTotal,
-    overSoftCap: planTotal > options.softCapKr,
+    overSoftCap: options.softCapKr !== null && planTotal > options.softCapKr,
     basketBefore: { lines: (bJson.Lines || []).length, totalProducts: Number(bJson.TotalProductsPrice ?? 0), minOrder: bJson.MinimumOrderTotal ?? null },
     keptInFull: diff.keptInFull,
     untouchedInBasket: diff.untouchedInBasket,

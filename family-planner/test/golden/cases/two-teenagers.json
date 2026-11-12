@@ -1,0 +1,46 @@
+{
+  "comment": "pins: two big appetites - two members at appetite 1.7 and a pot cooked for ten servings, so the same demo dishes need more packs and the basket is dearer than the standing case",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--household",
+    "auto",
+    "--soft-cap",
+    "1200"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "household": {
+        "adults": 2,
+        "children": 2,
+        "peopleToShopFor": 6
+      },
+      "dinners": {
+        "members": [
+          {
+            "role": "teenager",
+            "count": 2,
+            "appetite": 1.7
+          }
+        ],
+        "servingsPerDinner": 7
+      },
+      "budget": {
+        "softCapKr": 1200
+      }
+    },
+    "amounts.json": {
+      "household": {
+        "cookServings": 10,
+        "people": 2,
+        "adults": 2,
+        "children": 0
+      }
+    }
+  },
+  "shelf": {}
+}

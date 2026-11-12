@@ -233,3 +233,12 @@ thin layer, not the planner.
    .qualifierWords`), the guard skips those, and the price rule picks between them - today 1 kg
    parboiled at 11,95 kr on sale against the 500 g need. Dried oregano went to `pantryWords`
    with the other dried spices, because the cupboard has it and `--extra` buys it when it is dry.
+6. A dish that repeats is cooked at one size, whatever the household. `dinners.members` gives
+   portions per night, and a pot is sized by `dinners.servingsPerDinner`; when the same dish
+   runs for `maxNightsPerDinner` nights the portions are not multiplied by those nights, so a
+   family of two teenagers and a family of one adult get the same number of packs for a curry
+   cooked twice. Found while writing the golden cases `one-adult` and `two-teenagers`, which
+   work around it through `cookServings` in `profiles/amounts.json`. A fix has to say which
+   number is the ask: portions a night times the nights this dish runs, then compared with what
+   one pot covers - and the same dish on two days in a row is leftovers, not a second pot.
+   Untouched until that is settled, because both readings change every pack count in the suite.

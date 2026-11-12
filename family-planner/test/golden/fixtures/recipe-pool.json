@@ -1,0 +1,507 @@
+{
+ "_readme": "Invented demo recipe pool. Fourteen made-up dishes; no real recipe and no real product name.",
+ "schemaVersion": 1,
+ "poolSize": 8,
+ "pool": [
+  {
+   "url": "/opskrifter/demo-kartoffelroest-900101",
+   "name": "Daglig kartoffelrøre med ost",
+   "minutes": 25,
+   "totalTime": "25 min",
+   "servings": 4,
+   "tags": [
+    "Aftensmad",
+    "Hovedret"
+   ],
+   "historyOrders": 0,
+   "coverageBuyablePct": 100,
+   "herbsLeftOut": [],
+   "oddAsks": [],
+   "score": 12,
+   "reasons": [
+    "invented demo dish"
+   ],
+   "fromHistory": false,
+   "protein": "vegetar",
+   "format": "grød",
+   "ingredients": [
+    {
+     "text": "Kartofler Brune kartofler",
+     "amount": 800,
+     "unit": "g",
+     "grams": 800,
+     "litres": null
+    },
+    {
+     "text": "Mælk Standardmælk 1,8%",
+     "amount": 0.4,
+     "unit": "l",
+     "grams": null,
+     "litres": 0.4
+    },
+    {
+     "text": "Ost Havelhavarti skåret",
+     "amount": 100,
+     "unit": "g",
+     "grams": 100,
+     "litres": null
+    },
+    {
+     "text": "Smør Havesmør",
+     "amount": 50,
+     "unit": "g",
+     "grams": 50,
+     "litres": null
+    },
+    {
+     "text": "Peberfrugt Mini peberfrugter",
+     "amount": 200,
+     "unit": "g",
+     "grams": 200,
+     "litres": null
+    },
+    {
+     "text": "Kryderurt frisk",
+     "amount": 15,
+     "unit": "g",
+     "grams": 15,
+     "litres": null
+    }
+   ]
+  },
+  {
+   "url": "/opskrifter/demo-ris-broccoli-900102",
+   "name": "Demo ris med broccoli",
+   "minutes": 30,
+   "totalTime": "30 min",
+   "servings": 4,
+   "tags": [
+    "Aftensmad",
+    "Hovedret"
+   ],
+   "historyOrders": 0,
+   "coverageBuyablePct": 100,
+   "herbsLeftOut": [],
+   "oddAsks": [],
+   "score": 11,
+   "reasons": [
+    "invented demo dish"
+   ],
+   "fromHistory": false,
+   "protein": "vegetar",
+   "format": "ris",
+   "ingredients": [
+    {
+     "text": "Ris Grødris",
+     "amount": 500,
+     "unit": "g",
+     "grams": 500,
+     "litres": null
+    },
+    {
+     "text": "Broccoli Grove broccoli",
+     "amount": 300,
+     "unit": "g",
+     "grams": 300,
+     "litres": null
+    },
+    {
+     "text": "Hvidløg Hoveder hvidløg",
+     "amount": 50,
+     "unit": "g",
+     "grams": 50,
+     "litres": null
+    },
+    {
+     "text": "Fløde Fløde til madlavning 8%",
+     "amount": 0.2,
+     "unit": "l",
+     "grams": null,
+     "litres": 0.2
+    },
+    {
+     "text": "Tomatpuré Tomatpuré på hylde",
+     "amount": 100,
+     "unit": "g",
+     "grams": 100,
+     "litres": null
+    },
+    {
+     "text": "Solbærglas",
+     "amount": 30,
+     "unit": "g",
+     "grams": 30,
+     "litres": null
+    }
+   ]
+  },
+  {
+   "url": "/opskrifter/demo-omelet-spinat-900103",
+   "name": "Demo omelet med spinat",
+   "minutes": 20,
+   "totalTime": "20 min",
+   "servings": 4,
+   "tags": [
+    "Aftensmad",
+    "Hovedret"
+   ],
+   "historyOrders": 0,
+   "coverageBuyablePct": 100,
+   "herbsLeftOut": [],
+   "oddAsks": [],
+   "score": 10,
+   "reasons": [
+    "invented demo dish"
+   ],
+   "fromHistory": false,
+   "protein": "ostaeq",
+   "format": "omelet",
+   "ingredients": [
+    {
+     "text": "Æg Spiseæg str. L",
+     "amount": "3",
+     "unit": "stk",
+     "grams": null,
+     "litres": null
+    },
+    {
+     "text": "Spinat Friskbladet spinat",
+     "amount": 300,
+     "unit": "g",
+     "grams": 300,
+     "litres": null
+    },
+    {
+     "text": "Løg Skal løg",
+     "amount": 100,
+     "unit": "g",
+     "grams": 100,
+     "litres": null
+    },
+    {
+     "text": "Ost Havelhavarti skåret",
+     "amount": 150,
+     "unit": "g",
+     "grams": 150,
+     "litres": null
+    },
+    {
+     "text": "Mælk Standardmælk 1,8%",
+     "amount": 0.3,
+     "unit": "l",
+     "grams": null,
+     "litres": 0.3
+    }
+   ]
+  },
+  {
+   "url": "/opskrifter/demo-tomatsuppe-900104",
+   "name": "Demo tomatsuppe med rugbrød",
+   "minutes": 20,
+   "totalTime": "20 min",
+   "servings": 4,
+   "tags": [
+    "Aftensmad",
+    "Hovedret"
+   ],
+   "historyOrders": 0,
+   "coverageBuyablePct": 100,
+   "herbsLeftOut": [],
+   "oddAsks": [],
+   "score": 9,
+   "reasons": [
+    "invented demo dish"
+   ],
+   "fromHistory": false,
+   "protein": "vegetar",
+   "format": "suppe",
+   "ingredients": [
+    {
+     "text": "Tomat Tomater på vine",
+     "amount": 500,
+     "unit": "g",
+     "grams": 500,
+     "litres": null
+    },
+    {
+     "text": "Tomatpuré Tomatpuré på hylde",
+     "amount": 100,
+     "unit": "g",
+     "grams": 100,
+     "litres": null
+    },
+    {
+     "text": "Løg Skal løg",
+     "amount": 150,
+     "unit": "g",
+     "grams": 150,
+     "litres": null
+    },
+    {
+     "text": "Kartofler Brune kartofler",
+     "amount": 400,
+     "unit": "g",
+     "grams": 400,
+     "litres": null
+    },
+    {
+     "text": "Rugbrød Kornvang rugbrød",
+     "amount": 200,
+     "unit": "g",
+     "grams": 200,
+     "litres": null
+    }
+   ]
+  },
+  {
+   "url": "/opskrifter/demo-hakset-pasta-900105",
+   "name": "Demo hakset okse med pasta",
+   "minutes": 25,
+   "totalTime": "25 min",
+   "servings": 4,
+   "tags": [
+    "Aftensmad",
+    "Hovedret"
+   ],
+   "historyOrders": 0,
+   "coverageBuyablePct": 100,
+   "herbsLeftOut": [],
+   "oddAsks": [],
+   "score": 12,
+   "reasons": [
+    "invented demo dish"
+   ],
+   "fromHistory": false,
+   "protein": "oksekod",
+   "format": "pasta",
+   "ingredients": [
+    {
+     "text": "Oksekød Hakset okse 9%",
+     "amount": 600,
+     "unit": "g",
+     "grams": 600,
+     "litres": null
+    },
+    {
+     "text": "Pasta Spaghetti med korn",
+     "amount": 500,
+     "unit": "g",
+     "grams": 500,
+     "litres": null
+    },
+    {
+     "text": "Tomatpuré Tomatpuré på hylde",
+     "amount": 150,
+     "unit": "g",
+     "grams": 150,
+     "litres": null
+    },
+    {
+     "text": "Løg Skal løg",
+     "amount": 150,
+     "unit": "g",
+     "grams": 150,
+     "litres": null
+    },
+    {
+     "text": "Hvidløg Hoveder hvidløg",
+     "amount": 50,
+     "unit": "g",
+     "grams": 50,
+     "litres": null
+    },
+    {
+     "text": "Alperost Fast alperost",
+     "amount": 100,
+     "unit": "g",
+     "grams": 100,
+     "litres": null
+    }
+   ]
+  },
+  {
+   "url": "/opskrifter/demo-oksegrønt-900106",
+   "name": "Demo okseboller med peberfrugt",
+   "minutes": 30,
+   "totalTime": "30 min",
+   "servings": 4,
+   "tags": [
+    "Aftensmad",
+    "Hovedret"
+   ],
+   "historyOrders": 0,
+   "coverageBuyablePct": 100,
+   "herbsLeftOut": [],
+   "oddAsks": [],
+   "score": 10,
+   "reasons": [
+    "invented demo dish"
+   ],
+   "fromHistory": false,
+   "protein": "oksekod",
+   "format": "ris",
+   "ingredients": [
+    {
+     "text": "Oksekød Hakset okse 9%",
+     "amount": 500,
+     "unit": "g",
+     "grams": 500,
+     "litres": null
+    },
+    {
+     "text": "Fløde Fløde til madlavning 8%",
+     "amount": 0.3,
+     "unit": "l",
+     "grams": null,
+     "litres": 0.3
+    },
+    {
+     "text": "Ris Grødris",
+     "amount": 400,
+     "unit": "g",
+     "grams": 400,
+     "litres": null
+    },
+    {
+     "text": "Citron Tykskallede citroner",
+     "amount": 150,
+     "unit": "g",
+     "grams": 150,
+     "litres": null
+    },
+    {
+     "text": "Peberfrugt Mini peberfrugter",
+     "amount": 200,
+     "unit": "g",
+     "grams": 200,
+     "litres": null
+    }
+   ]
+  },
+  {
+   "url": "/opskrifter/demo-fisk-sauce-900107",
+   "name": "Demo hvid fisk i tomatsauce",
+   "minutes": 25,
+   "totalTime": "25 min",
+   "servings": 4,
+   "tags": [
+    "Aftensmad",
+    "Hovedret"
+   ],
+   "historyOrders": 0,
+   "coverageBuyablePct": 100,
+   "herbsLeftOut": [],
+   "oddAsks": [],
+   "score": 11,
+   "reasons": [
+    "invented demo dish"
+   ],
+   "fromHistory": false,
+   "protein": "fisk",
+   "format": "kartofler",
+   "ingredients": [
+    {
+     "text": "Fisk Hvid fisk hakket",
+     "amount": 600,
+     "unit": "g",
+     "grams": 600,
+     "litres": null
+    },
+    {
+     "text": "Tomat Tomater på vine",
+     "amount": 400,
+     "unit": "g",
+     "grams": 400,
+     "litres": null
+    },
+    {
+     "text": "Kartofler Brune kartofler",
+     "amount": 800,
+     "unit": "g",
+     "grams": 800,
+     "litres": null
+    },
+    {
+     "text": "Hvidløg Hoveder hvidløg",
+     "amount": 50,
+     "unit": "g",
+     "grams": 50,
+     "litres": null
+    },
+    {
+     "text": "Citron Tykskallede citroner",
+     "amount": 100,
+     "unit": "g",
+     "grams": 100,
+     "litres": null
+    },
+    {
+     "text": "Smør Havesmør",
+     "amount": 50,
+     "unit": "g",
+     "grams": 50,
+     "litres": null
+    }
+   ]
+  },
+  {
+   "url": "/opskrifter/demo-poelse-kartofler-900108",
+   "name": "Demo pølse med kartofler",
+   "minutes": 20,
+   "totalTime": "20 min",
+   "servings": 4,
+   "tags": [
+    "Aftensmad",
+    "Hovedret"
+   ],
+   "historyOrders": 0,
+   "coverageBuyablePct": 100,
+   "herbsLeftOut": [],
+   "oddAsks": [],
+   "score": 8,
+   "reasons": [
+    "invented demo dish"
+   ],
+   "fromHistory": false,
+   "protein": "svin",
+   "format": "kartofler",
+   "ingredients": [
+    {
+     "text": "Pølse Kumle pølser",
+     "amount": 400,
+     "unit": "g",
+     "grams": 400,
+     "litres": null
+    },
+    {
+     "text": "Kartofler Brune kartofler",
+     "amount": 1000,
+     "unit": "g",
+     "grams": 1000,
+     "litres": null
+    },
+    {
+     "text": "Løg Skal løg",
+     "amount": 100,
+     "unit": "g",
+     "grams": 100,
+     "litres": null
+    },
+    {
+     "text": "Tomatpuré Tomatpuré på hylde",
+     "amount": 50,
+     "unit": "g",
+     "grams": 50,
+     "litres": null
+    },
+    {
+     "text": "Agurk Lang agurk",
+     "amount": "1",
+     "unit": "stk",
+     "grams": null,
+     "litres": null
+    }
+   ]
+  }
+ ]
+}

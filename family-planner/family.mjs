@@ -48,7 +48,10 @@ function householdOf(p) {
       || Number((p.dinners || {}).servingsPerDinner || 5) / Math.max(1, Number((p.dinners || {}).daysPerDinner || 2)),
     daysCoveredByOneDinner: Number((p.dinners || {}).daysPerDinner || 2),
     currency: (p.budget || {}).currency || "DKK",
-    softCapKr: Number((p.budget || {}).softCapKr || 1500),
+    // A budget the family never set must not become a number from another family: no
+    // profile, no cap, and the planner says so instead of measuring against a guess.
+    softCapKr: Number.isFinite(Number((p.budget || {}).softCapKr)) && Number((p.budget || {}).softCapKr) > 0
+      ? Number(p.budget.softCapKr) : null,
     timezone: h.timezone || "Europe/Copenhagen",
     neverBuy: p.neverBuy || [],
     recipeRule: {

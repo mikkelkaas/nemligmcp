@@ -1,0 +1,46 @@
+{
+  "comment": "pins: one adult - one member at appetite 1.1, three servings per pot and three plates to shop for, so every demo recipe ask and every pack comes out smaller than the standing case",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "no",
+    "--household",
+    "off",
+    "--soft-cap",
+    "700"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "household": {
+        "adults": 1,
+        "children": 0,
+        "peopleToShopFor": 1
+      },
+      "dinners": {
+        "members": [
+          {
+            "role": "adult",
+            "count": 1,
+            "appetite": 1.1
+          }
+        ],
+        "servingsPerDinner": 3
+      },
+      "budget": {
+        "softCapKr": 700
+      }
+    },
+    "amounts.json": {
+      "household": {
+        "cookServings": 3,
+        "people": 1,
+        "adults": 1,
+        "children": 0
+      }
+    }
+  },
+  "shelf": {}
+}

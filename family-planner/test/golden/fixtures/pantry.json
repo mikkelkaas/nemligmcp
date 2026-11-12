@@ -1,0 +1,290 @@
+{
+ "_readme": "Invented demo pantry. Every query is one of the invented shelf products in tools/golden-build.mjs.",
+ "schemaVersion": 1,
+ "cycleDays": 9,
+ "blocks": {
+  "breakfast": [
+   {
+    "id": "standardmaelk",
+    "query": "Mælk Standardmælk 1,8%",
+    "sku": "9000001",
+    "mode": "history",
+    "qtyPerCycle": 2,
+    "_note": "invented demo line"
+   },
+   {
+    "id": "dagnat-havregryn",
+    "query": "Havregryn Dagnat havregryn",
+    "sku": "9000007",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line"
+   },
+   {
+    "id": "spiseaeg",
+    "query": "Æg Spiseæg str. L",
+    "sku": "9000003",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "alt": [
+     "Æg Spiseæg str. L"
+    ]
+   },
+   {
+    "id": "havesmoer",
+    "query": "Smør Havesmør",
+    "sku": "9000004",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 25
+   },
+   {
+    "id": "baerfrugt-yoghurt",
+    "query": "Yoghurt Bærfrugt yoghurt 3,1%",
+    "sku": "9000006",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line"
+   }
+  ],
+  "kidLunchbox": [
+   {
+    "id": "kornvang-rugbroed",
+    "query": "Rugbrød Kornvang rugbrød",
+    "sku": "9000009",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line"
+   },
+   {
+    "id": "brune-spegepoelser",
+    "query": "Spegepølse Brune spegepølser",
+    "sku": "9000010",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line"
+   },
+   {
+    "id": "havelhavarti",
+    "query": "Ost Havelhavarti skåret",
+    "sku": "9000008",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line"
+   },
+   {
+    "id": "smaegulerodder",
+    "query": "Gulerod Små gulerødder",
+    "sku": "9000011",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line"
+   },
+   {
+    "id": "minipeberfrugter",
+    "query": "Peberfrugt Mini peberfrugter",
+    "sku": "9000012",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 20
+   },
+   {
+    "id": "lang-agurk",
+    "query": "Agurk Lang agurk",
+    "sku": "9000013",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "unit": "stk"
+   },
+   {
+    "id": "tomater-paa-vine",
+    "query": "Tomat Tomater på vine",
+    "sku": "9000014",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "unit": "stk",
+    "everyNDays": 20
+   },
+   {
+    "id": "roede-aebler",
+    "query": "Æble Røde æbler",
+    "sku": "9000015",
+    "mode": "cheapest",
+    "qtyPerCycle": 4,
+    "_note": "invented demo line",
+    "unit": "stk"
+   },
+   {
+    "id": "groenne-paerer",
+    "query": "Pære Grønne pærer",
+    "sku": "9000016",
+    "mode": "cheapest",
+    "qtyPerCycle": 3,
+    "_note": "invented demo line",
+    "unit": "stk"
+   },
+   {
+    "id": "makrelbiter",
+    "query": "Makrel Makrelbiter i sauce",
+    "sku": "9000017",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 21
+   },
+   {
+    "id": "husets-mayonnaise",
+    "query": "Mayonnaise Husets mayonnaise",
+    "sku": "9000018",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 45
+   }
+  ],
+  "dinnerBase": [
+   {
+    "id": "tomatpure",
+    "query": "Tomatpuré Tomatpuré på hylde",
+    "sku": "9000026",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line"
+   },
+   {
+    "id": "floede-til-madlavning",
+    "query": "Fløde Fløde til madlavning 8%",
+    "sku": "9000027",
+    "mode": "history",
+    "qtyPerCycle": 2,
+    "_note": "invented demo line"
+   },
+   {
+    "id": "grodris",
+    "query": "Ris Grødris",
+    "sku": "9000028",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 30
+   },
+   {
+    "id": "spaghetti-med-korn",
+    "query": "Pasta Spaghetti med korn",
+    "sku": "9000029",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 25
+   }
+  ],
+  "snacks": [
+   {
+    "id": "kagekrymmel",
+    "query": "Kagekrymmel med chokolade",
+    "sku": "9000091",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 25
+   },
+   {
+    "id": "chokobrik",
+    "query": "Chokobrik",
+    "sku": "9000092",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 30
+   },
+   {
+    "id": "sukkerhorn",
+    "query": "Sukkerhorn",
+    "sku": "9000093",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 40
+   },
+   {
+    "id": "frugthaver",
+    "query": "Frugthaver i lag",
+    "sku": "9000094",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 20
+   }
+  ],
+  "household": [
+   {
+    "id": "toilet",
+    "query": "Toiletpapir Blødt toiletpapir",
+    "sku": "9000034",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 30
+   },
+   {
+    "id": "koekken",
+    "query": "Køkkenrulle Dobbelt køkkenrulle",
+    "sku": "9000035",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 40
+   },
+   {
+    "id": "fugtige",
+    "query": "Servietter Fugtige servietter",
+    "sku": "9000036",
+    "mode": "history",
+    "qtyPerCycle": 2,
+    "_note": "invented demo line",
+    "everyNDays": 15
+   },
+   {
+    "id": "juniorbleer",
+    "query": "Bleer Junior bleer str. 6",
+    "sku": "9000037",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 40
+   },
+   {
+    "id": "maskintabs",
+    "query": "Opvask Maskin tabs til opvask",
+    "sku": "9000038",
+    "mode": "history",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 90
+   },
+   {
+    "id": "taet-opvaskemiddel",
+    "query": "Opvaskemiddel Tæt opvaskemiddel",
+    "sku": "9000039",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 90
+   },
+   {
+    "id": "affaldspose",
+    "query": "Affaldsposer Affaldsposer 20 liter",
+    "sku": "9000040",
+    "mode": "cheapest",
+    "qtyPerCycle": 1,
+    "_note": "invented demo line",
+    "everyNDays": 120
+   }
+  ]
+ }
+}

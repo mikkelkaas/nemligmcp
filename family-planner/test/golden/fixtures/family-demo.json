@@ -1,0 +1,90 @@
+{
+ "_readme": "Invented profile for the offline golden set. family-demo is nobody: no value in this file came from a real family's orders.",
+ "schemaVersion": 1,
+ "name": "family-demo",
+ "at": "invented",
+ "household": {
+  "adults": 2,
+  "children": 1,
+  "peopleToShopFor": 5,
+  "timezone": "Europe/Copenhagen",
+  "_note": "demo household: two adults and one child shop for five evening plates, because a demo dinner is cooked once and eaten twice"
+ },
+ "dinners": {
+  "members": [
+   {
+    "role": "adult",
+    "count": 2,
+    "appetite": 1.1
+   },
+   {
+    "role": "child",
+    "count": 1,
+    "appetite": 0.7
+   }
+  ],
+  "servingsPerDinner": 6,
+  "daysPerDinner": 2,
+  "maxNightsPerDinner": 2,
+  "preferLeftovers": true,
+  "maxRecipeMinutes": 35,
+  "reheatByFormat": true
+ },
+ "budget": {
+  "currency": "DKK",
+  "softCapKr": 900,
+  "maxDaysPerPlan": 14,
+  "planMaxAgeHours": 12,
+  "_note": "900 kr is an invented warning line for a short plan, never a hard stop"
+ },
+ "rotation": {
+  "maxPerProtein": 2,
+  "minFishDishes": 1
+ },
+ "learning": {
+  "enabled": false,
+  "autoAddMissing": false,
+  "minObservations": 2,
+  "maxQuantityFactor": 2,
+  "exploration": {
+   "cooldownTimes": 3,
+   "cooldownDays": 42
+  },
+  "_note": "off, so the golden set measures the planner and not a learned history"
+ },
+ "basket": {
+  "mode": "keep-and-top-up",
+  "neverClearBasket": true,
+  "checkout": "basket-and-slot-only",
+  "preferSale": true,
+  "saleTolerancePct": 15
+ },
+ "purchasing": {
+  "overshootPctFresh": 25,
+  "overshootPctStable": 400,
+  "tieBreakKr": 3
+ },
+ "meat": {
+  "perProtein": {
+   "hakset-okse": {
+    "buy": "Oksekød Hakset okse 9%",
+    "maxKrPerKg": 118
+   },
+   "hvid-fisk": {
+    "buy": "Fisk Hvid fisk hakket",
+    "maxKrPerKg": 165
+   },
+   "svine-poelse": {
+    "buy": "Pølse Kumle pølser",
+    "maxKrPerKg": 125
+   }
+  }
+ },
+ "exclusions": {
+  "queryAliases": {
+   "parmesan": "Alperost",
+   "ricotta": "Alperost"
+  }
+ },
+ "neverBuy": []
+}

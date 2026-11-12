@@ -1,0 +1,16 @@
+{
+ "_readme": "Invented demo quantities. cookServings is the pot size the recipe amounts are scaled to.",
+ "schemaVersion": 1,
+ "household": {
+  "adults": 2,
+  "children": 1,
+  "people": 3,
+  "dinnersPerRecipe": 2,
+  "cookServings": 6,
+  "_note": "one demo recipe is cooked for 6 servings and eaten over two evenings"
+ },
+ "rounding": {
+  "grams": 50,
+  "litres": 0.1
+ }
+}

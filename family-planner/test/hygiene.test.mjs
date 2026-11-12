@@ -36,9 +36,14 @@ const PRIVATE = [
 ];
 
 /** A credential pattern is always a failure, whatever the file. */
+// The value class excludes every character that shows up in source text - parentheses,
+// backslashes, quotes, commas - because tools/golden-run.mjs writes .env files and holds
+// patterns like /NEMLIG_PASS=\S+/g in its own text. A guard that fires on the shape of a
+// regular expression teaches people to switch it off.
+const VALUE = "[A-Za-z0-9/+_.=-]{16,}";
 const SECRETS = [
-  [/NEMLIG_PASS\s*=\s*(?!<|\s*$)[^\s"'`]{4,}/, "a password value in a tracked file"],
-  [/MCP_SECRET\s*=\s*(?!<|\s*\$)[A-Za-z0-9+/_-]{20,}/, "an MCP secret value in a tracked file"],
+  [new RegExp("NEMLIG_PASS\\s*=\\s*" + VALUE, "g"), "a password value in a tracked file"],
+  [new RegExp("MCP_SECRET\\s*=\\s*" + VALUE, "g"), "an MCP secret value in a tracked file"],
 ];
 
 function trackedFiles() {

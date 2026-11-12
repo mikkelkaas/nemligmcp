@@ -1,0 +1,60 @@
+{
+ "_readme": "Invented meat rules for the demo profile. Invented names, invented ceilings.",
+ "schemaVersion": 1,
+ "policy": {
+  "always": "compare price per kg, never the pack price"
+ },
+ "leftoversFromHistory": [],
+ "rules": [
+  {
+   "id": "hakset-okse",
+   "match": [
+    "hakset okse",
+    "okse hakset"
+   ],
+   "query": "Oksekød Hakset okse 9%",
+   "alt": [
+    "Oksekød Hakset okse 9%"
+   ],
+   "avoid": [
+    "19 pct"
+   ],
+   "fatBands": [
+    "9%"
+   ],
+   "maxKrPerKg": 118,
+   "packG": 500
+  },
+  {
+   "id": "hvid-fisk",
+   "match": [
+    "hvid fisk",
+    "fisk hakket"
+   ],
+   "query": "Fisk Hvid fisk hakket",
+   "alt": [
+    "Fisk Hvid fisk hakket"
+   ],
+   "avoid": [],
+   "fatBands": [],
+   "maxKrPerKg": 165,
+   "packG": 400
+  },
+  {
+   "id": "svine-poelse",
+   "match": [
+    "kumle poelse",
+    "kumle pølser",
+    "pølse af svin"
+   ],
+   "query": "Pølse Kumle pølser",
+   "alt": [
+    "Pølse Kumle pølser"
+   ],
+   "avoid": [],
+   "fatBands": [],
+   "maxKrPerKg": 125,
+   "packG": 400
+  }
+ ]
+}

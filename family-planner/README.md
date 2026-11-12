@@ -4,7 +4,7 @@
 
 This folder is part of the Namlig MCP repository (`nemligmcp/family-planner/`). Clone that
 repository and run the planner from this folder. On this host, for example, it also answers
-to the older path `/opt/docker/scripts/nemlig`, which is a symlink; a new host uses its own
+to the older path `/opt/docker/scripts/nemlig`, which is a symlink. A new host uses its own
 clone path and changes nothing. Credentials come from the `.env` the MCP server reads;
 `paths.mjs` finds it, and `NEMLIG_HOME` moves the whole folder somewhere else without an
 edit. Read "Environment variables" and "First run on another host" before your first plan.
@@ -17,9 +17,9 @@ per check, and the command that answers it.
 
 ## Environment variables
 
-The table lists every name the code reads, with the place that reads it. A value from a
-`.env` is never printed by any script here. `NEMLIG_USER` and `NEMLIG_PASS` are read from
-the `.env` file by `auth.mjs`; the others come from the process environment.
+The table lists every name the code reads, with the place that reads it. No script here
+prints a value from a `.env`. `auth.mjs` reads `NEMLIG_USER` and `NEMLIG_PASS` from the
+`.env` file; the other names come from the process environment.
 
 | Name | Read by | Default | Purpose |
 |---|---|---|---|
@@ -36,8 +36,8 @@ the `.env` file by `auth.mjs`; the others come from the process environment.
 | `NEMLIG_CONTAINER` | planner, `lib.mjs:19` | `nemligmcp` | container name the endpoint probe asks Docker about |
 | `NEMLIG_NET` | planner, `lib.mjs:20` | `docker_infra_net` | Docker network that name lives on |
 
-On this host, for example, the probe finds the container by name; a new host that does not
-run Docker gets one `warn:` line and the HTTP candidates decide. The server's own transport
+On this host, for example, the probe finds the container by name. A new host that does not
+run Docker gets one `warn:` line, and the HTTP candidates decide. The server's own transport
 switches are `MCP_TRANSPORT`, `MCP_HTTP_PORT` or `PORT`, `MCP_HTTP_HOST` and
 `MCP_ALLOW_UNAUTHENTICATED`, all in `src/http.ts:22-32`, and the upstream README documents
 them.
@@ -47,9 +47,9 @@ them.
 1. Install Node 20 or newer. Upstream `package.json` states engines `>=20` and its
    `Dockerfile` runs `node:22-alpine`. `--test-name-pattern`, used in `test/golden.test.mjs:14`,
    needs at least Node 18.11, so an older Node loses one documented command.
-2. Copy the credential template: `cp .env.example .env` in the repository root. Fill it with
-   the names in the table above: a name no code reads is accepted silently, so check each one
-   there. `MCP_SECRET` needs at least 32 characters: `openssl rand -hex 32` gives one. The
+2. Copy the credential template: `cp .env.example .env` in the repository root. Fill it from
+   the table above: no code reads a name that is not in that table, so check each one there.
+   `MCP_SECRET` needs at least 32 characters: `openssl rand -hex 32` gives one. The
    server refuses a shorter one (`src/http.ts:27`), and so does the planner (`lib.mjs:50`).
 3. Run the offline suite before you trust anything else: `node --test test/*.test.mjs`. It
    needs no login, no shop and no container.
@@ -142,9 +142,9 @@ write yours with `init-family.mjs`, as "One profile to tweak" describes.
 - `profiles/pantry.json` — rebuy staples per block: `breakfast`, `kidLunchbox`,
   `snacks`, `household`. Each item has `query`, `qtyPerCycle`, `everyNDays`, `mode`
   (`cheapest` or `history`), optional `sku` and `alt`.
-- `profiles/dinners.json` — the dinner cores your history supports, each within the
-  profile's `dinners.maxRecipeMinutes`, each covering `dinners.maxNightsPerDinner` evenings
-  for your household's portions, with `query`, `need` and optional `alt` per ingredient.
+- `profiles/dinners.json` — the dinner cores your history supports. Each stays within the
+  profile's `dinners.maxRecipeMinutes` and covers `dinners.maxNightsPerDinner` evenings for
+  your household's portions. An ingredient has `query`, `need` and optional `alt`.
 
 Stock-cycle gate: an item with `everyNDays` is skipped when `data/staples.json`
 shows it was bought more recently than the cycle. The gate looks up the pinned `sku`

@@ -1,0 +1,43 @@
+{
+ "_readme": "Invented exclusion words for the demo profile.",
+ "schemaVersion": 1,
+ "freshHerbs": {
+  "words": [
+   "kryderurt",
+   "friske urter"
+  ],
+  "action": "leave out and name in the plan file"
+ },
+ "pantryWords": {
+  "words": [
+   "salt",
+   "peber",
+   "olie",
+   "vand",
+   "sukker"
+  ],
+  "action": "never added, not even named"
+ },
+ "neverBought": {
+  "words": [
+   "blå ost",
+   "røget fisk",
+   "rejer"
+  ],
+  "action": "leave out and name in the plan file"
+ },
+ "keepEvenThoughCommon": {
+  "words": [
+   "hvidløg",
+   "citron",
+   "smør"
+  ]
+ },
+ "queryAliases": {
+  "words": {
+   "parmesan": "Alperost",
+   "ricotta": "Alperost"
+  }
+ },
+ "openQuestion": null
+}

@@ -1,0 +1,26 @@
+{
+  "comment": "pins: one-night dinners - maxNightsPerDinner 1 makes every demo dish cook fresh for a single evening, so nine evenings need more dishes than the pool holds and one evening is reported uncovered",
+  "argv": [
+    "--days",
+    "9",
+    "--breakfast",
+    "no",
+    "--lunchbox",
+    "no",
+    "--household",
+    "off",
+    "--soft-cap",
+    "700"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "dinners": {
+        "maxNightsPerDinner": 1
+      },
+      "budget": {
+        "softCapKr": 700
+      }
+    }
+  },
+  "shelf": {}
+}

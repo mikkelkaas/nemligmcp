@@ -1,0 +1,34 @@
+{
+  "comment": "pins: nothing available under one name - the first demo pear and the first sliced havarti are marked out of stock, so the pear line moves to the other demo pear on the shelf and the cheese line is named as unavailable instead of quietly bought",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--household",
+    "auto",
+    "--soft-cap",
+    "900"
+  ],
+  "profilePatch": {},
+  "shelf": {
+    "set": [
+      {
+        "sku": "9000015",
+        "Availability": {
+          "IsDeliveryAvailable": false,
+          "IsAvailableInStock": false
+        }
+      },
+      {
+        "sku": "9000007",
+        "Availability": {
+          "IsDeliveryAvailable": false,
+          "IsAvailableInStock": false
+        }
+      }
+    ]
+  }
+}
