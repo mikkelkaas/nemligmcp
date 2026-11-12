@@ -44,6 +44,17 @@ const DESCRIPTIVE = new Set(["frisk", "frossen", "frosne", "røget", "ryget", "m
   "revet", "skåret", "skaaret", "hel", "store", "stor", "mellemstor", "grove", "grov", "fin", "finvalsede",
   "let", "light", "økologiske", "dansk", "danske", "import", "økologisk"]);
 
+/** DESCRIPTIVE plus the words THIS family adds in its profile (`purchasing.qualifierWords`).
+ *  "Parboiled ris" and "Basmati ris" are rice to a family that buys both, so for them those
+ *  words sit in front of the product without changing it. The list is data, not code, and it
+ *  never reaches the reverse check the other way: a query for "Basmati ris" still refuses a
+ *  plain "Ris", because the query's own head noun must appear in the name. */
+function descriptiveOf(extra) {
+  const words = Array.isArray(extra) ? extra.map((w) => String(w).toLowerCase()) : [];
+  if (words.length === 0) return DESCRIPTIVE;
+  return new Set([...DESCRIPTIVE, ...words]);
+}
+
 // Words that turn a raw ingredient into another product: a mix, a sauce, a drink.
 const PREPARED = new Set(["dip", "mix", "blanding", "suppe", "suppen", "bouillon", "fond", "pulver", "granulat",
   "koncentrat", "koncentreret", "saft", "juice", "the", "salat", "pålæg", "paalaeg", "leverpostej", "paté", "pate",
@@ -109,8 +120,10 @@ function oneLetterApart(a, b) {
   return diff <= 1;
 }
 
-/** 0 = clearly different product, 1 = every query token found. */
-export function score(query, name) {
+/** 0 = clearly different product, 1 = every query token found.
+ *  `qualifierWords` are this family's own front-of-name words that keep the product
+ *  itself, so one call site can judge the shelf by the family's reading of it. */
+export function score(query, name, qualifierWords = []) {
   const q = tokens(query);
   const n = tokens(name);
   if (q.length === 0 || n.length === 0) return 0;
@@ -121,7 +134,7 @@ export function score(query, name) {
   // Exception: a name that merely starts with a preparation word ("Frisk panang
   // karrypasta (sød)") keeps its identity in the second token, so the reverse check
   // is skipped for those words.
-  const reverseNeeded = !DESCRIPTIVE.has(n[0]);
+  const reverseNeeded = !descriptiveOf(qualifierWords).has(n[0]);
   if (!inN(q[0])) return 0;
   if (reverseNeeded && !inQ(n[0])) return 0;
   // A name that adds a processing word the query never asked for is a different
@@ -139,6 +152,6 @@ export function score(query, name) {
 export const MIN_NAME_SCORE = 0.7;
 
 /** Convenience predicate used by the resolver. */
-export function nameMatches(query, name, minScore = MIN_NAME_SCORE) {
-  return score(query, name) >= minScore;
+export function nameMatches(query, name, minScore = MIN_NAME_SCORE, qualifierWords = []) {
+  return score(query, name, qualifierWords) >= minScore;
 }

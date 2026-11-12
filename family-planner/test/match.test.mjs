@@ -254,6 +254,19 @@ test("cleanQuery cuts the second choice a recipe line names", () => {
   assert.equal(cleanQuery("Alternativt sojasauce"), "Sojasauce");
 });
 
+test("a family that buys rice both ways is not blocked by how it is sold", () => {
+  const rice = ["parboiled", "basmati", "jasmin", "sushi", "kogepose", "løse"];
+  assert.equal(nameMatches("Ris", "Parboiled ris i kogepose"), false, "without the family's own list the head-noun guard holds");
+  assert.equal(nameMatches("Ris", "Parboiled ris i kogepose", 0.7, rice), true, "parboiled rice is the rice the recipe asked for");
+  assert.equal(nameMatches("Ris", "Basmati ris", 0.7, rice), true, "and so is basmati - the price rule picks between them");
+  // Strictness survives in both other directions: the query's own word must still be there,
+  // and a family list never makes another product into this one.
+  assert.equal(nameMatches("Basmati ris", "Ris", 0.7, rice), false, "asking for basmati is not answered by plain rice");
+  assert.equal(nameMatches("Ris", "Risotto ris", 0.7, rice), false, "a variety the family did not list stays refused");
+  assert.equal(nameMatches("Karry", "Karry sauce", 0.7, rice), false, "a sauce is another product, list or not");
+  assert.equal(nameMatches("Ost", "Pølse m. ost", 0.7, rice), false, "and a sausage with cheese is not cheese");
+});
+
 test("a line with a second choice searches the product, not the sentence", () => {
   const amounts = { household: { cookServings: 5 } };
   const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] }, queryAsides: { words: [] } };

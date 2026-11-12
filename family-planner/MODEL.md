@@ -215,3 +215,9 @@ thin layer, not the planner.
    measured and refused: lowering the number accepts specs the shopper wrote on purpose, and
    splitting a name on "/" for "Courgette / squash" also accepts "Fransk tærte m. laks/porrer"
    when the query is "porrer". Cutting the query fixes 26 of 28 such pairs and buys nothing wrong.
+   The rice case was settled by the family, not by the number: they buy parboiled and basmati and
+   choose per recipe, so no query alias could stand - one rewrite would decide for them every
+   week. The profile instead says which words do not change what rice is (`purchasing
+   .qualifierWords`), the guard skips those, and the price rule picks between them - today 1 kg
+   parboiled at 11,95 kr on sale against the 500 g need. Dried oregano went to `pantryWords`
+   with the other dried spices, because the cupboard has it and `--extra` buys it when it is dry.

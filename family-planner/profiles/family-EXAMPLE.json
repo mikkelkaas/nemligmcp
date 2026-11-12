@@ -70,6 +70,8 @@
   },
   "purchasing": {
     "_note": "How a pack is chosen. The planner covers the need for the lowest TOTAL price, never for the best price per unit. A food that keeps may overrun the need by a lot, because the price rule already stops it from costing more; fresh food may only overrun it by overshootPctFresh.",
+    "minNameScore": 0.7,
+    "qualifierWords": [],
     "overshootPctFresh": 25,
     "overshootPctStable": 400,
     "tieBreakKr": 3,
@@ -156,6 +158,7 @@
       "fill in"
     ],
     "queryAliases": {},
+    "queryAsides": [],
     "_open": "yours to answer"
   },
   "neverBuy": []

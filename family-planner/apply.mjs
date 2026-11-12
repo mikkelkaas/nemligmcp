@@ -397,8 +397,14 @@ export function validatePlan(plan) {
   }
   if (!Number.isFinite(Number(plan.planTotal)) || Number(plan.planTotal) < 0) problems.push("planTotal is missing or negative");
   if (problems.length === 0 && Number.isFinite(Number(plan.planTotal))) {
-    const sum = Number(plan.items.reduce((t, it) => t + Number(it.total), 0).toFixed(2));
-    if (Math.abs(sum - Number(plan.planTotal)) > 0.5) problems.push(`planTotal ${plan.planTotal} does not match the items, which add up to ${sum}`);
+    // planTotal is what THIS run adds; items is the whole plan. When the basket already
+    // holds one of the planned products the two differ by design - keep-and-top-up leaves
+    // that line out of the adds - so compare against the list planTotal was made from:
+    // the adds when the plan carries them (even an empty list), the items when it does not.
+    const basis = Array.isArray(plan.adds) ? plan.adds : plan.items;
+    const where = Array.isArray(plan.adds) ? "adds" : "items";
+    const sum = Number(basis.reduce((t, it) => t + Number(it.total), 0).toFixed(2));
+    if (Math.abs(sum - Number(plan.planTotal)) > 0.5) problems.push(`planTotal ${plan.planTotal} does not match the ${where}, which add up to ${sum}`);
   }
   return problems;
 }

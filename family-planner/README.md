@@ -117,6 +117,11 @@ anyone keeping a list.
   accepts closer names, higher blocks more lines into the plan's `NOT FOUND` list. The
   plan prints the best name and score it saw, so a blocked line is a decision you can
   read, not a guess. `apply.mjs` refuses a plan with such a line.
+- `qualifierWords` are the words that may stand in front of a product name without making
+  it another product - for your family. "Parboiled ris" and "Basmati ris" are rice to a
+  family that buys both, so those two words sit in that list and the price rule chooses
+  between them each week. It cannot loosen the other checks: a query for "Basmati ris" is
+  still never answered by plain rice, and "Karry" never buys "Karry sauce".
 - Needs are added before anything is bought: two dinners asking for 4 eggs are one need
   of 8, decided once. Two names landing on the same shelf item (a recipe's "Æg", the
   breakfast "Skrabeæg") are decided again on the summed weight. The plan file prints both
@@ -260,6 +265,8 @@ ingredients, so a single "Rejer" line cannot turn "Nudler med kylling" into a fi
   kg this family uses, and refuses anything above a kr-per-kg ceiling.
 - `profiles/exclusions.json` leaves out fresh herbs (Marco's rule), pantry staples such as
   salt and oil, and products absent from 66 orders. What is left out is named in the plan.
+  Dried spices belong to the same list (paprika, spidskommen, gurkemeje, kanel, oregano):
+  the cupboard has them, and when it does not, `--extra "Oregano:1 pk"` buys them once.
   `queryAsides` adds words that open a second choice inside a recipe line ("Spinat
   alternativt grønkål"): the query is cut there, so the search is for spinach and the
   fallback is not bought. Ordinary Danish connectives are already known without a profile.

@@ -5,3 +5,7 @@ profiles/*.json
 !profiles/family-EXAMPLE.json
 .env
 *.log
+
+# The golden fixture home: copied profiles, the invented shelf, product-cache seeds and
+# plan output written by the golden runs. Generated on every run, never committed.
+test/golden/home/

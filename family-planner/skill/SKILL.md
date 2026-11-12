@@ -91,10 +91,11 @@ Read `data/plans/plan-latest.md`, then report:
 
 If an intent is unresolved, the plan names the query it searched and the best name and
 score it saw. Then fix the profile: a shelf product that is ours under another word goes
-to `exclusions.queryAliases`; a recipe line that carries a second choice ("Spinat
-alternativt grønkål") is cut at `exclusions.queryAsides`; a family that wants closer names
-accepted lowers `purchasing.minNameScore` from its 0,7. A line we must have today goes in
-`--extra "Name:qty"`. Re-plan after any of these.
+to `exclusions.queryAliases`; a product we buy in several kinds (rice, parboiled or
+basmati) goes to `purchasing.qualifierWords` so the price rule chooses; a line whose extra
+words are a second choice is cut by `exclusions.queryAsides`; a family that wants closer
+names accepted lowers `purchasing.minNameScore` from its 0,7; a dried spice or anything else
+the cupboard already holds goes to `exclusions.pantryWords`. Re-plan after any of these.
 Do not swap in a product Marco did not ask for. If the task forbids editing a profile,
 report the unresolved lines and stop - `apply.mjs` refuses them anyway.
 

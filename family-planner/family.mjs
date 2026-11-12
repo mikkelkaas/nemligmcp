@@ -142,6 +142,12 @@ function purchasingOf(p) {
     // of the query's words the name must contain. 0,7 is what works on Namlig's names;
     // lower accepts more, higher blocks more lines into the "not found" list.
     minNameScore: num(raw.minNameScore, 0.7, 0.5, 0.95),
+    // Words that may sit in front of a product name without making it another product FOR
+    // THIS FAMILY ("parboiled", "basmati" over rice they both buy). Kept short: 40 words is
+    // more than any family needs, and an unbounded list slows every name check on the shelf.
+    qualifierWords: Array.isArray(raw.qualifierWords)
+      ? raw.qualifierWords.slice(0, 40).map((w) => String(w).toLowerCase())
+      : [],
     overshootPctFresh: num(raw.overshootPctFresh, 25, 0, 500),
     // A keepsake may overrun the need a long way: the price rule already refuses to pay
     // more in total, so a bigger pack of it is only taken when it is also cheaper.

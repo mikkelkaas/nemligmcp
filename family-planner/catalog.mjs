@@ -203,14 +203,21 @@ function minNameScore(intent) {
   return Math.min(0.95, Math.max(0.5, v));
 }
 
+/** The family's front-of-name words that keep the product itself (rice sold parboiled or
+ *  basmati is still the rice the recipe asked for). Empty for a family that wrote none. */
+function qualifierWords(intent) {
+  const list = intent?.purchasing?.qualifierWords;
+  return Array.isArray(list) ? list.slice(0, 40) : [];
+}
+
 /** One search, one selection. Returns ok:false with a reason instead of throwing. */
 async function attempt(mcp, query, intent, cache) {
   const mode = intent.mode || "cheapest";
   const { products, cached, ageMs, stale } = await search(mcp, query, { take: intent.take || DEFAULT_TAKE, cache, force: !!intent.force });
   if (products.length === 0) return { ok: false, query, why: "search returned nothing", candidates: 0, cached, ageMs };
-  const matching = products.filter((p) => nameMatches(query, p.name, minNameScore(intent)));
+  const matching = products.filter((p) => nameMatches(query, p.name, minNameScore(intent), qualifierWords(intent)));
   if (matching.length === 0) {
-    const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name)})`).join(", ");
+    const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name, qualifierWords(intent))})`).join(", ");
     return { ok: false, query, why: `no name reached ${minNameScore(intent)} (best: ${top})`, candidates: products.length, cached, ageMs };
   }
   const need = intent.need ? (typeof intent.need === "string" ? parseNeed(intent.need) : intent.need) : null;
@@ -279,7 +286,7 @@ async function proposeSubstitute(mcp, query, intent, cache) {
     } catch {
       continue;
     }
-    const pool = products.filter((p) => nameMatches(q, p.name, minNameScore(intent)));
+    const pool = products.filter((p) => nameMatches(q, p.name, minNameScore(intent), qualifierWords(intent)));
     const res = cheapest(pool, {
       avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
     preferSale: intent.preferSale, saleTolerancePct: intent.saleTolerancePct,

@@ -143,6 +143,24 @@ test("a plan that holds up is accepted", () => {
   assert.deepEqual(validatePlan(goodPlan()), []);
 });
 
+test("planTotal is checked against what the run adds, not the whole plan", () => {
+  // The basket already held the maelk, so keep-and-top-up left it out of the adds. The plan
+  // is right and the old check refused it: planTotal is the adds sum, items is every product.
+  const kept = goodPlan();
+  kept.planTotal = 54.95;
+  kept.adds = [{ sku: "5053034", name: "Æg", packs: 1, price: 54.95, total: 54.95 }];
+  assert.deepEqual(validatePlan(kept), [], "a colliding basket line is not a broken plan");
+  const emptyAdd = goodPlan();
+  emptyAdd.planTotal = 0;
+  emptyAdd.adds = [];                                  // the basket holds all of it already
+  assert.deepEqual(validatePlan(emptyAdd), []);
+  const off = validatePlan(Object.assign(kept, { adds: [] }));
+  assert.match(off.join("; "), /planTotal 54\.95 does not match the adds, which add up to 0/, "a real mismatch is still caught");
+  const noAdds = goodPlan();
+  noAdds.planTotal = 12.5;                             // an older plan file without an adds list
+  assert.match(validatePlan(noAdds).join("; "), /does not match the items/, "without adds the items are the basis");
+});
+
 test("the plan check refuses what cannot go to the shop", () => {
   const cases = [
     [{ kind: "nemlig-draft" }, /kind/],
