@@ -309,7 +309,12 @@ export class Limiter {
       this.lastStart = Date.now();
       return Promise.resolve();
     }
-    return new Promise((resolve) => this.waiters.push(resolve));
+    // The caller must be woken by a timer, not only by a release: when no call is in
+    // flight and only the spacing holds this one back, no release is coming.
+    return new Promise((resolve) => {
+      this.waiters.push(resolve);
+      this._pump();
+    });
   }
 
   _release() {

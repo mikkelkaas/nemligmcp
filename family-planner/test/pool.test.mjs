@@ -57,6 +57,20 @@ test("the gate keeps a set distance between two starts", async () => {
   assert.ok(gaps.every((g) => g >= 45), `starts were ${JSON.stringify(starts)}, gaps ${JSON.stringify(gaps)}`);
 });
 
+test("a call held back by the spacing still runs, with nobody in flight", async () => {
+  // One lane, a second call right after the first: only the spacing holds it, and a
+  // release will never come to wake it. This used to end the process with code 0 and
+  // half a plan written.
+  const gate = new Limiter({ concurrency: 1, minIntervalMs: 300, jitterMs: 0 });
+  assert.equal(await gate.run(async () => 1), 1);
+  const t0 = now();
+  const timer = setTimeout(() => assert.fail("the second call was never started"), 4000);
+  const r = await gate.run(async () => 2);
+  clearTimeout(timer);
+  assert.equal(r, 2);
+  assert.ok(now() - t0 >= 250, "the spacing was honoured");
+});
+
 test("a transient failure is retried and then succeeds", async () => {
   const gate = new Limiter({ concurrency: 1, minIntervalMs: 0, jitterMs: 0, attempts: 3, backoffStartMs: 20, backoffMaxMs: 40 });
   let calls = 0;

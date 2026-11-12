@@ -603,8 +603,27 @@ function maxRunMinutes(value) {
   return Math.max(1, Math.min(60, Math.floor(n)));
 }
 
+const USAGE = [
+  "usage: node plan.mjs [options]  (dry run: nothing is written to the basket)",
+  "  --days 8                1-14 evenings        --breakfast|--lunchbox|--snacks yes|no",
+  "  --household auto|off    --people N           --soft-cap 1500",
+  "  --family of-3           --covers 2           --dinners id1,id2   (needs --cores)",
+  "  --cores                 --max-per-protein N  --avoid \"brand,word\"",
+  "  --extra \"Name:300g\"    --fresh (ignore the 24 h price cache)",
+  "  --serial                one request at a time, wider spacing",
+  "  --max-minutes 15        stop the run after this much wall clock",
+  "plan file: data/plans/plan-latest.md and plan-latest.json",
+].join("\n");
+
 async function main() {
   const tRun = Date.now();
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    console.log(USAGE);
+    return;
+  }
+  if (arg("dinners", null) && !process.argv.includes("--cores")) {
+    console.log("  warn  --dinners only picks from the pinned cores: add --cores, else the rotation pool decides the menu");
+  }
   const options = readOptions();
   const fam = loadFamily({ name: arg("family", null) });
   options.family = fam;

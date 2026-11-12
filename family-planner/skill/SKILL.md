@@ -30,8 +30,15 @@ Ask all five in one message. Pre-fill with the defaults in `profiles/household.j
    window, hours, price, id) and the cheapest alternative with its price. The script
    already drops slots whose order deadline has passed and shows the slot currently
    selected in the basket. Then ask: book the recommended one, or pick another.
+   If `slots.mjs` prints no `ANBEFALET` line or exits 2 (nothing bookable, 0 of N), say so
+   in one line, plan without a slot, and do not retry or scrape the site.
 
-Do not run `plan.mjs` before every answer is in.
+Do not run `plan.mjs` before every answer is in. If nobody is reachable to answer, run
+with the defaults above and open the report with "planned on defaults: 8 days, breakfast
+yes, lunch box yes, snacks no, household auto, menu chosen by the rotation".
+
+If the user says "do not touch my basket", that is a hard stop after Step 2: print the
+plan, report the numbers, and do not mention Step 3 as an option you are about to take.
 
 ## Step 2 — plan (dry run, always first)
 
@@ -40,6 +47,14 @@ cd /opt/docker/scripts/nemlig
 node plan.mjs --days 8 --breakfast yes --lunchbox yes --snacks no \
   --household auto --dinners pasta-bolognese,kyllingcurry-ris
 ```
+
+`--dinners` only selects from the pinned cores, so add `--cores` to use it. Without
+`--cores` the rotation pool decides the menu (`profiles/recipe-pool.json`) and `plan.mjs`
+says so. Other flags: `--covers N` nights per dinner, `--family <name>`, `--soft-cap N`,
+`--avoid "brand,word"`, `--extra "Name:qty"` for a substitution you accepted,
+`--max-per-protein N`, `--fresh` (ignore the 24 h price cache), `--serial` (one request at
+a time), `--max-minutes N` (stop the run, default 15).`--help` prints the usage and writes
+nothing.
 
 `plan.mjs` prints the profile it used: `profiles/family-*.json` is the one file a family
 edits (members and appetites, nights per dinner, budget, rotation, meat, exclusions, pack
@@ -54,7 +69,9 @@ Read `data/plans/plan-latest.md`, then report:
 - the dinners and the day pairs they cover;
 - item count and total in kr;
 - anything above the 1500 kr soft cap;
-- every `NOT FOUND` intent — these block `apply.mjs`;
+- every `NOT FOUND` intent that is not a recipe line — these block `apply.mjs`. A line a
+  recipe names that Namlig has nothing for at all is listed under `Left out of the
+  recipes` and does not block;
 - every line under `Proposed substitution` (out-of-stock: the cheapest alternative is
   suggested, NOT added). Ask Marco to accept or ignore; on accept, re-run the plan
   with the printed `--extra "Name:qty"` flag;
@@ -69,7 +86,11 @@ Read `data/plans/plan-latest.md`, then report:
 
 If an intent is unresolved, fix the profile first (`profiles/pantry.json` or
 `profiles/dinners.json`: correct the `query` or add an `alt` query), then re-plan.
-Do not swap in a product Marco did not ask for.
+Do not swap in a product Marco did not ask for. If the task forbids editing a profile,
+report the unresolved lines and stop - `apply.mjs` refuses them anyway.
+
+A section of the plan file that is not there was empty, not skipped: no substitutions, no
+bulk offers, no stale favourites, no learnings yet.
 
 ## Step 3 — wait for approval
 

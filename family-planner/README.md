@@ -29,7 +29,7 @@ Deterministic 7-8 day basket planner for namely.com (5 people, 30-minute recipes
 cheapest option). Skill entry point: `skill/SKILL.md`.
 
 Credentials: `NEMLIG_USER` / `NEMLIG_PASS` in `/opt/docker/.env`, read by the
-`namlymcp` container. No script here prints them. `lib.mjs` finds the MCP endpoint
+`nemligmcp` container. No script here prints them. `lib.mjs` finds the MCP endpoint
 from `/opt/docker/.env` (`MCP_SECRET`, `HOST_IP`).
 
 ## Run it
