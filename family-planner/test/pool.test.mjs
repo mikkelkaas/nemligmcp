@@ -99,7 +99,8 @@ test("the gate stops the run when nothing answers", async () => {
   const gate = new Limiter({ concurrency: 1, minIntervalMs: 0, jitterMs: 0, attempts: 2, backoffStartMs: 5, maxConsecutiveFailures: 3 });
   const boom = () => gate.run(async () => { throw new Error("HTTP 500 from tools/call"); });
   await assert.rejects(boom, /HTTP 500/, "the first run reports the shop error");
-  await assert.rejects(boom, /stopped answering after 3 failed calls/, "the next run is stopped by the breaker");
+  await assert.rejects(boom, /failed 3 calls in a row/, "the next run is stopped by the breaker");
+  await assert.rejects(boom, /product-cache/, "and the message names what to do next");
   assert.equal(gate.stats.backoffs >= 3, true, "the breaker counted its backoffs");
 });
 

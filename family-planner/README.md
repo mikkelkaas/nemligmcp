@@ -165,6 +165,16 @@ pointed out that a mackerel salad is not evening food.
   `data/locks/apply.lock` so two runs cannot write the same basket, and every state file
   (cache, rotation, plan, report) is written to a temp file and renamed, so a crash
   cannot leave half a file behind.
+- When the shop cannot answer a query after its retries, the shelf from the previous run is
+  used (up to a week old), the line is marked in the plan, and the summary prints
+  `WARNING: N line(s) were decided on a shelf the shop could not answer`. Older than a week
+  is a guess, so it is refused instead. The breaker opens after 8 consecutive failures and,
+  after 15 s, lets one call try again; a shop that answers every call with an error stops
+  the run too. A run cannot exceed `NEMLIG_MAX_CALLS` (default 400) calls.
+- `--household` accepts `auto` or `off`; any other value warns. An unknown `--flag` warns
+  instead of being ignored. `--extra` without a name in front of the colon is skipped aloud.
+- A failure prints one line plus `--debug for the stack`; the stack itself is behind
+  `--debug`.
 - Measured 2026-11-12, 8 days, one family: 45 s with one call at a time, 10 s through the
   gate, 1,6 s when the 24 h price cache answers 46 of 52 intents.
 - If a name has no in-stock match, the intent lands in `unresolved` and `apply.mjs`

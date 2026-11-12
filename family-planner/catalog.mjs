@@ -120,9 +120,24 @@ export async function search(mcp, query, { take = 12, cache = null, force = fals
   inFlight.set(key, job);
   try {
     return await job;
+  } catch (e) {
+    const fallback = staleFromCache(cache, key);
+    if (!fallback) throw e;
+    process.stderr.write(`warn: "${query}" is not answerable right now, using the shelf from ${Math.round(fallback.ageMs / 3600000)} h ago\n`);
+    return fallback;
   } finally {
     inFlight.delete(key);
   }
+}
+
+/** Graceful degradation: the shop cannot answer, so use what was seen last time, and say
+ *  so. Older than a week is not a fallback, it is a guess, so it is refused. */
+function staleFromCache(cache, key) {
+  const c = cache && cache[key];
+  if (!c || !Number.isFinite(c.ts) || !Array.isArray(c.products)) return null;
+  const ageMs = Date.now() - c.ts;
+  if (ageMs > CACHE_KEEP_H * 3600 * 1000) return null;
+  return { products: c.products, cached: true, ageMs, stale: true };
 }
 
 /** The number of products to ask for: 1-40, whatever the caller wrote. */
@@ -178,7 +193,7 @@ export async function resolveIntent(mcp, intent, { cache = null } = {}) {
 /** One search, one selection. Returns ok:false with a reason instead of throwing. */
 async function attempt(mcp, query, intent, cache) {
   const mode = intent.mode || "cheapest";
-  const { products, cached, ageMs } = await search(mcp, query, { take: intent.take || 12, cache, force: !!intent.force });
+  const { products, cached, ageMs, stale } = await search(mcp, query, { take: intent.take || 12, cache, force: !!intent.force });
   if (products.length === 0) return { ok: false, query, why: "search returned nothing", candidates: 0, cached, ageMs };
   const matching = products.filter((p) => nameMatches(query, p.name));
   if (matching.length === 0) {
@@ -194,7 +209,7 @@ async function attempt(mcp, query, intent, cache) {
       ok: true, query, mode, pick: pickOf(pinned), packs, need,
       total: Number((pinned.price * packs).toFixed(2)),
       why: "family favourite sku, still in stock" + (pinned.onSale ? "; tilbud" : ""), compare: "sku-pin",
-      candidates: matching.length, cached, ageMs,
+      candidates: matching.length, cached, ageMs, stale,
       alternatives: matching.filter((p) => p.id !== pinned.id).slice(0, 3).map(altOf),
     };
   }
@@ -233,7 +248,7 @@ async function attempt(mcp, query, intent, cache) {
     ok: true, query, mode, pick: pickOf(chosen), packs, need,
     total: Number((chosen.price * packs).toFixed(2)),
     why: mismatch ? why + "; " + mismatch : why,
-    compare: res.mode, candidates: matching.length, cached, ageMs, pinMissed, campaignTip: res.campaignTip || null,
+    compare: res.mode, candidates: matching.length, cached, ageMs, stale, pinMissed, campaignTip: res.campaignTip || null,
     alternatives: (res.alternatives || []).map(altOf),
   };
 }

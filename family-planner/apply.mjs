@@ -23,7 +23,7 @@
 //      touched, so what you added in the app stays.
 // Use --recipes no to skip the cards.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
-import { connect, loadEnv, Limiter, sleep } from "./lib.mjs";
+import { connect, loadEnv, Limiter, sleep, reportFailure } from "./lib.mjs";
 import { writeRotation } from "./dinners.mjs";
 import { login } from "./auth.mjs";
 import { resolvePlanRecipes, recipeLines } from "./recipes.mjs";
@@ -353,7 +353,7 @@ function printResult(adds, failed, after, report, missing, written, cards, dropp
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main().catch((e) => { console.error("FAILED:", e.message); process.exitCode = 1; });
+  main().catch((e) => { reportFailure(e); process.exitCode = 1; });
 }
 
 /**

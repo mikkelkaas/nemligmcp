@@ -16,7 +16,7 @@
 // Output:
 //   data/plans/plan-<timestamp>.json + .md, and copies named plan-latest.{json,md}
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { connect, loadEnv, Limiter, mapPool, readConcurrency } from "./lib.mjs";
+import { connect, loadEnv, Limiter, mapPool, readConcurrency, reportFailure } from "./lib.mjs";
 import { resolveIntent, parseNeed, loadCache, saveCache } from "./catalog.mjs";
 import { toBaseMeasure, choosePack } from "./units.mjs";
 import { chooseDinners, recipeIntents, readRotation, readCookHistory } from "./dinners.mjs";
@@ -30,6 +30,31 @@ function arg(name, dflt) {
   const i = process.argv.indexOf("--" + name);
   return i > -1 ? process.argv[i + 1] : dflt;
 }
+/** The household block is on unless the value clearly says off. Anything else is a
+ *  warning, not a silent default: --household auto is not the same as --household no. */
+export function householdMode(value) {
+  const s = String(value == null ? "auto" : value).trim().toLowerCase();
+  if (["no", "off", "nej", "false", "0"].includes(s)) return "off";
+  if (["auto", "yes", "on", "ja", "true", "1"].includes(s)) return "auto";
+  console.log(`  warn  --household "${s}" is not auto or off - treated as auto`);
+  return "auto";
+}
+
+/** Flags the planner does not know: usually a typo, and it silently does nothing. */
+export function unknownFlags(argv, known) {
+  const out = [];
+  for (const a of argv) {
+    if (!String(a).startsWith("--")) continue;
+    const name = String(a).slice(2);
+    if (name && !known.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+const KNOWN_FLAGS = ["family", "days", "people", "breakfast", "lunchbox", "snacks", "household",
+  "soft-cap", "avoid", "fresh", "serial", "max-minutes", "dinners", "cores", "covers",
+  "max-per-protein", "extra", "extra-file", "debug", "help"];
+
 function yesNo(value, dflt) {
   const s = String(value == null ? "" : value).trim().toLowerCase();
   if (["yes", "y", "ja", "true", "1"].includes(s)) return true;
@@ -103,7 +128,7 @@ function blockIntents(items, blockName, days, cycleDays, staplesByName, staplesB
 }
 
 /** Parse --extra "Name:2 stk" repeated, plus an optional --extra-file with one per line. */
-function extraIntents(argvExtra, extraFile, rules) {
+export function extraIntents(argvExtra, extraFile, rules) {
   const lines = [];
   for (const e of argvExtra) if (e) lines.push(e);
   if (extraFile && existsSync(extraFile)) lines.push(...readFileSync(extraFile, "utf8").split("\n"));
@@ -112,6 +137,10 @@ function extraIntents(argvExtra, extraFile, rules) {
     const t = String(line || "").trim();
     if (!t || t.startsWith("#")) continue;
     const [q, need] = t.split(":").map((s) => (s || "").trim());
+    if (!q) {
+      console.log(`  skip  --extra "${t}" has no product name in front of the colon`);
+      continue;
+    }
     out.push({ source: "extra", sourceLabel: "extra", query: q, need: need || null, mode: "cheapest",
       preferSale: rules.preferSale, saleTolerancePct: rules.saleTolerancePct });
   }
@@ -449,7 +478,7 @@ function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, h
   let intents = poolState.intents;
   if (!poolState.usedPool) intents = intents.concat(dinnerIntents(dinners.cores, wantedIds, rules));
   const blocks = [["breakfast", options.breakfast, "breakfast"], ["kidLunchbox", options.lunchbox, "lunchbox"],
-    ["snacks", options.snacks, "snacks"], ["household", options.household !== "no", "household"]];
+    ["snacks", options.snacks, "snacks"], ["household", options.household !== "off", "household"]];
   for (const [block, enabled, label] of blocks) {
     if (!enabled) continue;
     intents = intents.concat(blockIntents(pantry.blocks[block], label, options.days, pantry.cycleDays, staplesByName, staplesBySku, rules));
@@ -520,6 +549,7 @@ async function resolveAll(live, options) {
     concurrency: lanes,
     minIntervalMs: options.serial ? 400 : 120,
     deadlineAtMs: Date.now() + options.maxMinutes * 60000,
+    maxCalls: Number(process.env.NEMLIG_MAX_CALLS) || 400,
   });
   const t0 = Date.now();
   const { mcp } = await connect(loadEnv(), { limiter });
@@ -539,13 +569,17 @@ async function resolveAll(live, options) {
   saveCache(cache);
   let oldestCacheMs = 0;
   let fromCache = 0;
+  let stale = 0;
   for (const r of resolved) {
     if (Number.isFinite(r.ageMs) && r.ageMs > oldestCacheMs) oldestCacheMs = r.ageMs;
     if (r.cached) fromCache++;
+    if (r.stale) stale++;
   }
   const timing = {
     connectMs, catalogMs: Date.now() - t1, intents: live.length, fromCache,
+    stale: resolved.filter((r) => r.stale).length,
     gate: limiter.summary(), lanes, serial: options.serial, maxMinutes: options.maxMinutes,
+    maxCalls: limiter.maxCalls,
   };
   console.log(timingLine(timing));
   return { mcp, resolved, oldestCacheMs, timing };
@@ -554,7 +588,8 @@ async function resolveAll(live, options) {
 /** One line a person reads to know where the time went, and what the gate did. */
 function timingLine(t) {
   return `Timing: connect ${(t.connectMs / 1000).toFixed(1)}s, catalog ${(t.catalogMs / 1000).toFixed(1)}s for `
-    + `${t.intents} intent(s) — ${t.fromCache} answered from cache, gate: ${t.gate}${t.serial ? ", serial" : ""}.`;
+    + `${t.intents} intent(s) — ${t.fromCache} answered from cache, gate: ${t.gate}${t.serial ? ", serial" : ""}`
+    + (t.stale ? `, ${t.stale} from a stale shelf` : "") + ".";
 }
 
 /** Console summary: the headline numbers, the warnings, and where to read more. */
@@ -569,6 +604,7 @@ function printSummary(plan, diff, options, planTotal, jsonPath, mdPath) {
   console.log(`PLAN (dry run): ${diff.adds.length} purchases, ${plan.saleItems} on sale, ${planTotal.toFixed(2)} kr added. Basket now ${plan.basketBefore.lines} lines / ${plan.basketBefore.totalProducts} kr.`);
   if (plan.overSoftCap) console.log(`WARNING: over the ${options.softCapKr} kr soft cap by ${(planTotal - options.softCapKr).toFixed(2)} kr.`);
   if (plan.unresolved.length) console.log(`WARNING: ${plan.unresolved.length} intent(s) found no product — fix them before applying.`);
+  if ((plan.timing || {}).stale) console.log(`WARNING: ${plan.timing.stale} line(s) were decided on a shelf the shop could not answer - the price cache from the run before was used, check those lines.`);
   if ((plan.recipeGaps || []).length) console.log(`NOTE: ${plan.recipeGaps.length} recipe line(s) name something Namlig has no product for (an "add yourself" line, a link) — listed under Left out, they do not block applying.`);
   if (plan.skipped.length) console.log(`Stock cycle skipped ${plan.skipped.length} item(s).`);
   if ((plan.stalePins || []).length) console.log(`NOTE: ${plan.stalePins.length} pinned favourite sku(s) were not offered - cheapest used, see the plan file.`);
@@ -585,7 +621,7 @@ function readOptions() {
     breakfast: yesNo(a("breakfast", null), true),
     lunchbox: yesNo(a("lunchbox", null), true),
     snacks: yesNo(a("snacks", null), false),
-    household: String(a("household", "auto")).toLowerCase(),
+    household: householdMode(a("household", "auto")),
     softCapKr: Number(a("soft-cap", "1500")) || 1500,
     avoid: (a("avoid", "") || "").split(",").map((s) => s.trim()).filter(Boolean),
     fresh: process.argv.includes("--fresh"),
@@ -612,6 +648,7 @@ const USAGE = [
   "  --extra \"Name:300g\"    --fresh (ignore the 24 h price cache)",
   "  --serial                one request at a time, wider spacing",
   "  --max-minutes 15        stop the run after this much wall clock",
+  "  --debug                 print the stack on a failure",
   "plan file: data/plans/plan-latest.md and plan-latest.json",
 ].join("\n");
 
@@ -652,6 +689,8 @@ async function main() {
   const live = grouped.intents;
   console.log(`Resolving ${live.length} intents (${grouped.collapsed} product(s) summed across lines, ${skipped.length} skipped by stock cycle) against Namlig...`);
 
+  const unknown = unknownFlags(process.argv, KNOWN_FLAGS);
+  if (unknown.length) console.log(`  warn  unknown flag(s) --${unknown.join(", --")}: this run ignores them (--help lists what works)`);
   const { mcp, resolved, oldestCacheMs, timing } = await resolveAll(live, options);
   const tAfterResolve = Date.now();
   const { items, unresolved, recipeGaps, substitutions, substitutedAway } = mergeItems(resolved, options.purchasing);
@@ -718,5 +757,5 @@ function writePlan(plan, diff) {
 
 // Run only when started as a command, so a test can import the pure parts.
 if (process.argv[1] && process.argv[1].endsWith("plan.mjs")) {
-  main().catch((e) => { console.error("FAILED:", e.stack || e.message); process.exitCode = 1; });
+  main().catch((e) => { reportFailure(e); process.exitCode = 1; });
 }

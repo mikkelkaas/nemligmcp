@@ -179,6 +179,7 @@ export class Mcp {
   async call(name, args = {}, opts = {}) {
     const send = () => this.rpc("tools/call", { name, arguments: args }, opts);
     const r = this.limiter ? await this.limiter.run(send) : await send();
+    if (r.isError && this.limiter) this.limiter.noteToolError(name, r.text);
     const text = (r.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
     let json = null;
     try {
@@ -241,6 +242,10 @@ export class Limiter {
     this.backoffStartMs = clampInt(o.backoffStartMs, 1500, 100, 60000);
     this.backoffMaxMs = clampInt(o.backoffMaxMs, 30000, 500, 600000);
     this.maxFailures = clampInt(o.maxConsecutiveFailures, 8, 1, 100);
+    // A run that asks more questions than this is not a planner run, it is a bug or a
+    // scrape: stop asking the shop. Half of a 14-day plan is 40 calls, so 400 is generous.
+    this.maxCalls = clampInt(o.maxCalls, 400, 1, 10000);
+    this.cooldownMs = clampInt(o.halfOpenCooldownMs, 15000, 1000, 600000);
     this.deadlineAt = Number(o.deadlineAtMs) > 0 ? Number(o.deadlineAtMs) : 0;
     this.inFlight = 0;
     this.lastStart = 0;
@@ -249,12 +254,17 @@ export class Limiter {
     this.failures = 0;
     this.backoffMs = 0;
     this.openUntil = 0;
-    this.stats = { calls: 0, retries: 0, backoffs: 0, lanes: this.concurrency };
+    this.broken = null;      // the breaker's reason, set when it stops the run
+    this.brokenAt = 0;
+    this.stats = { calls: 0, retries: 0, backoffs: 0, lanes: this.concurrency, toolErrors: 0 };
   }
 
   /** Run one shop call through the gate, with a bounded number of attempts. */
   async run(fn) {
     this._checkDeadline();
+    this._checkBudget();
+    this._maybeHalfOpen();
+    if (this.broken) throw new Error(this.broken);
     let last = null;
     for (let attempt = 1; attempt <= this.attempts; attempt++) {
       await this._gate();
@@ -266,9 +276,7 @@ export class Limiter {
         last = e;
         if (fatalCallError(e)) throw e;
         this._fail();
-        if (this.failures >= this.maxFailures) {
-          throw new Error(`namligmcp stopped answering after ${this.failures} failed calls: ${e.message}`);
-        }
+        if (this.broken) throw new Error(this.broken);
         if (attempt < this.attempts) {
           this.stats.retries++;
           await sleep(this.backoffMs + rand(this.jitterMs));
@@ -286,7 +294,37 @@ export class Limiter {
   /** A short summary for the plan output: what the gate actually did. */
   summary() {
     const s = this.stats;
-    return `${s.calls} call(s), up to ${s.lanes} in flight, ${s.retries} retry(ies), ${s.backoffs} backoff(s)`;
+    return `${s.calls} call(s), up to ${s.lanes} in flight, ${s.retries} retry(ies), ${s.backoffs} backoff(s)`
+      + (s.toolErrors ? `, ${s.toolErrors} shop error(s)` : "");
+  }
+
+  /**
+   * A tool-level error is an answer, so it is not retried - the request itself is wrong or
+   * the shop is unhappy. Counted here so a shop that answers every call with an error stops
+   * the run instead of letting each intent burn its own attempts.
+   */
+  noteToolError(name, text) {
+    this.stats.toolErrors++;
+    this._fail();
+    if (this.broken) {
+      this.broken = `namligmcp answered ${this.failures} calls in a row with an error (last: ${name} ${String(text || "").slice(0, 80)}) - the run stops here`;
+    }
+  }
+
+  _checkBudget() {
+    if (this.stats.calls >= this.maxCalls) {
+      throw new Error(`this run made ${this.stats.calls} calls, the limit is ${this.maxCalls} - raise NEMLIG_MAX_CALLS if that is really intended`);
+    }
+  }
+
+  /** Half-open: after the cooldown one call may try again. A success closes the breaker. */
+  _maybeHalfOpen() {
+    if (!this.broken || Date.now() - this.brokenAt < this.cooldownMs) return;
+    process.stderr.write("warn: trying the shop again after the breaker opened\n");
+    this.broken = null;
+    this.failures = this.maxFailures - 1;
+    this.backoffMs = Math.floor(this.backoffMs / 2);
+    this.concurrency = Math.min(this.maxConcurrency, Math.max(1, this.concurrency * 2));
   }
 
   _checkDeadline() {
@@ -346,6 +384,10 @@ export class Limiter {
   /** Trouble: count it, slow the whole gate down, and give it one lane until it settles. */
   _fail() {
     this.failures++;
+    if (this.failures >= this.maxFailures && !this.broken) {
+      this.broken = `namligmcp failed ${this.failures} calls in a row - the run stops here, fix the shop or the secret, or reuse data/product-cache.json with a fresh --days`;
+      this.brokenAt = Date.now();
+    }
     this.backoffMs = Math.min(this.backoffMaxMs, this.backoffMs > 0 ? this.backoffMs * 2 : this.backoffStartMs);
     this.openUntil = Date.now() + this.backoffMs;
     this.stats.backoffs++;
@@ -393,4 +435,18 @@ export async function mapPool(items, worker, { concurrency = 4 } = {}) {
 /** Concurrency for read traffic: the environment wins over the default. */
 export function readConcurrency(env = process.env) {
   return clampInt(env.NEMLIG_CONCURRENCY, CONCURRENCY_DEFAULT, 1, 8);
+}
+
+/**
+ * How a script reports dying: one line a person can act on. The stack is for us, so it
+ * stays behind --debug. Every script uses this, so an error never looks different twice.
+ */
+export function reportFailure(e, argv = process.argv) {
+  const message = String((e && e.message) || e || "unknown error");
+  const first = message.split("\n")[0].slice(0, 500);
+  console.error("FAILED: " + first);
+  const hint = /MCP_SECRET|healthz|deadline|stopped|limit is|not readable|REFUSED/.test(message) ? "" : " (add --debug for the stack)";
+  if (hint) console.error("       " + hint.trim());
+  if (argv.includes("--debug")) console.error((e && e.stack) || message);
+  return first;
 }

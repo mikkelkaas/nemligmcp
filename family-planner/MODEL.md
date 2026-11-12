@@ -156,7 +156,16 @@ rules about asking live in one place (`Limiter` in `lib.mjs`) and every script u
 - A wall-clock deadline (`--max-minutes`, default 15) ends a slow evening with a message.
 - Reads are retried, writes never are. `add_to_basket` is not idempotent, and a duplicate
   product in a real basket is worse than a plan you re-run.
-- `--serial` is the polite switch: one call at a time, 400 ms apart.
+- `--serial` is the polite switch: one call at a time, 400 ms apart. Measured cost: 24 s
+  against 10 s for the same cold 8-day plan.
+- A budget of calls, not only of time: `NEMLIG_MAX_CALLS` (default 400). More than that is a
+  bug or a scrape, so the run stops.
+- A query the shop cannot answer falls back to the shelf from the previous run, at most a
+  week old, marked as stale in the plan and named in the summary. That keeps a hiccup from
+  killing a plan, and keeps a stale answer visible.
+- The breaker opens after 8 consecutive failures and half-opens after 15 s: one call may
+  try again, and a success closes it. A shop that answers every call with an error is
+  counted as a failure too, because a tool error is an answer nobody wanted.
 
 ## What is generated and what is taste
 
