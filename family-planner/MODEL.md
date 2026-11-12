@@ -204,9 +204,14 @@ thin layer, not the planner.
 3. The sale rule must compare against the SKU this family actually buys, not only the
    cheapest item on the shelf.
 4. Piece weights should come from the shop's declared pack weight when it exposes one.
-5. The name threshold (0.7) rejects lines where the shop's own name sits inside the line:
-   "Kaffir limeblade alternativt" against "Kaffir limeblade" (0.667), "Ris" against
-   "Parboiled ris" (0). An 8-day plan on 2026-11-12 carried 6 such lines, and they hold
-   `apply.mjs` until they are fixed or passed with `--ignore-unresolved`. Loosening the
-   number also lets "Ost 38" buy plain "Ost", so the fix needs a measured rule tested
-   against the real shelf - not a smaller constant.
+5. The name threshold (`purchasing.minNameScore`, 0,7) blocked lines whose words did not fit
+   the shop's name. Measured 2026-11-12 over the cached shelf (187 queries, their 6 top names
+   each): most blocks were a dirty query, not a wrong threshold. "Spinat alternativt grønkål"
+   asks for spinach and names a fallback, so the query was spinach plus two words no product
+   carries. The query is now cut at such a connective (`cleanQuery`, family wording in
+   `exclusions.queryAsides`), and one 8-day plan went from 6 blocked lines to 2. The two left
+   are honest: "Oregano tørret" has nothing on the shelf, and "Ris" against "Parboiled ris" is
+   blocked by the head-noun guard because that is another product. Two alternatives were
+   measured and refused: lowering the number accepts specs the shopper wrote on purpose, and
+   splitting a name on "/" for "Courgette / squash" also accepts "Fransk tærte m. laks/porrer"
+   when the query is "porrer". Cutting the query fixes 26 of 28 such pairs and buys nothing wrong.

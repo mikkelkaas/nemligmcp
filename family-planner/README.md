@@ -112,6 +112,11 @@ anyone keeping a list.
   always wins, so "saltet" smør stays fresh even though "salt" is in the other list.
   `tieBreakKr` (3): a difference under that goes to the offer on sale, then to the one
   that wastes least.
+- `minNameScore` (0,7) is how sure the planner must be that a shelf name is the product
+  the recipe asked for: the share of the query's words the name has to contain. Lower
+  accepts closer names, higher blocks more lines into the plan's `NOT FOUND` list. The
+  plan prints the best name and score it saw, so a blocked line is a decision you can
+  read, not a guess. `apply.mjs` refuses a plan with such a line.
 - Needs are added before anything is bought: two dinners asking for 4 eggs are one need
   of 8, decided once. Two names landing on the same shelf item (a recipe's "Æg", the
   breakfast "Skrabeæg") are decided again on the summed weight. The plan file prints both
@@ -255,6 +260,9 @@ ingredients, so a single "Rejer" line cannot turn "Nudler med kylling" into a fi
   kg this family uses, and refuses anything above a kr-per-kg ceiling.
 - `profiles/exclusions.json` leaves out fresh herbs (Marco's rule), pantry staples such as
   salt and oil, and products absent from 66 orders. What is left out is named in the plan.
+  `queryAsides` adds words that open a second choice inside a recipe line ("Spinat
+  alternativt grønkål"): the query is cut there, so the search is for spinach and the
+  fallback is not bought. Ordinary Danish connectives are already known without a profile.
 - `profiles/amounts.json` holds the mined amounts; every dinner line in the plan file
   prints the arithmetic behind its quantity.
 - `data/rotation.json` is written by `apply.mjs` after a successful write, so a dry run

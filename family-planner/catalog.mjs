@@ -14,15 +14,20 @@
 //   node catalog.mjs pick "<query>" [--need 300g] [--mode cheapest|history] [--sku 5053034]
 // Everything prints JSON. Only read-only MCP tools are used (search_products).
 import { readFileSync, mkdirSync } from "node:fs";
-import { connectGated } from "./lib.mjs";
+import { connectGated, warnUnknownFlags } from "./lib.mjs";
 import { parsePack, packsFor, cheapest, choosePack, pieceGrams } from "./units.mjs";
-import { nameMatches, norm, tokens, score as nameScore } from "./match.mjs";
+import { nameMatches, norm, tokens, score as nameScore, MIN_NAME_SCORE } from "./match.mjs";
 
 import { CACHE_PATH, writeJsonAtomic } from "./paths.mjs";
+// What this script understands, so a typo in a flag is named instead of ignored.
+const CATALOG_FLAGS = ["take", "need", "mode", "sku", "avoid", "help", "debug"];
 const CACHE_TTL_H = 24;
 const CACHE_KEEP_H = 24 * 7;   // an entry nobody asks for again is dropped after a week
 const CALL_TIMEOUT = 45000;
 const TAKE_MAX = 40;
+// How many shelf names one search keeps. 12 is about what a person reads on one screen of
+// the shop's own list; asking for more only costs time on the way back.
+const DEFAULT_TAKE = 12;
 const NEED_RE = /^(\d+(?:[.,]\d+)?)\s*(kg|g|l|ml|stk|styk|dåse|dåser|flaske|fl|pose|pos|karton|skive|skiver|glas|bakke|bundt|bdt|rl|ruller)?$/i;
 
 /** "300g" -> { qty: 300, unit: "g" }. null when unparseable. */
@@ -105,7 +110,7 @@ export function pruneCache(cache, keepHours = CACHE_KEEP_H) {
 const inFlight = new Map();
 
 /** Run one search. Returns mapped products, from cache when fresh, once per query. */
-export async function search(mcp, query, { take = 12, cache = null, force = false } = {}) {
+export async function search(mcp, query, { take = DEFAULT_TAKE, cache = null, force = false } = {}) {
   const wanted = clampTake(take);
   const key = norm(query) + "|" + wanted;
   if (!force && cache) {
@@ -143,7 +148,7 @@ function staleFromCache(cache, key) {
 /** The number of products to ask for: 1-40, whatever the caller wrote. */
 function clampTake(take) {
   const n = Math.round(Number(take));
-  if (!Number.isFinite(n)) return 12;
+  if (!Number.isFinite(n)) return DEFAULT_TAKE;
   return Math.max(1, Math.min(TAKE_MAX, n));
 }
 
@@ -190,15 +195,23 @@ export async function resolveIntent(mcp, intent, { cache = null } = {}) {
   return { ok: false, query: primary, why: notes.join(" | "), candidates, attempts: tries.length, substitution };
 }
 
+/** The name threshold for this intent: the family's own, or MIN_NAME_SCORE, kept
+ *  inside the range a shopper would trust (0,5 to 0,95). */
+function minNameScore(intent) {
+  const v = Number(intent?.purchasing?.minNameScore);
+  if (!Number.isFinite(v)) return MIN_NAME_SCORE;
+  return Math.min(0.95, Math.max(0.5, v));
+}
+
 /** One search, one selection. Returns ok:false with a reason instead of throwing. */
 async function attempt(mcp, query, intent, cache) {
   const mode = intent.mode || "cheapest";
-  const { products, cached, ageMs, stale } = await search(mcp, query, { take: intent.take || 12, cache, force: !!intent.force });
+  const { products, cached, ageMs, stale } = await search(mcp, query, { take: intent.take || DEFAULT_TAKE, cache, force: !!intent.force });
   if (products.length === 0) return { ok: false, query, why: "search returned nothing", candidates: 0, cached, ageMs };
-  const matching = products.filter((p) => nameMatches(query, p.name));
+  const matching = products.filter((p) => nameMatches(query, p.name, minNameScore(intent)));
   if (matching.length === 0) {
     const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name)})`).join(", ");
-    return { ok: false, query, why: `no result passed the name match (best: ${top})`, candidates: products.length, cached, ageMs };
+    return { ok: false, query, why: `no name reached ${minNameScore(intent)} (best: ${top})`, candidates: products.length, cached, ageMs };
   }
   const need = intent.need ? (typeof intent.need === "string" ? parseNeed(intent.need) : intent.need) : null;
   const pinned = mode === "history" && intent.sku ? matching.find((p) => String(p.id) === String(intent.sku)) : null;
@@ -262,11 +275,11 @@ async function proposeSubstitute(mcp, query, intent, cache) {
   for (const q of substitutionQueries(query, intent.alt || [])) {
     let products;
     try {
-      ({ products } = await search(mcp, q, { take: 12, cache, force: false }));
+      ({ products } = await search(mcp, q, { take: DEFAULT_TAKE, cache, force: false }));
     } catch {
       continue;
     }
-    const pool = products.filter((p) => nameMatches(q, p.name));
+    const pool = products.filter((p) => nameMatches(q, p.name, minNameScore(intent)));
     const res = cheapest(pool, {
       avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
     preferSale: intent.preferSale, saleTolerancePct: intent.saleTolerancePct,
@@ -304,18 +317,23 @@ function arg(name, dflt) {
   return i > -1 ? process.argv[i + 1] : dflt;
 }
 
+const USAGE = 'usage: node catalog.mjs search "<query>" [--take N] | pick "<query>" [--need 300g] [--mode cheapest|history] [--sku S]';
+
 async function cli() {
   const cmd = process.argv[2];
   const q = process.argv[3];
+  // --help answers from here and never reaches the shop, the cache or the gate.
+  if (process.argv.includes("--help") || process.argv.includes("-h")) { console.log(USAGE); return; }
+  warnUnknownFlags(process.argv, CATALOG_FLAGS);
   if (!cmd || !q) {
-    console.log('usage: node catalog.mjs search "<query>" [--take N] | pick "<query>" [--need 300g] [--mode cheapest|history] [--sku S]');
+    console.log(USAGE);
     process.exitCode = 2;
     return;
   }
   const { mcp } = await connectGated({ minIntervalMs: 120 });
   const cache = loadCache();
   if (cmd === "search") {
-    const r = await search(mcp, q, { take: Number(arg("take", "12")), cache });
+    const r = await search(mcp, q, { take: Number(arg("take", String(DEFAULT_TAKE))) || DEFAULT_TAKE, cache });
     saveCache(cache);
     console.log(JSON.stringify(r.products.map((p) => ({
       sku: p.id, name: p.name, brand: p.brand, price: p.price, unitPrice: p.unitPrice,

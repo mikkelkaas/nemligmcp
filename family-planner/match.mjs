@@ -132,7 +132,13 @@ export function score(query, name) {
   return Number((hit / q.length).toFixed(3));
 }
 
+/** The share of the query's words the shop must show back before we call it the same
+ *  product. A family changes it in its profile under `matching.minNameScore`; the
+ *  catalog keeps what it is given between 0,5 and 0,95, so a typo cannot make the
+ *  planner accept just anything. */
+export const MIN_NAME_SCORE = 0.7;
+
 /** Convenience predicate used by the resolver. */
-export function nameMatches(query, name, minScore = 0.7) {
+export function nameMatches(query, name, minScore = MIN_NAME_SCORE) {
   return score(query, name) >= minScore;
 }

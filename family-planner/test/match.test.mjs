@@ -238,6 +238,33 @@ test("cleanQuery turns a Namlig ingredient sentence into a searchable product na
   assert.equal(cleanQuery("Gode pølser"), "Gode pølser");
 });
 
+test("cleanQuery cuts the second choice a recipe line names", () => {
+  // These six lines an 8-day plan could not answer on 12 Nov: the aside was searched
+  // instead of the product, so nothing on the shelf reached the name threshold.
+  assert.equal(cleanQuery("Spinat alternativt grønkål"), "Spinat");
+  assert.equal(cleanQuery("Frisk spinat alternativt grønkål"), "Spinat");
+  assert.equal(cleanQuery("Kaffir limeblade alternativt"), "Kaffir limeblade");
+  assert.equal(cleanQuery("Nødder eventuelt"), "Nødder");
+  assert.equal(cleanQuery("Sojasauce evt glutenfri"), "Sojasauce");
+  assert.equal(cleanQuery("Naanbrød (tilføj selv til kurv)"), "Naanbrød");
+  assert.equal(cleanQuery("Raita link opskrift"), "Raita");
+  // A family's own wording comes from its profile, not from code.
+  assert.equal(cleanQuery("Ost alternativ eller", ["eller"]), "Ost");
+  // An aside that opens the line still leaves a product to search for.
+  assert.equal(cleanQuery("Alternativt sojasauce"), "Sojasauce");
+});
+
+test("a line with a second choice searches the product, not the sentence", () => {
+  const amounts = { household: { cookServings: 5 } };
+  const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] }, queryAsides: { words: [] } };
+  const recipe = { name: "T", servings: 5, ingredients: [
+    { text: "Asparges (alternativt kan asparges erstattes af spinat)", amount: "1", unit: "stk" },
+  ] };
+  const out = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions });
+  assert.equal(out.intents[0].query, "Asparges", "the product, with no aside words");
+  assert.deepEqual(out.intents[0].alt, [], "the cut text is the first query, so there is nothing to retry");
+});
+
 test("recipeIntents scales to 5 servings, merges repeats and skips pantry words", async () => {
   const amounts = { household: { cookServings: 5 } };
   const exclusions = { pantryWords: { words: ["salt"] }, freshHerbs: { words: ["persille"] }, neverBought: { words: ["kapers"] } };

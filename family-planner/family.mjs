@@ -103,7 +103,7 @@ function meatOf(profile, generated) {
   };
 }
 
-/** The three recipe filters, in the shape dinners.mjs already reads. */
+/** The recipe filters and the query rewrite, in the shape dinners.mjs already reads. */
 function exclusionsOf(profile, generated) {
   const e = profile.exclusions || {};
   const words = (section, key) => (Array.isArray(section) ? section : (generated[key] || {}).words || []);
@@ -114,6 +114,10 @@ function exclusionsOf(profile, generated) {
     neverBought: { words: words(e.neverBought, "neverBought"), action: "leave out and name in the plan file" },
     keepEvenThoughCommon: { words: words(e.keepEvenThoughCommon, "keepEvenThoughCommon") },
     queryAliases: { words: e.queryAliases || (generated.queryAliases || {}).words || {} },
+    // A recipe line sometimes names a second choice ("Spinat alternativt grønkål"). The
+    // words that open such an aside are cut from the query, the fallback with them;
+    // dinners.mjs knows the ordinary Danish ones, a family adds its own wording here.
+    queryAsides: { words: words(e.queryAsides, "queryAsides"), action: "cut from the query, and the second choice after it" },
     _open: e._open || generated.openQuestion || null,
   };
 }
@@ -134,6 +138,10 @@ function purchasingOf(p) {
   const stable = Array.isArray(raw.stableWords) && raw.stableWords.length > 0
     ? raw.stableWords.map((w) => String(w)) : null;
   return {
+    // How sure the planner must be that a shelf name is the product asked for: the share
+    // of the query's words the name must contain. 0,7 is what works on Namlig's names;
+    // lower accepts more, higher blocks more lines into the "not found" list.
+    minNameScore: num(raw.minNameScore, 0.7, 0.5, 0.95),
     overshootPctFresh: num(raw.overshootPctFresh, 25, 0, 500),
     // A keepsake may overrun the need a long way: the price rule already refuses to pay
     // more in total, so a bigger pack of it is only taken when it is also cheaper.

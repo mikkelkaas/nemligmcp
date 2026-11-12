@@ -437,6 +437,24 @@ export function readConcurrency(env = process.env) {
   return clampInt(env.NEMLIG_CONCURRENCY, CONCURRENCY_DEFAULT, 1, 8);
 }
 
+/** Flags the planner does not know: usually a typo, and it silently does nothing. */
+export function unknownFlags(argv, known) {
+  const out = [];
+  for (const a of argv) {
+    if (!String(a).startsWith("--")) continue;
+    const name = String(a).slice(2);
+    if (name && !known.includes(name)) out.push(name);
+  }
+  return out;
+}
+
+/** The same warning in every script, so a typo costs one glance and no re-plan. */
+export function warnUnknownFlags(argv, known, label = "--help") {
+  const unknown = unknownFlags(argv, known);
+  if (unknown.length) console.log(`  warn  unknown flag(s) --${unknown.join(", --")}: this run ignores them (${label} lists what works)`);
+  return unknown;
+}
+
 /**
  * How a script reports dying: one line a person can act on. The stack is for us, so it
  * stays behind --debug. Every script uses this, so an error never looks different twice.

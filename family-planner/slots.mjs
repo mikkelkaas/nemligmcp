@@ -10,8 +10,10 @@
 //
 // Read-only: this script only calls get_timeslots. It never reserves anything.
 import { readFileSync } from "node:fs";
-import { connectGated } from "./lib.mjs";
+import { connectGated, warnUnknownFlags } from "./lib.mjs";
 import { loadFamily } from "./family.mjs";
+// What this script understands, so a typo in a flag is named instead of ignored.
+const SLOTS_FLAGS = ["days", "from", "limit", "json", "family", "help", "debug"];
 const CALL_TIMEOUT = 60000;
 const WEEKDAYS = ["søndag", "mandag", "tirsdag", "onsdag", "torsdag", "fredag", "lørdag"];
 
@@ -135,6 +137,13 @@ function fmt(s, scored) {
 }
 
 async function main() {
+  // --help answers before the shop is contacted.
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    console.log('usage: node slots.mjs [--days 8] [--from 2026-11-12] [--limit 12] [--json] [--family <name>]');
+    console.log("Read-only: it lists bookable delivery slots and ranks them. It never reserves one. Exit 2 when nothing is bookable.");
+    return;
+  }
+  warnUnknownFlags(process.argv, SLOTS_FLAGS);
   const days = Math.max(1, Math.min(14, Number(arg("days", "8")) || 8));
   const from = arg("from", null);
   const limit = Number(arg("limit", "12")) || 12;

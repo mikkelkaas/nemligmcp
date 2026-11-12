@@ -39,22 +39,49 @@ const NOISE = ["håndfuld", "hndsfuld", "knivspids", "lidt", "ca", "evt", "gerne
   "finthakkede", "finthakket", "grofthakkede", "hakket", "revet", "rivet", "snittede", "skiver", "stykker", "stk", "pk", "både", "bidder", "små", "halv", "halve", "kvart", "lille", "store", "stor",
   "saften", "heraf", "deraf", "gerne", "pr", "person", "portioner", "af", "med", "og", "til", "en", "et", "den", "det", "the", "røget", "røgede", "glutenfri", "økologisk", "øko"];
 
+/** Words that open a second choice inside one ingredient line: "Spinat alternativt
+ *  grønkål" asks for spinach and only names a fallback. From such a word the line is
+ *  cut, so the query stays the product we buy. A family adds its own wording in its
+ *  profile under `exclusions.queryAsides` - these are connectives, not food words. */
+const ASIDES = ["alternativt", "alternativ", "eventuelt", "evt", "tilføj", "tilføjes", "link", "erstattes"];
+const WORD = /[^\p{L}\p{N}%]+/u;
+const titleCase = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+
+/** Words before the first aside, lowercased. "Sojasauce evt glutenfri" -> [sojasauce]. */
+function asideCut(text, asides = []) {
+  const tk = String(text || "").toLowerCase().split(WORD).filter(Boolean);
+  const all = ASIDES.concat((asides || []).map((w) => String(w).toLowerCase()));
+  // An aside that opens the line is dropped, but never the last word: a line of one word
+  // is a product name, however it starts.
+  let start = 0;
+  while (start < tk.length - 1 && all.includes(tk[start])) start++;
+  const at = tk.findIndex((w, i) => i > start && all.includes(w));
+  return at > 0 ? tk.slice(start, at) : tk.slice(start);
+}
+
 /** Turn one Namlig ingredient sentence into something the search understands. */
 import { clashWith } from "./similarity.mjs";
 import { nightsOf, reheatOf, portionsPerNight } from "./nights.mjs";
 
-export function cleanQuery(text) {
+export function cleanQuery(text, asides = []) {
   let t = String(text || "");
   t = t.split(/\bfx\b| - |;|,| eller | gerne /)[0];
   t = t.replace(/\d+([.,]\d+)?\s*(g|kg|ml|dl|l|stk|pk|skiver|både|bidder|dl|år)\b/gi, " ");
   t = t.replace(/\d+\s*$/, " ");
-  const words = t.toLowerCase().split(/[^\p{L}\p{N}%]+/gu).filter(Boolean)
+  // Cut before the noise words go, not after: dropping "evt" alone would leave
+  // "glutenfri" behind, and "Sojasauce glutenfri" is a product this family did not ask for.
+  const words = asideCut(t, asides)
     .filter((w) => w.length > 1 && !NOISE.includes(w))
     .filter((w) => !/^\d/.test(w));
   const kept = words.slice(0, 3);
   if (kept.length === 0) return String(text || "").trim();
-  const out = kept.join(" ");
-  return out.charAt(0).toUpperCase() + out.slice(1);
+  return titleCase(kept.join(" "));
+}
+
+/** The second search for a line: the same words without the aside and without the
+ *  brackets a recipe puts around them. Empty when it would only repeat the first query. */
+function altQuery(text, asides = []) {
+  return titleCase(asideCut(text, asides).join(" ").replace(/\s+/g, " ").trim());
 }
 
 /** Namlig servings to the 5 servings this household cooks. */
@@ -108,7 +135,12 @@ export function chooseDinners(pool, opts) {
   const coversOf = (d) => (legacy.includes(String(d.format || "").toLowerCase()) ? 1 : nightsOf(d, nightOpts));
   const coveredOf = (list) => list.reduce((n, d) => n + coversOf(d), 0);
   const byUrl = new Map(pool.map((p) => [p.url, p]));
-  const forced = wanted.map((w) => pool.find((p) => p.url === w || fold(p.name) === fold(w))).filter(Boolean);
+  // --dinners matches a pool name or url. An id that matches nothing used to vanish in
+  // silence, and the menu came from the rotation anyway - so a person believed the dish
+  // they asked for was in the plan. The names the plan prints under "menu" work here.
+  const asked = wanted.map((w) => ({ wanted: String(w), hit: pool.find((p) => p.url === w || fold(p.name) === fold(w)) }));
+  const forced = asked.map((a) => a.hit).filter(Boolean);
+  const unknownWanted = asked.filter((a) => !a.hit).map((a) => a.wanted);
   // A refused dish never comes back by itself; --dinners still overrides, because a
   // human who asks for it today is not the family that refused it last month.
   const taste = opts.taste || {};
@@ -185,7 +217,7 @@ export function chooseDinners(pool, opts) {
     return entry;
   });
   return { chosen: chosen.map((c) => byUrl.get(c.url)), menu, daysPerDinner: per, coveredDays: coveredOf(chosen),
-    uncoveredDays: Math.max(0, days - coveredOf(chosen)) };
+    uncoveredDays: Math.max(0, days - coveredOf(chosen)), unknownWanted };
 }
 
 /** One recipe to shopping intents, with what was left out and why. */
@@ -199,6 +231,7 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
   }
   const intents = [], leftOut = [];
   const merged = new Map();
+  const asides = (exclusions.queryAsides || {}).words || [];
   for (const ing of recipe.ingredients || []) {
     const text = String(ing.text || "").trim();
     if (!text) continue;
@@ -212,7 +245,7 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
     const key = fold(text) + "|" + size.unit;
     // Start the row empty and then add: copying `size` in and adding it again doubles
     // the first occurrence, which once turned 425 g of chicken into 850 g.
-    const row = merged.get(key) || { text, count: 0, grams: 0, litres: 0, pieces: 0, unit: size.unit, recipeAmount: `${ing.amount} ${ing.unit}`.trim(), query: cleanQuery(text) };
+    const row = merged.get(key) || { text, count: 0, grams: 0, litres: 0, pieces: 0, unit: size.unit, recipeAmount: `${ing.amount} ${ing.unit}`.trim(), query: cleanQuery(text, asides) };
     row.grams += size.grams || 0;
     row.litres = Number((row.litres + (size.litres || 0)).toFixed(3));
     row.pieces += size.pieces || 0;
@@ -232,7 +265,7 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
       source: `${sourcePrefix}:${recipe.slug || recipe.url}`,
       sourceLabel: recipe.name,
       query,
-      alt: rule ? rule.alt || [] : [row.text].filter((t) => t !== row.query),
+      alt: rule ? rule.alt || [] : [altQuery(row.text, asides)].filter((q) => q && q !== row.query),
       avoidWords: rule ? rule.avoid || [] : [],
       maxUnitPrice: rule && rule.maxKrPerKg ? rule.maxKrPerKg : undefined,
       need,

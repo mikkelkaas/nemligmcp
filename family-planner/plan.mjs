@@ -16,7 +16,7 @@
 // Output:
 //   data/plans/plan-<timestamp>.json + .md, and copies named plan-latest.{json,md}
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { connect, loadEnv, Limiter, mapPool, readConcurrency, reportFailure } from "./lib.mjs";
+import { connect, loadEnv, Limiter, mapPool, readConcurrency, reportFailure, unknownFlags, warnUnknownFlags } from "./lib.mjs";
 import { resolveIntent, parseNeed, loadCache, saveCache } from "./catalog.mjs";
 import { toBaseMeasure, choosePack } from "./units.mjs";
 import { chooseDinners, recipeIntents, readRotation, readCookHistory } from "./dinners.mjs";
@@ -40,16 +40,8 @@ export function householdMode(value) {
   return "auto";
 }
 
-/** Flags the planner does not know: usually a typo, and it silently does nothing. */
-export function unknownFlags(argv, known) {
-  const out = [];
-  for (const a of argv) {
-    if (!String(a).startsWith("--")) continue;
-    const name = String(a).slice(2);
-    if (name && !known.includes(name)) out.push(name);
-  }
-  return out;
-}
+// unknownFlags lives in lib.mjs now, so every script warns the same way about a typo.
+export { unknownFlags };
 
 const KNOWN_FLAGS = ["family", "days", "people", "breakfast", "lunchbox", "snacks", "household",
   "soft-cap", "avoid", "fresh", "serial", "max-minutes", "dinners", "cores", "covers",
@@ -518,6 +510,11 @@ function poolDinnerIntents(options, wanted, rules) {
     taste: fam.learning.enabled ? fam.taste : { liked: [], refused: [] },
     exploration: fam.learning.exploration,
   });
+  // A --dinners id that matches nothing in the pool used to decide nothing at all: the
+  // rotation chose the menu and the person believed the dinner they asked for was in it.
+  for (const w of (pick.unknownWanted || [])) {
+    console.log(`  warn: --dinners "${w}" is not in the recipe pool - use a name from the menu or the recipe url`);
+  }
   let intents = [], leftOut = [];
   const stdPortions = Number((fam.household.portionsPerNight || 2.6) * fam.household.maxNightsPerDinner) || 5;
   const portionNote = `${(fam.household.portionsPerNight || 0).toFixed(1)} portions a night`;
@@ -689,8 +686,7 @@ async function main() {
   const live = grouped.intents;
   console.log(`Resolving ${live.length} intents (${grouped.collapsed} product(s) summed across lines, ${skipped.length} skipped by stock cycle) against Namlig...`);
 
-  const unknown = unknownFlags(process.argv, KNOWN_FLAGS);
-  if (unknown.length) console.log(`  warn  unknown flag(s) --${unknown.join(", --")}: this run ignores them (--help lists what works)`);
+  warnUnknownFlags(process.argv, KNOWN_FLAGS);
   const { mcp, resolved, oldestCacheMs, timing } = await resolveAll(live, options);
   const tAfterResolve = Date.now();
   const { items, unresolved, recipeGaps, substitutions, substitutedAway } = mergeItems(resolved, options.purchasing);

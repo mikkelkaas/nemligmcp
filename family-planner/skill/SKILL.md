@@ -10,7 +10,9 @@ history, shows it for approval, then writes it to the real basket. Nothing is or
 The family confirms in the app.
 
 Scripts: `/opt/docker/scripts/nemlig/`. Read `MODEL.md` for the model (household -> nights -> needs -> packs -> budget) and `README.md` for the commands. Service: container
-`namlymcp` — check with `hsudo docker compose -f /opt/docker/infra-stack.yml ps namelymcp`.
+`nemligmcp`, compose service `nemligmcp` in `/opt/docker/infra-stack.yml`. Check it with
+`hsudo docker compose -f /opt/docker/infra-stack.yml ps nemligmcp` and expect
+`Up ... (healthy)`. Plain `docker compose` does not exist on this host - use `hsudo`.
 
 **Only `apply.mjs` writes to the basket. Never call `add_to_basket`,
 `set_basket_quantity`, `remove_from_basket` or `clear_basket` by hand.**
@@ -21,9 +23,12 @@ Ask all five in one message. Pre-fill with the defaults in `profiles/household.j
 
 1. **Days?** 7 or 8 (default 8). One dinner covers 2 days.
 2. **Breakfast?** yes / no (default yes).
-3. **Dinner?** Offer 4 of the 5 warm-meal cores in `profiles/dinners.json`
-   (`id` + `name`), plus "choose for me". Answer maps to `--dinners id1,id2`.
-   Never offer a cold bread topping as dinner — the dinner list is warm evening food.
+3. **Dinner?** "Choose for me" is the normal answer: the rotation picks the menu from
+   `profiles/recipe-pool.json` and `plan.mjs` prints what it chose. Only when Marco names
+   dishes add `--dinners "<name>,<name>"`, using a name from the plan's `## Menu` list or a
+   recipe url. A pinned-core id works only together with `--cores`, which skips the
+   rotation. An id the pool does not have is reported as `warn:` and skipped - never
+   silently. Never offer a cold bread topping as dinner — the dinner list is warm evening food.
 4. **Anything else?** Free text, one item per line. Optional — `--household auto`
    already covers toiletpaper, soap, diapers from `profiles/pantry.json`.
 5. **Delivery?** Run `node slots.mjs --days 8`. Report the `ANBEFALET` line (day,
@@ -84,8 +89,12 @@ Read `data/plans/plan-latest.md`, then report:
 - the count of products on sale, and the `valgt pga. tilbud` notes;
 - the approval line at the end of the plan file.
 
-If an intent is unresolved, fix the profile first (`profiles/pantry.json` or
-`profiles/dinners.json`: correct the `query` or add an `alt` query), then re-plan.
+If an intent is unresolved, the plan names the query it searched and the best name and
+score it saw. Then fix the profile: a shelf product that is ours under another word goes
+to `exclusions.queryAliases`; a recipe line that carries a second choice ("Spinat
+alternativt grønkål") is cut at `exclusions.queryAsides`; a family that wants closer names
+accepted lowers `purchasing.minNameScore` from its 0,7. A line we must have today goes in
+`--extra "Name:qty"`. Re-plan after any of these.
 Do not swap in a product Marco did not ask for. If the task forbids editing a profile,
 report the unresolved lines and stop - `apply.mjs` refuses them anyway.
 
@@ -131,8 +140,10 @@ Report every `FAIL` line with product name and error text.
 - Learn new staples: `node mine-history.mjs` (writes `data/staples.json` and
   `profiles/pantry.json`). Run after 5 or more new orders.
 - Re-pin favourite SKUs: `node pin-skus.mjs --write`.
-- Regression suite: `node --test test/*.test.mjs` (70 cases: matcher, packs, learning, the
-  traffic gate, the plan check - all without network).
+- Regression suite: `node --test test/*.test.mjs` (matcher, packs, learning, the traffic
+  gate, the plan check, and the golden set of scored decisions - all without network).
+  After a change you intend to the behaviour, refresh the golden baselines with
+  `node tools/golden-baseline.mjs --write` and read the diff before committing.
 - Search cache: `data/product-cache.json`, 24 h, pruned after a week. Force live search with
   `--fresh`. A warm run takes seconds, a fresh one tens of seconds.
 - Shop traffic is gated: 4 calls at once (1-8 with `NEMLIG_CONCURRENCY`), 120 ms between

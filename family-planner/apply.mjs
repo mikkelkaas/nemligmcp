@@ -23,13 +23,15 @@
 //      touched, so what you added in the app stays.
 // Use --recipes no to skip the cards.
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
-import { connect, loadEnv, Limiter, sleep, reportFailure } from "./lib.mjs";
+import { connect, loadEnv, Limiter, sleep, reportFailure, warnUnknownFlags } from "./lib.mjs";
 import { writeRotation } from "./dinners.mjs";
 import { login } from "./auth.mjs";
 import { resolvePlanRecipes, recipeLines } from "./recipes.mjs";
 import { loadFamily } from "./family.mjs";
 
 import { HOME as BASE, writeJsonAtomic, withLock } from "./paths.mjs";
+// What this script understands, so a typo in a flag is named instead of ignored.
+const APPLY_FLAGS = ["plan", "approve", "slot", "family", "recipes", "keep-going", "ignore-unresolved", "allow-stale", "help", "debug"];
 const TOKEN = "I-APPROVE-THIS-BASKET";
 const CALL_TIMEOUT = 60000;
 // A write is never retried automatically: a lost answer to add_to_basket must not become
@@ -179,6 +181,13 @@ async function zeroExtras(mcp, extras, keepGoing) {
 }
 
 async function main() {
+  // --help answers before anything is read or written: no plan file, no lock, no basket.
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    console.log("usage: node apply.mjs [--plan data/plans/plan-latest.json] --approve I-APPROVE-THIS-BASKET [--slot <timeslotId>] [--keep-going] [--family <name>] [--ignore-unresolved]");
+    console.log("This is the only script that writes to the basket. Without --approve it changes nothing.");
+    return;
+  }
+  warnUnknownFlags(process.argv, APPLY_FLAGS);
   const planPath = arg("plan", BASE + "/data/plans/plan-latest.json");
   const approve = arg("approve", "");
   const slotId = arg("slot", null);
