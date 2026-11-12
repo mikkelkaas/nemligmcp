@@ -191,7 +191,7 @@ export async function resolveIntent(mcp, intent, { cache = null } = {}) {
     if (!substitution && r.substitution) substitution = r.substitution;
     candidates = Math.max(candidates, Number(r.candidates) || 0);
   }
-  // The proposal survives to the plan file: Marco approves it with the printed --extra flag.
+  // The proposal survives to the plan file: the person accepts it with the printed --extra flag.
   return { ok: false, query: primary, why: notes.join(" | "), candidates, attempts: tries.length, substitution };
 }
 
@@ -275,7 +275,7 @@ async function attempt(mcp, query, intent, cache) {
 
 /**
  * Nothing in stock under this name: find the nearest product and PROPOSE it.
- * A proposal is never added to the basket - Marco accepts it by re-running the
+ * A proposal is never added to the basket - it is accepted by re-running the
  * plan with the printed --extra flag.
  */
 async function proposeSubstitute(mcp, query, intent, cache) {

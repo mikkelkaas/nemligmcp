@@ -1,5 +1,5 @@
 // lib.mjs — shared MCP client for the Nemlig basket planner.
-// Talks to the namelymcp container over Streamable HTTP on host loopback.
+// Talks to the MCP container over Streamable HTTP on host loopback or container DNS.
 // Rules honoured: every network call has a timeout, every loop is bounded,
 // every result is checked, the secret is never printed.
 import { readFileSync } from "node:fs";
@@ -13,8 +13,11 @@ const ENV_PATH = envFile();
 const CANDIDATE_BASES = ["http://namligmcp:3000/mcp", "http://127.0.0.1:3900/mcp"];
 const HEALTH_PATH = "/healthz";
 // Container identity, used by pickEndpoint to bypass stale embedded-DNS records.
-const CONTAINER = "nemligmcp";
-const NET = "docker_infra_net";
+// Both names belong to the install, not to the library, so the environment may set them:
+// NEMLIG_CONTAINER and NEMLIG_NET. On a host that runs the server another way, the docker
+// lookup simply fails, prints one warn line and the HTTP candidates decide.
+const CONTAINER = process.env.NEMLIG_CONTAINER || "nemligmcp";
+const NET = process.env.NEMLIG_NET || "docker_infra_net";
 const PROBE_TIMEOUT_MS = 3000;
 // Traffic to the shop: how many calls at once, how far apart two starts are, and how
 // long a run may take. All three come from the environment, so a new family tunes them
@@ -66,13 +69,18 @@ function dockerIp(container) {
   return ip;
 }
 
-/** Return the first base whose /healthz answers, or a docker-resolved IP base. */
+/** Return the first base whose /healthz answers, or a docker-resolved IP base.
+ *  An explicit NEMLIG_MCP_URL is obeyed alone: no candidates, no docker lookup. It is what
+ *  an offline test points at a stub on loopback, and a fallback to a live container there
+ *  would send a test run to the real shop - one health probe away. */
 export async function pickEndpoint(env = loadEnv()) {
   const bases = env.NEMLIG_MCP_URL ? [env.NEMLIG_MCP_URL] : CANDIDATE_BASES.slice();
-  try {
-    bases.push("http://" + dockerIp(CONTAINER) + ":3000/mcp");
-  } catch (e) {
-    process.stderr.write("warn: docker IP fallback unavailable: " + e.message + "\n");
+  if (!env.NEMLIG_MCP_URL) {
+    try {
+      bases.push("http://" + dockerIp(CONTAINER) + ":3000/mcp");
+    } catch (e) {
+      process.stderr.write("warn: docker IP fallback unavailable: " + e.message + "\n");
+    }
   }
   const failures = [];
   for (const base of bases) {
@@ -88,7 +96,7 @@ export async function pickEndpoint(env = loadEnv()) {
       }
     }
   }
-  throw new Error("no namelymcp endpoint answered " + HEALTH_PATH + ": " + failures.join(" | "));
+  throw new Error("no MCP endpoint answered " + HEALTH_PATH + ": " + failures.join(" | "));
 }
 
 function abortSignal(ms) {

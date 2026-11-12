@@ -1,0 +1,204 @@
+{
+  "_readme": [
+    "invented for the test fixture",
+    "invented for the test fixture",
+    "invented for the test fixture",
+    "invented for the test fixture",
+    "invented for the test fixture"
+  ],
+  "schemaVersion": 1,
+  "name": "family-demo",
+  "at": "another town",
+  "edited": "you, 2026-01-01",
+  "household": {
+    "adults": 2,
+    "children": 1,
+    "childAges": [],
+    "peopleToShopFor": 3,
+    "timezone": "Europe/Copenhagen",
+    "_note": "invented for the test fixture"
+  },
+  "dinners": {
+    "servingsPerDinner": 5,
+    "daysPerDinner": 2,
+    "cookOnceEatTwice": true,
+    "maxRecipeMinutes": 30,
+    "recipeSource": "nemlig 30-minute recipes (their app)",
+    "_note": "invented for the test fixture",
+    "members": [
+      {
+        "role": "adult",
+        "count": 2,
+        "appetite": 1.0
+      },
+      {
+        "role": "child",
+        "count": 1,
+        "appetite": 0.6
+      }
+    ],
+    "preferLeftovers": true,
+    "maxNightsPerDinner": 2,
+    "reheatByFormat": {
+      "gryde": "great",
+      "suppe": "great",
+      "fad": "great",
+      "pasta": "ok",
+      "spaghetti": "ok",
+      "nudler": "ok",
+      "ris": "ok",
+      "kartoffel": "ok",
+      "kal": "ok",
+      "andet": "ok",
+      "pizza": "fresh",
+      "aeg": "fresh",
+      "pandekage": "fresh",
+      "wrap": "fresh",
+      "ovn": "fresh",
+      "pastasalat": "fresh",
+      "salat": "fresh"
+    },
+    "nightsOverride": {},
+    "_nightsNote": "invented for the test fixture",
+    "_portionsNote": "invented for the test fixture"
+  },
+  "budget": {
+    "currency": "DKK",
+    "softCapKr": 900,
+    "maxDaysPerPlan": 8,
+    "planMaxAgeHours": 12,
+    "_note": "invented for the test fixture"
+  },
+  "rotation": {
+    "poolSize": 12,
+    "maxPerProtein": 2,
+    "minFishDishes": 1,
+    "alternateNewAndKnown": true,
+    "neverTwoVariantsOfTheSameDinner": true,
+    "_note": "invented for the test fixture",
+    "_legacyNote": "invented for the test fixture"
+  },
+  "learning": {
+    "_note": "invented for the test fixture",
+    "enabled": true,
+    "minObservations": 2,
+    "maxQuantityFactor": 2,
+    "autoAddMissing": true,
+    "exploration": {
+      "cooldownTimes": 3,
+      "cooldownDays": 42
+    },
+    "_exploration_note": "invented for the test fixture"
+  },
+  "basket": {
+    "mode": "keep-and-top-up",
+    "neverClearBasket": true,
+    "existingQuantityRule": "max(existing, planned) except for a line that came with a recipe card, which the plan overwrites",
+    "checkout": "basket-and-slot-only",
+    "preferSale": true,
+    "saleTolerancePct": 10,
+    "recipeCards": true,
+    "_note": "invented for the test fixture"
+  },
+  "purchasing": {
+    "_note": "invented for the test fixture",
+    "qualifierWords": [
+      "parboiled"
+    ],
+    "overshootPctFresh": 25,
+    "overshootPctStable": 400,
+    "tieBreakKr": 3,
+    "stableWords": [
+      "æg",
+      "ris",
+      "pasta",
+      "mel",
+      "sukker",
+      "kaffe",
+      "the",
+      "pulver",
+      "konserves",
+      "tørret",
+      "toilet",
+      "køkkenrulle",
+      "serviet",
+      "sæbe",
+      "fryse",
+      "bouillon",
+      "havregryn"
+    ],
+    "_stableWords_note": "invented for the test fixture",
+    "freshWords": [
+      "mælk",
+      "fløde",
+      "smør",
+      "yoghurt",
+      "ost",
+      "fisk",
+      "laks",
+      "ørken",
+      "rejer",
+      "musling",
+      "filet",
+      "hakket",
+      "kogt",
+      "stegt",
+      "spinat",
+      "salat",
+      "urter",
+      "persille",
+      "dild",
+      "agurk",
+      "tomat",
+      "peberfrugt",
+      "svamp",
+      "avocado",
+      "banan",
+      "æble",
+      "pære",
+      "melon"
+    ],
+    "maxOverrunFreshMl": 150,
+    "_maxOverrunFreshMl_note": "invented for the test fixture",
+    "minNameScore": 0.7
+  },
+  "delivery": {
+    "weekdayPrefer": [
+      "søndag",
+      "mandag",
+      "tirsdag"
+    ],
+    "windowPrefer": "15-21",
+    "minWindowHours": 3,
+    "deliveryType": "attended",
+    "pricePriority": "cheap-over-time",
+    "_learned": "invented for the test fixture"
+  },
+  "meat": {
+    "maxKrPerKg": 99
+  },
+  "exclusions": {
+    "freshHerbs": "never buy the fresh herbs a recipe asks for",
+    "herbWords": [
+      "persille",
+      "dild"
+    ],
+    "keepEvenThoughCommon": [],
+    "pantryWords": [
+      "salt",
+      "peber",
+      "olie"
+    ],
+    "neverBought": [
+      "kapers",
+      "feta"
+    ],
+    "queryAliases": {
+      "parmesan": "Ost E"
+    },
+    "_howToTweak": "invented for the test fixture",
+    "_open": "invented for the test fixture",
+    "_outgrown": "invented for the test fixture"
+  },
+  "neverBuy": []
+}

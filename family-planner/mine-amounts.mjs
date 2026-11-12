@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// mine-amounts.mjs — how much this family really buys, from 66 orders.
+// mine-amounts.mjs — how much this family really buys, from the family's own orders.
 //
 // Two questions:
 //   1. How much of a staple goes into one basket? Answered with the median over the

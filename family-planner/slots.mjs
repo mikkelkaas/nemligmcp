@@ -184,7 +184,7 @@ async function main() {
   if (ranked.length === 0) process.exitCode = 2;
 }
 
-/** One-line answer for Marco: which slot to book and what it costs versus the cheapest. */
+/** One-line answer for a person deciding now: which slot to book, and what it costs against the cheapest. */
 function recommendation(top, ranked, pref) {
   const win = String(top.start).padStart(2, "0") + "-" + String(top.end).padStart(2, "0");
   const cheaper = ranked.filter((s) => s.price < top.price);

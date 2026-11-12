@@ -8,7 +8,7 @@
 // Three filters run before a product is put on the list (profiles/exclusions.json):
 //   pantry words   salt, pepper, oil, sugar - already at home, never bought
 //   fresh herbs    the family does not use the herb garnish of a recipe
-//   never bought   products absent from 66 orders, so they are not our kind of food
+//   never bought   products absent from the family's own order history, not their food
 // Protein goes through profiles/meat.json: the fat band, the cheap cut per kg and the
 // price-per-kg ceiling this family uses.
 
@@ -256,7 +256,7 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
   for (const row of merged.values()) {
     const need = row.grams ? `${row.grams} g` : row.litres ? `${row.litres} l` : `${row.pieces} stk`;
     const rule = meatRuleFor(row.text, meat.rules);
-    // Namlig writes "Parmesan", the family buys Grana Padano: rewrite before searching.
+    // The shop writes "Parmesan", the family buys its own hard cheese: rewrite before searching.
     const aliased = Object.entries(aliases).find(([w]) => hasWord(row.query, w));
     const query = rule ? rule.query : (aliased ? aliased[1] : row.query);
     if (aliased && !rule) row.query = query;

@@ -363,36 +363,44 @@ test("the protein comes from the name, not from one garnish line", () => {
 });
 
 // --- family.mjs: one profile, the shapes the planner already speaks ----------------
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadFamily, findProfileFile } from "../family.mjs";
 
+// A profile of one's own is private and stays out of git, so these four cases read the
+// committed fixture: same keys, same derived shapes, invented people, budget and aliases.
+// Without it a clean clone cannot run its own suite.
+const FIXTURE_PROFILES = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "profiles");
+const demoFamily = () => loadFamily({ dir: FIXTURE_PROFILES, name: "demo" });
+
 test("the family profile carries the household essentials", () => {
-  const fam = loadFamily();
-  assert.equal(fam.name, "family-of-3");
-  assert.equal(fam.household.people, 5);
+  const fam = demoFamily();
+  assert.equal(fam.name, "family-demo");
+  assert.equal(fam.household.people, 3);
   assert.equal(fam.household.dinnersForPeople, 5);
   assert.equal(fam.household.daysCoveredByOneDinner, 2);
   assert.equal(fam.household.basketPolicy.neverClearBasket, true);
-  assert.ok(fam.household.softCapKr > 0);
+  assert.equal(fam.household.softCapKr, 900);
 });
 
 test("the family's fat band and ceiling sit on top of the generated meat rules", () => {
-  const fam = loadFamily();
+  const fam = demoFamily();
   const okse = fam.meat.rules.find((r) => r.id === "hakket-okse");
-  assert.equal(okse.query, "Hakket oksekød 8-12%");
-  assert.equal(okse.maxKrPerKg, 115);
-  assert.ok(fam.meat.rules.length >= 5);
+  assert.equal(okse.maxKrPerKg, 99, "the profile's ceiling wins over the mined one");
+  assert.ok(fam.meat.rules.length >= 2);
+  assert.ok(fam.meat.rules.every((r) => r.query), "every rule still names a query");
 });
 
 test("the three recipe filters come from the profile", () => {
-  const fam = loadFamily();
+  const fam = demoFamily();
   assert.ok(fam.exclusions.freshHerbs.words.includes("persille"));
   assert.ok(fam.exclusions.pantryWords.words.includes("olie"));
   assert.ok(fam.exclusions.neverBought.words.includes("kapers"));
-  assert.equal(fam.exclusions.queryAliases.words.parmesan, "Grana Padano");
+  assert.equal(fam.exclusions.queryAliases.words.parmesan, "Ost E");
 });
 
 test("a profile that does not exist is refused by name", () => {
-  assert.throws(() => findProfileFile("/opt/docker/scripts/nemlig/profiles", "does-not-exist"), /not found/);
+  assert.throws(() => findProfileFile(FIXTURE_PROFILES, "does-not-exist"), /not found/);
 });
 
 // --- the piece and the folded word: two real plan bugs ----------------------------

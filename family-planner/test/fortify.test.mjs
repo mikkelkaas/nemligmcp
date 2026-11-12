@@ -3,7 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { Limiter, reportFailure } from "../lib.mjs";
+import { Limiter, reportFailure, pickEndpoint } from "../lib.mjs";
 import { search } from "../catalog.mjs";
 import { householdMode, unknownFlags, extraIntents } from "../plan.mjs";
 
@@ -77,4 +77,20 @@ test("a failure is printed as one line, and the stack stays behind --debug", () 
   e.stack = "Error: search failed\n    at x (/a/b.mjs:1:1)";
   assert.equal(reportFailure(e, []), "search failed");
   assert.ok(!reportFailure(e, []).includes("\n"), "never more than the first line");
+});
+
+test("an explicit NEMLIG_MCP_URL is the only endpoint the client will try", async () => {
+  // The offline golden set points the client at a stub on loopback. A fallback to the
+  // container name, to the host port or to docker inspect would let a failed probe plan
+  // against the real shop - one health check away. So an explicit URL stands alone.
+  await assert.rejects(
+    () => pickEndpoint({ NEMLIG_MCP_URL: "http://127.0.0.1:1/mcp" }),
+    (e) => {
+      const msg = String(e.message);
+      assert.match(msg, /no MCP endpoint answered/, "the failure names the probe that failed");
+      assert.equal(msg.split("|").length, 2, "one base, tried twice, nothing else: " + msg);
+      assert.doesNotMatch(msg, /docker|namligmcp:3000|127\.0\.0\.1:3900/, "no container name, no candidate list, no docker lookup");
+      return true;
+    },
+  );
 });

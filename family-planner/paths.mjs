@@ -30,15 +30,17 @@ export const CACHE_PATH = join(DATA, "product-cache.json");
  * this project grew up in. A missing file is reported by the caller, which says
  * what it looked for.
  */
+/** The places envFile() looks, in order. Exported so doctor.mjs can say which one won. */
+export const ENV_CANDIDATES = [
+  process.env.NEMLIG_ENV,
+  join(HOME, ".env"),
+  join(dirname(HOME), ".env"),
+  "/opt/docker/.env",      // the folder this planner grew up in; a stranger never has it
+].filter(Boolean);
+
 export function envFile() {
-  const candidates = [
-    process.env.NEMLIG_ENV,
-    join(HOME, ".env"),
-    join(dirname(HOME), ".env"),
-    "/opt/docker/.env",
-  ].filter(Boolean);
-  for (const p of candidates) if (existsSync(p)) return p;
-  return candidates[0];
+  for (const p of ENV_CANDIDATES) if (existsSync(p)) return p;
+  return ENV_CANDIDATES[0];
 }
 
 /**

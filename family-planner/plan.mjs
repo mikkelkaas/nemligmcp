@@ -63,7 +63,13 @@ function daysAgo(iso) {
   return Math.floor((Date.now() - t) / 86400000);
 }
 function readJson(path) {
-  if (!existsSync(path)) throw new Error("missing profile: " + path);
+  // A missing file here is always something a run wrote earlier, not the profile a person
+  // edits, so the message names the command that creates it: the same dead end looked like
+  // a broken install to the first person who cloned this without an order history.
+  if (!existsSync(path)) {
+    const what = path.includes("/data/") ? "run node mine-history.mjs (and the recipe miners) first" : "run node init-family.mjs first";
+    throw new Error("missing file: " + path + " - " + what);
+  }
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
@@ -323,7 +329,7 @@ function stalePinsOf(resolved) {
   return out;
 }
 
-/** Sale policy, read from the household profile so Marco can tune it in one place. */
+/** Sale policy, read from the household profile so a family tunes it in one place. */
 function saleRules(household) {
   const r = (household && household.purchaseRules) || {};
   const pct = Number(r.saleTolerancePct);
@@ -640,7 +646,7 @@ const USAGE = [
   "usage: node plan.mjs [options]  (dry run: nothing is written to the basket)",
   "  --days 8                1-14 evenings        --breakfast|--lunchbox|--snacks yes|no",
   "  --household auto|off    --people N           --soft-cap 1500",
-  "  --family of-3           --covers 2           --dinners id1,id2   (needs --cores)",
+  "  --family <name>         --covers 2           --dinners <name>    (a menu name)",
   "  --cores                 --max-per-protein N  --avoid \"brand,word\"",
   "  --extra \"Name:300g\"    --fresh (ignore the 24 h price cache)",
   "  --serial                one request at a time, wider spacing",

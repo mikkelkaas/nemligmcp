@@ -30,7 +30,9 @@ const PROTEIN_KEYS = [
 /** Herbs and cupboard items: the same words in any European kitchen. */
 const HERB_WORDS = ["persille", "purløg", "forårsløg", "koriander", "basilikum", "mynte", "dild", "rosmarin", "timian", "salvie", "dragon", "frisk ingefær", "salatblad"];
 const PANTRY_WORDS = ["salt", "peber", "salt og peber", "olie", "olivenolie", "rapsolie", "solsikkeolie", "smør til stegning", "vand", "sukker", "brun farin", "vaniljesukker", "bagepulver", "maizena", "eddike", "balsamico", "paprika", "sød paprika", "spidskommen", "gurkemeje", "kanel", "kardemomme", "krydderi", "krydderier", "bouillon", "hønsebouillon", "grøntsagsbouillon", "terning", "terninger", "kvart", "fedt", "stivelse"];
-const ALIASES = { parmesan: "Grana Padano", pecorino: "Grana Padano", parmigiano: "Grana Padano", piskefløde: "Fløde", risoni: "Puntalette", vannamei: "Rejer" };
+// A starting point, not an answer: the shop writes one name and your family buys another.
+// Empty means the planner searches what the recipe says, which is right for most people.
+const ALIASES = {};
 
 function arg(name, dflt) {
   const i = process.argv.indexOf("--" + name);

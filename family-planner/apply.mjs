@@ -315,7 +315,7 @@ function planAgeHours(plan) {
   return (now - created) / 3600000;
 }
 
-/** Book the timeslot Marco approved, only after something was actually added. */
+/** Book the timeslot the person approved, only after something was actually added. */
 async function pickSlot(mcp, slotId, adds) {
   if (!slotId) return null;
   if (adds.length === 0) {

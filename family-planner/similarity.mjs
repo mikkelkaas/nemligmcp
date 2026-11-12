@@ -1,6 +1,6 @@
 // similarity.mjs — decides when two recipes are really the same dinner.
 //
-// Marco's rule, from the order history: two dishes clash when the FORMAT and the
+// A rule from one family's order history, and a sensible one: two dishes clash when the FORMAT and the
 // PROTEIN are the same, so "Spaghetti bolognese" and "Spaghetti med kødboller" may not
 // share a week, while "Chili con carne" and "Tortillas" may, even though both are
 // Mexican. Same food, different dinner.
