@@ -101,6 +101,10 @@ Read `data/plans/plan-latest.md`, then report:
   Mention it in one line; it is the user's call whether they want any of them;
 - every line under `Swapped by the profile's alt queries` — say what was swapped;
 - the count of products on sale, and the `valgt pga. tilbud` notes;
+- every line where a tilbud replaced the sku the family usually buys (the summary says
+  `bought a tilbud instead of the sku the family usually buys`). Name both products and the
+  saving, and ask once whether the favourite is worth its price. If it is, set
+  `basket.preferSale` to false and the pin is kept for good;
 - the approval line at the end of the plan file.
 
 If an intent is unresolved, the plan names the query it searched and the best name and

@@ -138,8 +138,15 @@ checked against the recipes.
 one: "salt" sits inside "saltet", and salted butter must not read as a keepsake. What
 neither list names is treated as fresh.
 
-Piece weights live in `PIECE_GRAMS` in `units.mjs`. They are estimates of what the shop
-sells loose; when the shop reports the declared weight, that number should replace them.
+A piece is weighed with what the shop declares about the pack (`pieceWeightOf`,
+`units.mjs`). Namlig prints the declaration in the description line: "4 x 125 g" is four
+125 g bags, "2 stk. / 260 g" is two 130 g naan, "180 g / 10 skiver" is 18 g a slice. The
+word table `PIECE_GRAMS` stays the fallback for what the shop does not say - loose pears,
+eggs in a "15 stk." carton - and the two are not the same claim: one is read off the pack,
+the other is an estimate of a thing sold loose. Both sides of a pack comparison use the
+candidate's own number, so "3 pærer" against "4 stk. / 500 g" is 375 g wanted of 500 g
+sold. What a candidate does not declare is never borrowed from another product: 65 g per
+egg would turn a "2 stk" pizza base into a 130 g pack and make five of them look cheap.
 
 ## 5. Budget: measured against this family, not a guess
 
@@ -169,6 +176,18 @@ cut. Inside a block the dearest line goes first, because that is how fewest line
 touched. If it still does not fit, the plan writes itself whole and prints `trimShortfall`:
 what no budget is allowed to take. A basket with a hole in the middle of dinner is not
 cheaper, it is a second trip.
+
+A tilbud is judged against what this family actually buys, not against the shelf's
+cheapest (`saleBeatsPin`, `catalog.mjs`). A pinned favourite used to be bought whenever it
+was in stock, so a discount on a rival was invisible to the planner. Now the usual sku is
+the baseline and a rival takes its place only when four things hold: the rival is on sale,
+it is cheaper for the SAME need (the family's total, not the label price - a six-pack on
+sale can still cost more than one carton), nothing in `budget.swapNeverWords` names it, and
+it keeps every word the family typed that its own usual product carries. The last one is
+what a name score cannot do: "Mayonnaise" answers the query "Mayonnaise (let)" perfectly
+well and is not the light mayonnaise. Each of these choices is printed on the plan line and
+counted in the run summary, because it is the only place the planner overrides a favourite
+on price.
 
 `apply.mjs` reads the ledger back and checks the claim: the substitute of a swap must be in
 the plan, a deferred line must not be, `trimAfter` must equal the items, and `trimShortfall`
@@ -268,26 +287,44 @@ The shop itself is abstracted behind the MCP tools (`search_products`, `add_to_b
 the one web endpoint used for recipe cards, so another grocery service means writing that
 thin layer, not the planner.
 
+## Settled by measurement
+
+Three things sat on the open list until they were measured. They stay written down because
+the measurement is the part worth keeping, not the decision.
+
+- **A sale is measured against the family's own sku** (was: "the sale rule must compare
+  against the SKU this family actually buys"). Implemented as `saleBeatsPin`, described in
+  section 5. On this family's 8 days it found one candidate and refused it: First Price
+  mayonnaise at 12,12 kr against their pinned light mayo at 26,25 kr, refused because the
+  cheaper one is not the light one. The rivals of a pinned sku are kept on the plan line
+  (`alternatives`), filtered for delivery and the family's brand rules, so both this rule
+  and `trim.mjs` decide from what the shop can actually deliver.
+- **A piece is weighed with the declared pack weight** (was: "piece weights should come
+  from the shop's declared pack weight"). Implemented as `pieceWeightOf`, described in
+  section 4. Measured on the 1891 products in this family's price cache: 297 descriptions
+  name a piece count and 53 declare a multi-pack, all of them read now. It moved nothing
+  in their 8-day basket (48 purchases, 1382,85 kr before and after), which is what a
+  correct weight should do when the shop's numbers agree with the estimate.
+- **The name threshold was a dirty query, not a wrong number.** Measured 2026-11-12 over
+  the cached shelf (187 queries, their 6 top names each): most blocks were a query carrying
+  words no product has. "Spinat alternativt grønkål" asks for spinach and names a fallback,
+  so the query was spinach plus two words nothing carries. The query is now cut at such a
+  connective (`cleanQuery`, family wording in `exclusions.queryAsides`), and one 8-day plan
+  went from 6 blocked lines to 2. The two left are honest: "Oregano tørret" has nothing on
+  the shelf, and "Ris" against "Parboiled ris" was blocked by the head-noun guard because
+  that is another product - until the family said what rice means to them: they buy
+  parboiled and basmati and choose per recipe, so no query alias could stand, because one
+  rewrite would decide for them every week. The profile instead lists the words that do not
+  change what rice is (`purchasing.qualifierWords`), the guard skips those, and the price
+  rule picks between them - today 1 kg parboiled at 11,95 kr on sale against the 500 g
+  need. Dried oregano went to `pantryWords` with the other dried spices, because the
+  cupboard has it and `--extra` buys it when it is dry. Two alternatives were measured and
+  refused on the way: lowering `minNameScore` accepts specs the shopper wrote on purpose,
+  and splitting a name on "/" for "Courgette / squash" also accepts "Fransk tærte m.
+  laks/porrer" when the query is "porrer". Cutting the query fixes 26 of 28 such pairs and
+  buys nothing wrong.
+
 ## Still open
 
-1. The sale rule must compare against the SKU this family actually buys, not only the
-   cheapest item on the shelf. The rivals of a pinned sku are now on the plan line
-   (`alternatives`), so this is a decision left to make, not data left to collect.
-2. Piece weights should come from the shop's declared pack weight when it exposes one.
-3. The name threshold (`purchasing.minNameScore`, 0,7) blocked lines whose words did not fit
-   the shop's name. Measured 2026-11-12 over the cached shelf (187 queries, their 6 top names
-   each): most blocks were a dirty query, not a wrong threshold. "Spinat alternativt grønkål"
-   asks for spinach and names a fallback, so the query was spinach plus two words no product
-   carries. The query is now cut at such a connective (`cleanQuery`, family wording in
-   `exclusions.queryAsides`), and one 8-day plan went from 6 blocked lines to 2. The two left
-   are honest: "Oregano tørret" has nothing on the shelf, and "Ris" against "Parboiled ris" is
-   blocked by the head-noun guard because that is another product. Two alternatives were
-   measured and refused: lowering the number accepts specs the shopper wrote on purpose, and
-   splitting a name on "/" for "Courgette / squash" also accepts "Fransk tærte m. laks/porrer"
-   when the query is "porrer". Cutting the query fixes 26 of 28 such pairs and buys nothing wrong.
-   The rice case was settled by the family, not by the number: they buy parboiled and basmati and
-   choose per recipe, so no query alias could stand - one rewrite would decide for them every
-   week. The profile instead says which words do not change what rice is (`purchasing
-   .qualifierWords`), the guard skips those, and the price rule picks between them - today 1 kg
-   parboiled at 11,95 kr on sale against the 500 g need. Dried oregano went to `pantryWords`
-   with the other dried spices, because the cupboard has it and `--extra` buys it when it is dry.
+None. When a plan does something wrong, write the measurement here before fixing it, and
+move it up into the model when the number is in.

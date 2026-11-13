@@ -18,7 +18,7 @@
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { connect, loadEnv, Limiter, mapPool, readConcurrency, reportFailure, unknownFlags, warnUnknownFlags } from "./lib.mjs";
 import { resolveIntent, parseNeed, loadCache, saveCache } from "./catalog.mjs";
-import { toBaseMeasure, choosePack } from "./units.mjs";
+import { toBaseMeasure, choosePack, pieceWeightOf } from "./units.mjs";
 import { chooseDinners, recipeIntents, readRotation, readCookHistory } from "./dinners.mjs";
 import { biasIntent, addIntentsOf, productWord } from "./learn.mjs";
 import { trimItems } from "./trim.mjs";
@@ -291,7 +291,7 @@ export function mergeItems(resolved, purchase) {
   }
   const items = [...bySku.values()].map((e) => {
     const summed = e.needMeasure && e.needAmount > 0 && e.sources.length > 1
-      ? choosePack({ qty: e.needAmount, unit: e.needMeasure }, [e], { name: e.name, ...(purchase || {}) })
+      ? choosePack({ qty: e.needAmount, unit: e.needMeasure }, [e], { name: e.name, pieceWeight: pieceWeightOf(e), ...(purchase || {}) })
       : null;
     if (summed && summed.packs !== e.packs) {
       e.packs = summed.packs;
@@ -530,9 +530,10 @@ function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, h
   const wanted = (arg("dinners", "") || "").split(",").map((s) => s.trim()).filter(Boolean);
   const wantedIds = wanted.length ? wanted : dinners.cores.slice(0, Math.ceil(options.days / dinners.coversDays)).map((c) => c.id);
   const rules = saleRules(household);
-  // The pack-choice limits travel with the profile so every resolver call and the
-  // merged re-decision below use the same numbers.
-  options.purchasing = household.purchasing || {};
+  // The pack-choice limits travel with the profile so every resolver call and the merged
+  // re-decision below use the same numbers. swapNeverWords rides along although it lives
+  // under `budget`, because the resolver and the trim must refuse the same words.
+  options.purchasing = { ...(household.purchasing || {}), swapNeverWords: household.swapNeverWords || [] };
   const poolState = poolDinnerIntents(options, wanted, rules);
   let intents = poolState.intents;
   if (!poolState.usedPool) intents = intents.concat(dinnerIntents(dinners.cores, wantedIds, rules));
@@ -715,6 +716,7 @@ function printSummary(plan, diff, options, planTotal, jsonPath, mdPath) {
   if ((plan.recipeGaps || []).length) console.log(`NOTE: ${plan.recipeGaps.length} recipe line(s) name something Namlig has no product for (an "add yourself" line, a link) — listed under Left out, they do not block applying.`);
   if (plan.skipped.length) console.log(`Stock cycle skipped ${plan.skipped.length} item(s).`);
   if ((plan.stalePins || []).length) console.log(`NOTE: ${plan.stalePins.length} pinned favourite sku(s) were not offered - cheapest used, see the plan file.`);
+  if (plan.saleSwaps) console.log(`NOTE: ${plan.saleSwaps} line(s) bought a tilbud instead of the sku the family usually buys - the plan line says what it saved.`);
   if ((plan.bulkOffers || []).length) console.log(`Bulk offers (cheaper in quantity, not applied): ${plan.bulkOffers.length} - see the plan file.`);
   console.log("Wrote " + jsonPath + " and " + mdPath);
   console.log("Nothing was added to the basket. This was a dry run.");
@@ -818,6 +820,9 @@ async function main() {
   if (trimmed.actions.length) printTrim(trimmed, capKr);
   const items = trimmed.items;
   const { unresolved, recipeGaps, substitutions, substitutedAway } = merged;
+  // How often a tilbud beat this family's own habit today. Worth one line per run:
+  // it is the only place the planner overrides a favourite on price.
+  const saleSwaps = resolved.filter((r) => r && r.ok && r.compare === "sale-vs-usual").length;
   const basket = await mcp.call("get_basket", {}, { timeoutMs: CALL_TIMEOUT });
   if (basket.isError) throw new Error("get_basket failed: " + basket.text.slice(0, 200));
   const bJson = basket.json || {};
@@ -855,6 +860,7 @@ async function main() {
     bulkOffers: bulkOffersOf(resolved),
     stalePins: stalePinsOf(resolved),
     saleItems: items.filter((i) => i.onSale).length,
+    saleSwaps,
     priceCacheAgeHours: Number((oldestCacheMs / 3600000).toFixed(1)),
     timing,
     planTotal,

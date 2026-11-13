@@ -6,7 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { norm, tokens, score, nameMatches } from "../match.mjs";
-import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams } from "../units.mjs";
+import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf } from "../units.mjs";
+import { saleBeatsPin } from "../catalog.mjs";
 import { choosePack } from "../units.mjs";
 import { consolidateIntents } from "../plan.mjs";
 import { pairPlanToOrder, observedDelta, learnedFrom, biasIntent, addIntentsOf } from "../learn.mjs";
@@ -685,4 +686,67 @@ test("a block's head-count comes from the members and can be overridden", () => 
   const noChildren = blockPeopleOf({ dinners: { members: [{ role: "adult", count: 2, appetite: 1 }] } }, { people: 2 });
   assert.equal(noChildren.people.kidLunchbox, 0, "nobody to pack for");
   assert.equal(noChildren.people.breakfast, 2, "but breakfast is still for everyone");
+});
+
+// --- what one piece of a pack weighs, from the shop's own declaration ---------
+
+const declared = (description, name) => ({ name, description, pack: parsePack(description) });
+
+test("pieceWeightOf: the pack the shop describes beats the word table", () => {
+  assert.equal(pieceWeightOf(declared("4 x 125 g / Taste of Nature", "Parboiled ris i kogepose")), 125);
+  assert.equal(pieceWeightOf(declared("24 x 0,33 l / ex. pant / Coca-Cola", "Coca-Cola Zero (dåse)")), 330);
+  assert.equal(pieceWeightOf(declared("2 stk. / 260 g / Santa Maria", "Naanbrød m. hvidløg")), 130);
+  assert.equal(pieceWeightOf(declared("350 g / frost / 2 stk.", "Hvidløgsbaguettes")), 175);
+  assert.equal(pieceWeightOf(declared("180 g / 10 skiver / Arla", "Ost skåret")), 18);
+});
+
+test("pieceWeightOf: no claim, no number - and no absurd number either", () => {
+  assert.equal(pieceWeightOf(declared("375 g / Nestlé", "Cheerios m. fuldkorn")), null, "a cereal pack claims no pieces");
+  assert.equal(pieceWeightOf(declared("900 stk. / 300 g", "Uden Navn")), null, "a third of a gram per piece is a parsing mistake, not a weight");
+  assert.equal(pieceWeightOf(declared("", "Pærer Conference")), 190, "the word table stays the fallback, and it is a guess");
+  assert.equal(pieceWeightOf(declared("15 stk. / Danæg", "Skrabeæg str. M/L")), 65, "15 eggs declare no weight, so the table speaks");
+});
+
+test("choosePack measures a candidate with its own piece weight, on both sides", () => {
+  // 3 pears wanted. One pack is "4 stk. / 500 g" - the shop says a pear there is 125 g, so
+  // the need is 375 g and the pack covers it. The other is a 1 kg bag, which says nothing
+  // about pieces and is therefore still guessed at 190 g per pear: 570 g wanted, 1000 g
+  // sold, a 75 % overrun on fresh fruit. The small pack wins although it costs more.
+  const pears = { qty: 3, unit: "stk" };
+  const small = { id: "5012274", name: "Pærer Conference øko.", price: 30, unitPrice: 60, unitLabel: "kr/kg",
+    pack: parsePack("4 stk. / 500 g"), description: "4 stk. / 500 g" };
+  const big = { id: "5001423", name: "Pære Conference", price: 23, unitPrice: 23, unitLabel: "kr/kg",
+    pack: parsePack("1 kg"), description: "1 kg" };
+  const chosen = choosePack(pears, [big, small], { name: "Pære Conference", overshootPctFresh: 25, maxOverrunFreshMl: 150, tieBreakKr: 3 });
+  assert.equal(chosen.candidate.id, "5012274");
+  assert.equal(chosen.packs, 1);
+});
+
+// --- the sale rule, measured against the sku the family actually buys ---------
+
+const usual = (over = {}) => ({ id: "605008", name: "Mayonnaise (let)", brand: "K-Salat", price: 26.25,
+  pack: parsePack("375 g"), description: "375 g", onSale: false, ...over });
+const tilbud = (over = {}) => ({ sku: "605009", name: "Mayonnaise (let)", brand: "First Price", price: 12.12,
+  pack: parsePack("400 g"), description: "400 g", onSale: true, ...over });
+
+test("saleBeatsPin: a tilbud beats the usual sku when it is cheaper for the same need", () => {
+  const won = saleBeatsPin("Mayonnaise (let)", usual(), 1, [tilbud()], null, {});
+  assert.equal(won.rival.sku, "605009");
+  assert.equal(won.packs, 1);
+  assert.equal(won.total, 12.12);
+  assert.equal(won.savedKr, 14.13);
+});
+
+test("saleBeatsPin: four refusals", () => {
+  assert.equal(saleBeatsPin("Mayonnaise (let)", usual(), 1, [tilbud({ name: "Mayonnaise" })], null, {}), null,
+    "a plain mayonnaise is not the light one, however cheap - it drops a word the family typed");
+  assert.equal(saleBeatsPin("Mayonnaise (let)", usual({ onSale: true }), 1, [tilbud()], null, {}), null,
+    "the usual sku is already today's deal");
+  assert.equal(saleBeatsPin("Mayonnaise (let)", usual(), 1, [tilbud()], null, { preferSale: false }), null,
+    "basket.preferSale off means the habit is not traded");
+  assert.equal(saleBeatsPin("Mayonnaise (let)", usual(), 1, [tilbud({ price: 30 })], null, {}), null,
+    "a tilbud that costs more for what the plan asked for is not a saving");
+  assert.equal(saleBeatsPin("Mayonnaise (let)", usual(), 1, [tilbud()], null, { purchasing: { swapNeverWords: ["mayonnaise"] } }), null,
+    "budget.swapNeverWords protects a line from a discount too");
+  assert.equal(saleBeatsPin("Mayonnaise (let)", usual(), 1, [], null, {}), null, "no rival, no decision");
 });

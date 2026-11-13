@@ -222,6 +222,9 @@ anyone keeping a list.
   always wins, so "saltet" smør stays fresh even though "salt" is in the other list.
   `tieBreakKr` (3): a difference under that goes to the offer on sale, then to the one
   that wastes least.
+- Pieces are weighed with the weight the shop prints on the pack ("4 x 125 g",
+  "2 stk. / 260 g", "180 g / 10 skiver"); the table in `units.mjs` covers only what the
+  shop sells loose. A candidate's unknown weight is never borrowed from another product.
 - `minNameScore` (default 0,7, `family.mjs:144`) is how sure the planner must be that a
   shelf name is the product
   the recipe asked for: the share of the query's words the name has to contain. Lower
@@ -243,6 +246,12 @@ anyone keeping a list.
   comparable products, take the one Namlig marks as discounted (`DiscountItem`,
   `Discount`/`Prisfald` label) when its price per unit is at most 10 % above the
   cheapest. The plan says `valgt pga. tilbud: 43,20 vs 40,00 kr/kg (8 %)`.
+- A tilbud on another brand can also replace the sku your family always buys, which a
+  pinned favourite used to prevent. It must be cheaper for the same need, deliverable,
+  outside `budget.swapNeverWords`, and carry every typed word your usual product carries -
+  so a cheap First Price mayonnaise never replaces a light one. Each such swap is printed
+  on the plan line and counted in the run summary. `basket.preferSale: false` ends it: the
+  pinned favourite is then bought whenever it is in stock, sale or no sale.
 - A campaign that only pays at a minimum quantity (`Fast mixtilbud`, 5 for 39 kr) is
   reported as a bulk tip, never bought silently.
 - Out of stock: profile `alt` queries run first, and such a swap is labelled

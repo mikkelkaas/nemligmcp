@@ -124,6 +124,42 @@ export function pieceGrams(name) {
   return null;
 }
 
+/**
+ * One piece of this pack, in the pack's own scale (g or ml), from what the shop declared
+ * about it. "4 x 125 g" states the piece. "2 stk. / 260 g" states the pack and how many
+ * are in it, so a naan is 130 g and a baguette 175 g. "15 stk." states no weight at all,
+ * and then the word table in pieceGrams() is still the last resort: the planner guesses,
+ * and the two cases are not the same claim.
+ */
+export function pieceWeightOf(product) {
+  const pack = (product && product.pack) || {};
+  const text = String((product && product.description) || pack.raw || "").trim();
+  const D = "\\d+(?:[.,]\\d+)?";
+  // The multi-pack first: in "24 x 0,33 l" the first number is the count, not a weight.
+  const each = new RegExp("(" + D + ")\\s*x\\s*(" + D + ")\\s*(g|kg|ml|cl|l)(?![a-zæøå])", "i").exec(text);
+  if (each) {
+    const m = toBaseMeasure(num(each[2]), each[3]);
+    if (m && (m.measure === "g" || m.measure === "ml") && m.value >= 1 && m.value <= 5000) return round2(m.value);
+  }
+  // Then the pair the shop prints as two segments: "2 stk. / 260 g", "350 g / 2 stk.".
+  const weight = new RegExp("(" + D + ")\\s*(g|kg|ml|cl|l)(?![a-zæøå])", "i").exec(text);
+  let total = null;
+  if (weight) {
+    const m = toBaseMeasure(num(weight[1]), weight[2]);
+    if (m && (m.measure === "g" || m.measure === "ml")) total = m.value;
+  }
+  if (total === null) total = packMeasure(pack);
+  const count = new RegExp("(" + D + ")\\s*(stk|styk|stykker|skiver|skive|dåser|dåse|flasker|flaske|poser|pose|pakker|pakke|håndsker|håndskuer|brikker|brik|æg|fed|ruller|rulle)(?![a-zæøå])", "i").exec(text);
+  if (total && count) {
+    const n = num(count[1]);
+    if (n >= 1) {
+      const per = round2(total / n);
+      if (per >= 1 && per <= 5000) return per;
+    }
+  }
+  return pieceGrams(product && product.name);
+}
+
 /** Grams or millilitres in one pack, or null when the pack is not a measured pack. */
 function packMeasure(pack) {
   if (!pack || !(pack.qty > 0)) return null;
@@ -147,7 +183,9 @@ export function packsFor(need, pack, opts = {}) {
   if (pack.qty > 0 && pack.unit === need.unit) return Math.max(1, Math.ceil(need.qty / pack.qty));
   const grams = packMeasure(pack);
   if (grams && COUNT_UNITS.has(need.unit)) {
-    const per = Number(opts.pieceGrams || pieceGrams(opts.name)) || 0;
+    // opts.pieceWeight is what the shop declared for this pack; opts.pieceGrams is a
+    // caller that already knew a number; the word table by name is the last resort.
+    const per = Number(opts.pieceWeight || opts.pieceGrams || pieceGrams(opts.name)) || 0;
     if (per > 0) return Math.max(1, Math.ceil((need.qty * per) / grams));
   }
   if (grams && MEASURE_UNITS.has(need.unit) && MEASURE_UNITS.has(pack.unit)) {
@@ -392,22 +430,27 @@ function isStable(name, opts) {
 function packOptions(need, n, list, per, opts) {
   const options = [];
   for (const c of list) {
-    // The piece weight of the NEED's product (per) must not be lent to another
-    // product: 65 g per egg would turn a "2 stk" pizza base into a 130 g pack.
-    const one = packScale(c.pack, n.kind, Number(pieceGrams(c.name) || opts.pieceGrams) || 0);
+    // A candidate is measured in its own numbers, on both sides of the comparison: "3
+    // pærer" against "4 stk. / 500 g" is 375 g wanted of 500 g sold, not 570 g of 500 g.
+    // What it does not declare is not borrowed from the product the need was written for:
+    // 65 g per egg would turn a "2 stk" pizza base into a 130 g pack and make it look
+    // like five of them are worth buying.
+    const own = Number(pieceWeightOf(c) || opts.pieceGrams) || 0;
+    const scale = needScale(need, own) || n;
+    const one = packScale(c.pack, scale.kind, own);
     if (!one || !(one.size > 0)) {
-      const packs = Math.max(1, packsFor(need, c.pack, { pieceGrams: pieceGrams(c.name), name: c.name }));
-      options.push({ candidate: c, packs, total: round2(Number(c.price) * packs), supply: null,
+      const packs = Math.max(1, packsFor(need, c.pack, { pieceWeight: pieceWeightOf(c), name: c.name }));
+      options.push({ candidate: c, scale, packs, total: round2(Number(c.price) * packs), supply: null,
         pieces: null, over: null, wastePct: null, smaller: null });
       continue;
     }
-    const kMin = Math.max(1, Math.ceil(n.amount / one.size - 1e-9));
+    const kMin = Math.max(1, Math.ceil(scale.amount / one.size - 1e-9));
     // The covering number is always in the list; one more only while it stays sane.
     for (const k of [kMin, kMin + 1]) {
       if (k !== kMin && k > 6) continue;
-      options.push({ candidate: c, packs: k, total: round2(Number(c.price) * k), supply: one.size * k,
-        pieces: one.pieces === undefined ? null : one.pieces * k, over: one.size * k - n.amount,
-        wastePct: ((one.size * k - n.amount) / n.amount) * 100,
+      options.push({ candidate: c, scale, packs: k, total: round2(Number(c.price) * k), supply: one.size * k,
+        pieces: one.pieces === undefined ? null : one.pieces * k, over: one.size * k - scale.amount,
+        wastePct: ((one.size * k - scale.amount) / scale.amount) * 100,
         smaller: k > kMin ? { packs: kMin, total: round2(Number(c.price) * kMin) } : null });
     }
   }
@@ -440,7 +483,7 @@ function numOr(value, dflt) {
 export function choosePack(need, candidates, opts = {}) {
   const list = (candidates || []).filter((c) => c && Number(c.price) > 0).slice(0, 8);
   const nameOf = opts.name || (list[0] && list[0].name) || "";
-  const per = Number(opts.pieceGrams || pieceGrams(nameOf)) || 0;
+  const per = Number(opts.pieceWeight || opts.pieceGrams || pieceGrams(nameOf)) || 0;
   const n = needScale(need, per);
   if (!n || list.length === 0) return null;
   const options = packOptions(need, n, list, per, opts);
@@ -449,7 +492,7 @@ export function choosePack(need, candidates, opts = {}) {
   const limit = stable ? numOr(opts.overshootPctStable, 400) : numOr(opts.overshootPctFresh, 25);
   const maxOver = stable ? Infinity : numOr(opts.maxOverrunFreshMl, 150);
   const fits = (o) => o.wastePct === null || o.wastePct <= limit
-    || (n.kind !== "count" && o.over !== null && o.over <= maxOver);
+    || ((o.scale || n).kind !== "count" && o.over !== null && o.over <= maxOver);
   const allowed = options.filter(fits);
   const pool = allowed.length > 0 ? allowed : options.filter((o) => !o.smaller);
   if (pool.length === 0) return null;
@@ -469,7 +512,7 @@ export function choosePack(need, candidates, opts = {}) {
   const packLabel = pack.qty ? `${pack.qty} ${pack.unit || "stk"}` : "1 pack";
   const given = chosen.supply === null
     ? `${chosen.packs} pack${chosen.packs > 1 ? "s" : ""} as sold`
-    : chosen.pieces !== null && n.countQty !== null
+    : chosen.pieces !== null && (chosen.scale || n).countQty !== null
       ? `${Math.round(chosen.pieces)} stk`
       : `${Math.round(chosen.supply)} ${n.kind}`;
   const bits = [`${chosen.packs} x ${packLabel} = ${given} for ${need.qty} ${need.unit}`];

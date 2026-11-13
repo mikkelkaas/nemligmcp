@@ -15,7 +15,7 @@
 // Everything prints JSON. Only read-only MCP tools are used (search_products).
 import { readFileSync, mkdirSync } from "node:fs";
 import { connectGated, warnUnknownFlags } from "./lib.mjs";
-import { parsePack, packsFor, cheapest, choosePack, pieceGrams, eligibleOf } from "./units.mjs";
+import { parsePack, packsFor, cheapest, choosePack, pieceWeightOf, eligibleOf } from "./units.mjs";
 import { nameMatches, norm, tokens, score as nameScore, MIN_NAME_SCORE } from "./match.mjs";
 
 import { CACHE_PATH, writeJsonAtomic } from "./paths.mjs";
@@ -224,7 +224,7 @@ async function attempt(mcp, query, intent, cache) {
   const pinned = mode === "history" && intent.sku ? matching.find((p) => String(p.id) === String(intent.sku)) : null;
   const pinMissed = mode === "history" && intent.sku && !pinned ? String(intent.sku) : null;
   if (pinned) {
-    const packs = need ? packsFor(need, pinned.pack, { pieceGrams: pieceGrams(pinned.name), name: pinned.name }) : 1;
+    const packs = need ? packsFor(need, pinned.pack, { pieceWeight: pieceWeightOf(pinned), name: pinned.name }) : 1;
     // The rivals of the sku the family actually buys, through the same filter as any
     // other pick: deliverable, not an avoided brand, under the unit-price ceiling. A
     // trim decision reads these, so it never promises a saving the shop cannot deliver.
@@ -234,9 +234,23 @@ async function attempt(mcp, query, intent, cache) {
       .sort((a, b) => (Number(a.unitPrice) || Number.MAX_VALUE) - (Number(b.unitPrice) || Number.MAX_VALUE)
         || (Number(a.price) || Number.MAX_VALUE) - (Number(b.price) || Number.MAX_VALUE))
       .slice(0, 3);
+    const pinTotal = Number((pinned.price * packs).toFixed(2));
+    const sale = saleBeatsPin(query, pinned, packs, rivals.map(altOf), need, intent);
+    if (sale) {
+      const kept = [pickOf(pinned)].concat(rivals.filter((r) => String(r.id) !== String(sale.rival.id)));
+      return {
+        ok: true, query, mode, pick: pickOf(sale.rival), packs: sale.packs, need, total: sale.total,
+        why: `the usual sku ${pinned.id} is not today's deal: ${sale.rival.name} on sale, ${sale.packs} x `
+          + `${Number(sale.rival.price).toFixed(2)} kr = ${sale.total.toFixed(2)} kr against ${pinTotal.toFixed(2)} kr `
+          + `for the usual (${pinned.name})`,
+        compare: "sale-vs-usual", usual: pinned.id, savedKr: sale.savedKr,
+        candidates: matching.length, cached, ageMs, stale,
+        alternatives: kept.slice(0, 3).map(altOf),
+      };
+    }
     return {
       ok: true, query, mode, pick: pickOf(pinned), packs, need,
-      total: Number((pinned.price * packs).toFixed(2)),
+      total: pinTotal,
       why: "family favourite sku, still in stock" + (pinned.onSale ? "; tilbud" : ""), compare: "sku-pin",
       candidates: matching.length, cached, ageMs, stale,
       alternatives: rivals.map(altOf),
@@ -255,10 +269,10 @@ async function attempt(mcp, query, intent, cache) {
   // total price, with bounded slack. Falls back to ceil(need/pack) when the need cannot
   // be compared with any pack on the shelf.
   const bought = need && (res.pool || []).length > 0
-    ? choosePack(need, res.pool, { name: res.pick.name, ...(intent.purchasing || {}) })
+    ? choosePack(need, res.pool, { name: res.pick.name, pieceWeight: pieceWeightOf(res.pick), ...(intent.purchasing || {}) })
     : null;
   const chosen = bought ? bought.candidate : res.pick;
-  const packs = bought ? bought.packs : (need ? packsFor(need, res.pick.pack, { pieceGrams: pieceGrams(res.pick.name), name: res.pick.name }) : 1);
+  const packs = bought ? bought.packs : (need ? packsFor(need, res.pick.pack, { pieceWeight: pieceWeightOf(res.pick), name: res.pick.name }) : 1);
   // Warn only when the need was a weight/volume and the pack is a different scale.
   // A need in pieces ("2 stk") is always satisfied as 2 packs, so it is not a mismatch.
   const SCALE = new Set(["g", "kg", "ml", "l", "cl"]);
@@ -318,11 +332,63 @@ function substitutionQueries(query, alt) {
   return [...new Set(out.map((s) => String(s || "").trim()).filter(Boolean))].slice(0, 3);
 }
 
+/**
+ * The sale rule, measured against the sku this family actually buys.
+ *
+ * Until now a pinned favourite was never weighed against a tilbud: the cheapest path
+ * compared the shelf's cheapest, and the pinned path stopped at "your usual, in stock".
+ * Here the pin is the baseline, and a rival takes its place only when it is on sale AND
+ * cheaper for the SAME need - a 6-pack on sale can still cost more than one carton, so the
+ * comparison is what the family pays, not the label price. `budget.swapNeverWords` protects
+ * a line here too: nobody swaps a diaper size for a discount. And the rival must answer the
+ * family's words at least as well as the usual product does - "Mayonnaise" does not say
+ * "(let)", and a cheaper mayonnaise that is not the light one is not the same shop.
+ * pin: the pinned product. pinPacks: the packs the pin would have been bought in.
+ */
+export function saleBeatsPin(query, pin, pinPacks, alternatives, need, intent = {}) {
+  if (!pin || pin.onSale || !(alternatives || []).length) return null;
+  const purchasing = intent.purchasing || {};
+  if (intent.preferSale === false || purchasing.preferSale === false) return null;
+  // The words the family typed AND its usual product carries. "Mayonnaise (let)" has
+  // "let"; a plain "Mayonnaise" does not, and a cheaper mayonnaise that is not the light
+  // one is a different purchase, however good the tilbud is. The scorer cannot see this:
+  // it asks whether the name answers the query, and both names answer it.
+  const typed = new Set(String(norm(query)).split(" ").filter((w) => w.length > 2));
+  const asked = new Set(String(norm(pin && pin.name)).split(" ").filter((w) => w.length > 2 && typed.has(w)));
+  const keepsTheWords = (name) => {
+    const has = new Set(String(norm(name)).split(" "));
+    return [...asked].every((w) => has.has(w));
+  };
+  const never = (purchasing.swapNeverWords || []).map((w) => String(w).toLowerCase()).filter(Boolean);
+  const protectedLine = (t) => never.some((w) => String(t || "").toLowerCase().includes(w));
+  if (protectedLine(pin.name) || protectedLine(pin.brand)) return null;
+  const packsOfPin = Math.max(1, Number(pinPacks) || 1);
+  const pinTotal = Number((Number(pin.price) * packsOfPin).toFixed(2));
+  if (!(pinTotal > 0)) return null;
+  let best = null;
+  for (const alt of alternatives.slice(0, 3)) {
+    if (!alt || !alt.sku || !alt.onSale) continue;
+    if (protectedLine(alt.name) || protectedLine(alt.brand)) continue;
+    if (!keepsTheWords(alt.name)) continue;
+    const packs = need ? packsFor(need, alt.pack, { pieceWeight: pieceWeightOf(alt), name: alt.name }) : packsOfPin;
+    const total = Number((Number(alt.price) * Math.max(1, Number(packs) || 1)).toFixed(2));
+    if (!(total > 0) || total >= pinTotal) continue;
+    if (!best || total < best.total) {
+      best = { rival: alt, packs: Math.max(1, Number(packs) || 1), total, pinTotal, savedKr: Number((pinTotal - total).toFixed(2)) };
+    }
+  }
+  return best;
+}
+
 function pickOf(p) {
   return {
     sku: p.id, name: p.name, brand: p.brand, price: p.price, unitPrice: p.unitPrice,
     unitLabel: p.unitLabel, pack: p.pack, url: p.url, mainGroup: p.mainGroup, favorite: p.favorite,
     onSale: !!p.onSale, saleLabels: p.saleLabels || [],
+    // The declaration ("2 stk. / 260 g") travels with the pick: the merged re-decision in
+    // plan.mjs and the trim both weigh a piece, and neither should have to guess from the
+    // product name a second time.
+    description: p.description || null,
   };
 }
 function altOf(a) {
@@ -331,6 +397,7 @@ function altOf(a) {
   return {
     sku: a.id, name: a.name, brand: a.brand, price: a.price, unitPrice: a.unitPrice,
     unitLabel: a.unitLabel || null, pack: a.pack || null, onSale: !!a.onSale,
+    description: a.description || null,
   };
 }
 function arg(name, dflt) {
