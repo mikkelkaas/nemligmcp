@@ -509,9 +509,25 @@ function numOr(value, dflt) {
  *          need cannot be compared with any pack, so the caller falls back.
  */
 export function choosePack(need, candidates, opts = {}) {
-  const list = (candidates || []).filter((c) => c && Number(c.price) > 0).slice(0, 8);
-  const nameOf = opts.name || (list[0] && list[0].name) || "";
+  const all = (candidates || []).filter((c) => c && Number(c.price) > 0);
+  const nameOf = opts.name || (all[0] && all[0].name) || "";
   const per = Number(opts.pieceWeight || opts.pieceGrams || pieceGrams(nameOf)) || 0;
+  // A pack floor names the SIZE this family buys of a loose good: onions by the net bag, not
+  // three single pieces at 5 kr. It bites only when such a pack is on this shelf, so it never
+  // turns a buy into a miss, and a pack whose size cannot be read is not counted as meeting
+  // it. It is a rule's field, so a floor set for onions does not raise the cream.
+  const floor = Number(opts.minPackGrams) > 0 ? Number(opts.minPackGrams) : 0;
+  const gramsOf = (c) => {
+    const p = c.pack || {};
+    const base = toBaseMeasure(Number(p.qty) || 0, p.unit);
+    if (base && (base.measure === "g" || base.measure === "ml")) return base.value;
+    return per && Number(p.qty) ? per * Number(p.qty) : null;
+  };
+  const big = floor > 0 ? all.filter((c) => (gramsOf(c) || 0) >= floor) : [];
+  const list = (big.length > 0 ? big : all).slice(0, 8);
+  const floorNote = big.length > 0 && big.length < all.length
+    ? `${all.length - big.length} smaller pack(s) on this shelf were left out: ${floor} g or more is what this family buys`
+    : null;
   const n = needScale(need, per);
   if (!n || list.length === 0) return null;
   const options = packOptions(need, n, list, per, opts);
@@ -545,6 +561,7 @@ export function choosePack(need, candidates, opts = {}) {
       : `${Math.round(chosen.supply)} ${n.kind}`;
   const bits = [`${chosen.packs} x ${packLabel} = ${given} for ${need.qty} ${need.unit}`];
   if (chosen.smaller) bits.push(`more of the same pack costs less in total: ${chosen.total} kr for ${chosen.packs} against ${chosen.smaller.total} kr for ${chosen.smaller.packs}`);
+  if (floorNote) bits.push(floorNote);
   return { candidate: chosen.candidate, packs: chosen.packs, total: chosen.total, supply: chosen.supply,
     wastePct: chosen.wastePct === null ? null : Number(chosen.wastePct.toFixed(1)), why: bits.join(" - ") };
 }

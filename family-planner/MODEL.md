@@ -120,7 +120,11 @@ so a per-person mark only shows up where the pack maths was not already buying e
 - within the tie, an offer on sale beats a cheaper-per-unit one;
 - two options within `tieBreakKr` (3 kr) of each other: the one that wastes less wins;
 - if no offer fits inside the limits, the cheapest covering option is taken and the
-  plan says so. The limits shape the choice, they never lose a meal.
+  plan says so. The limits shape the choice, they never lose a meal;
+- a rule may set a floor on the pack size of one good (`minPackGrams`): 500 on an onion
+  rule buys the 1 kg net at 12 kr for a need of 200 g, where two loose pieces at 5 kr
+  would have covered the need for less. The floor holds only while a pack that size is on
+  the shelf, so a habit never loses the meal, and the line prints what was left out.
 
 The need is added **before** anything is bought. Two dinners asking for 4 eggs make one
 need of 8 and one pack, not two roundings of a half pack. Two different names that land
@@ -137,6 +141,17 @@ checked against the recipes.
 `freshWords` is checked first and always wins, because a short word hides inside a long
 one: "salt" sits inside "saltet", and salted butter must not read as a keepsake. What
 neither list names is treated as fresh.
+
+A family can write its own rules for goods the mined evidence does not cover
+(`purchasing.rules`): a grade, "cooking cream is the 4 % one", or a format, "onions and
+garlic come in a net". A rule rewrites what is searched, keeps named products out (`avoid`),
+may set the pack floor, and says which rule chose the product on the plan line. Its
+`except` words mark where the rule's own word means something else, so a rule about "fløde"
+stays off the whipping cream and one about "løg" stays off "rødløg". A rule may carry no
+`query` at all, and then the recipe's word is searched: a rule about the size of a pack has
+no product text to give, and an invented search string that the shop does not answer with
+that product costs a call and lands on the alt. The words live in the profile and the
+mechanism in the code, so a second family edits JSON and never a `.mjs`.
 
 A piece is weighed with what the shop declares about the pack (`pieceWeightOf`,
 `units.mjs`). Namlig prints the declaration in the description line: "4 x 125 g" is four
@@ -289,8 +304,9 @@ thin layer, not the planner.
 
 ## Settled by measurement
 
-Three things sat on the open list until they were measured. They stay written down because
-the measurement is the part worth keeping, not the decision.
+Four things are written down here, because the measurement is the part worth keeping and
+not the decision. Three sat on the open list until they were measured; the fourth arrived
+as a taste on 2026-11-13.
 
 - **A sale is measured against the family's own sku** (was: "the sale rule must compare
   against the SKU this family actually buys"). Implemented as `saleBeatsPin`, described in
@@ -365,11 +381,36 @@ the measurement is the part worth keeping, not the decision.
   `purchasing.stableWords` and the net wins again. Every golden shelf moved 0,0 %, which is
   the honest signal that the fixture shelves had no per-piece goods to hide: the two new
   tests are the coverage.
+- **A family's grade and its format are a rule, not a code edit.** (asked for 2026-11-13:
+  "for us cooking cream should be 4 %", "we prefer to buy a net of onions as well as a net of
+  garlic"). `purchasing.rules` carries such a taste: `match` words in the ingredient line,
+  `except` where that word means something else, an optional `query`, `avoid`, `alt`, and
+  `minPackGrams`. Measured on this shelf, the same need with the rule off and on: 150 g of
+  garlic took two loose heads at 8,00 kr off the rule and the 200 g net at 13,33 kr on it, so
+  the habit costs 5,33 kr and the plan line names the rule that spent it. For 350 g of onions
+  the 1 kg bag at 12,00 kr won either way; at 200 g the same rule refused three 5 kr pieces.
+  The 4 % cream is today the cheapest cream on the shelf (7,95 kr per 250 ml), so what the
+  rule buys there is that a discounted 15 % can no longer take the line: `avoid` refuses the
+  grade and the alt cannot smuggle it back. `stableWords` gained "løg" and "hvidløg", which
+  closes the loop the entry above left open - a net of onions is no longer read as waste.
+  One dead query died on the way: "Løg i net" is answered by the same six products as bare
+  "løg" and then refused by the matcher (best name "Løg Zittauer", score 0,5), so that rule
+  carries the size in grams and searches the recipe's word - one search instead of two.
+  And the rule exposed a bug worth its weight. The plan loop builds the request to the shop by
+  hand, and `avoidWords`, `maxUnitPrice` and `minPackGrams` were not in that object:
+  `git show HEAD:family-planner/plan.mjs` holds no occurrence of `avoidWords` at all. Every
+  mined meat rule's `never` list was therefore decorative in a real run, because the plan
+  printed the refusal and the basket filled with the product anyway. Measured on one shelf:
+  with the field forwarded, a search for "Løg" refuses what the family refused (the 12 kr
+  product is out, the 40 kr one is chosen); without it, the refused product is bought. That
+  object is now a function (`searchIntentOf`) with a test over it - the tests that call
+  `resolveIntent` pass the fields by hand and could never have seen this.
 
-## Still open
-
-None right now. Two lines that blocked the basket today were family facts, not code: a word
-the household never buys goes in `exclusions.neverBought` and is named in the plan instead of
-blocking it, and pasta water is tap water (`pantryWords`). When a plan does something wrong,
+One loose end, and it is a family's to cut: their profile still maps `piskefløde` onto
+"Fløde" in `queryAliases`, and the 4 % rule answers that line first, so the alias is dead
+weight until they say what whipping cream means to them. Two lines that blocked the basket
+one day were family facts, not code: a word the household never buys goes in
+`exclusions.neverBought` and is named in the plan instead of blocking it, and pasta water is
+tap water (`pantryWords`). When a plan does something wrong,
 write the measurement here before fixing it, and move it up into the model when the number is
 in.

@@ -626,6 +626,25 @@ function poolDinnerIntents(options, wanted, rules) {
 
 /** Resolve every live intent against Namlig, pacing and caching each search. */
 /**
+ * What one intent asks the shop for. A rule's own words travel here: `avoid` is what the
+ * family said never, `maxUnitPrice` is the ceiling they set for a cut, `minPackGrams` is the
+ * smallest pack they buy of a loose good. Dropping them from this object would let the buy
+ * land on exactly what the profile refused, while the plan line still printed the rule.
+ */
+export function searchIntentOf(it, options = {}) {
+  const floor = Number(it.minPackGrams);
+  const cap = Number(it.maxUnitPrice);
+  return {
+    query: it.query, need: it.need, mode: it.mode, sku: it.sku, alt: it.alt || [],
+    avoidBrands: options.avoid, avoidWords: (it.avoidWords || []).slice(0, 40),
+    maxUnitPrice: Number.isFinite(cap) && cap > 0 ? cap : undefined,
+    minPackGrams: Number.isFinite(floor) && floor > 0 ? floor : undefined,
+    force: options.fresh,
+    preferSale: it.preferSale, saleTolerancePct: it.saleTolerancePct, purchasing: options.purchasing,
+  };
+}
+
+/**
  * Ask Namlig about every intent. The gate in lib.mjs keeps the traffic polite: a bounded
  * number of calls at once, a minimum spacing between two starts, a backoff when the shop
  * pushes back, and a deadline so a slow evening ends with a message instead of a hang.
@@ -645,11 +664,7 @@ async function resolveAll(live, options) {
   const cache = loadCache();
   const t1 = Date.now();
   const resolved = await mapPool(live, async (it) => {
-    const r = await resolveIntent(mcp, {
-      query: it.query, need: it.need, mode: it.mode, sku: it.sku, alt: it.alt || [],
-      avoidBrands: options.avoid, force: options.fresh,
-      preferSale: it.preferSale, saleTolerancePct: it.saleTolerancePct, purchasing: options.purchasing,
-    }, { cache });
+    const r = await resolveIntent(mcp, searchIntentOf(it, options), { cache });
     const tag = r.ok ? `${r.pick.name} x${r.packs} = ${r.total} kr` : "NOT FOUND";
     console.log(`  ${it.source.padEnd(28)} ${String(it.query).slice(0, 34).padEnd(34)} ${tag}`);
     return { ...r, source: it.source, sourceLabel: it.sourceLabel || null, needText: it.need || null, rationale: it.rationale || null };

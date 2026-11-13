@@ -271,9 +271,12 @@ async function attempt(mcp, query, intent, cache) {
   // total price, with bounded slack. Falls back to ceil(need/pack) when the need cannot
   // be compared with any pack on the shelf.
   const onShelf = (res.shelf && res.shelf.length ? res.shelf : res.pool) || [];
-  const bought = need && onShelf.length > 0
-    ? choosePack(need, onShelf, { name: res.pick.name, pieceWeight: pieceWeightOf(res.pick), ...(intent.purchasing || {}) })
-    : null;
+  // A rule may name the smallest pack this family buys of a loose good (onions by the net,
+  // not three single pieces). It travels on the intent, never in the profile block, so a
+  // floor set for one good cannot quietly raise every other pack on the basket.
+  const packOpts = { name: res.pick.name, pieceWeight: pieceWeightOf(res.pick), ...(intent.purchasing || {}) };
+  if (Number(intent.minPackGrams) > 0) packOpts.minPackGrams = Number(intent.minPackGrams);
+  const bought = need && onShelf.length > 0 ? choosePack(need, onShelf, packOpts) : null;
   const chosen = bought ? bought.candidate : res.pick;
   const packs = bought ? bought.packs : (need ? packsFor(need, res.pick.pack, { pieceWeight: pieceWeightOf(res.pick), name: res.pick.name }) : 1);
   // Warn only when the need was a weight/volume and the pack is a different scale.

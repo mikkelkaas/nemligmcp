@@ -7,8 +7,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { norm, tokens, score, nameMatches, shelfContext } from "../match.mjs";
 import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf, choosePack, subunitGrams, SUBUNIT_GRAMS } from "../units.mjs";
-import { saleBeatsPin } from "../catalog.mjs";
-import { consolidateIntents } from "../plan.mjs";
+import { saleBeatsPin, parseNeed } from "../catalog.mjs";
+import { consolidateIntents, searchIntentOf } from "../plan.mjs";
 import { pairPlanToOrder, observedDelta, learnedFrom, biasIntent, addIntentsOf } from "../learn.mjs";
 
 const MATCH = [
@@ -432,9 +432,13 @@ test("a single-night format covers one day and the period is still filled", () =
 test("an out-of-stock protein has more than one name to fall back on", () => {
   // The fixture, not a real profile: a clone carries none, so this threw there.
   const fam = demoFamily();
-  const swappable = fam.meat.rules.filter((r) => r.alt.length > 0);
+  // Mined rules only. A family rule may stop at one fallback on purpose: when the second
+  // name would be a grade the family refused, the honest outcome is a line the person sees,
+  // not a product the profile said never.
+  const swappable = fam.meat.rules.filter((r) => !r.family && r.alt.length > 0);
   assert.ok(swappable.length >= 2, "a profile with no alternatives cannot swap a sold-out protein");
   assert.ok(swappable.every((r) => r.alt.length >= 2), `${fam.name} names one fallback at most somewhere`);
+  assert.ok(fam.meat.rules.some((r) => r.family && r.alt.length === 1), "a family rule is allowed to stop at one");
 });
 
 // --- measures, not pack counts: 1 pære is not a 1 kg bag --------------------------
@@ -838,4 +842,120 @@ test("a recipe counting parts asks for a weight, not that many packs", () => {
   assert.equal(garlic.need, "50 g", "6 cloves at 5 g, rounded up on the step the planner weighs in");
   assert.match(garlic.rationale, /6 fed/, "the plan still shows the part the recipe wrote");
   assert.equal(onion.need, "2 stk", "a count of sold units stays a count: '2 stk' is two of what the shop sells");
+});
+
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+
+// A family rule is the profile's own product rule: this family buys a certain grade, or a
+// certain format, whatever the shelf discounts. The words live in the profile; the code only
+// carries the mechanism, so a second family changes JSON and never a .mjs file.
+const creamRule = {
+  id: "madlavningsfloede-4pct", family: true, match: ["fløde"], except: ["piskefløde"],
+  query: "Madlavningsfløde 4%", alt: [], avoid: ["15%"], maxKrPerKg: null,
+};
+
+test("a family rule searches what the family buys and says so on the line", () => {
+  const amounts = { household: { cookServings: 5 } };
+  const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] }, queryAsides: { words: [] } };
+  const recipe = { name: "T", servings: 5, ingredients: [
+    { text: "Fløde", amount: "200", unit: "ml", litres: 0.2 },
+    { text: "Piskefløde", amount: "100", unit: "ml", litres: 0.1 },
+  ] };
+  const out = recipeIntents(recipe, { amounts, meat: { rules: [creamRule] }, exclusions });
+  const cook = out.intents.find((i) => i.ingredient === "Fløde");
+  const whip = out.intents.find((i) => i.ingredient === "Piskefløde");
+  assert.equal(cook.query, "Madlavningsfløde 4%", "the family's own text is searched, not the recipe's word");
+  assert.deepEqual(cook.avoidWords, ["15%"], "the grades this family will not have are kept out of the buy");
+  assert.match(cook.rationale, /family rule "madlavningsfloede-4pct", buy "Madlavningsfløde 4%"/, "the line says which family rule chose it");
+  assert.notEqual(cook.rationale, whip.rationale, "the two cream lines are not told apart by the same sentence");
+});
+
+test("a rule's own word does not reach a line where it means something else", () => {
+  const amounts = { household: { cookServings: 5 } };
+  const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] }, queryAsides: { words: [] } };
+  const recipe = { name: "T", servings: 5, ingredients: [{ text: "Piskefløde", amount: "100", unit: "ml", litres: 0.1 }] };
+  const out = recipeIntents(recipe, { amounts, meat: { rules: [creamRule] }, exclusions });
+  // "fløde" is inside "piskefløde", so a substring match would take the whipping cream line.
+  assert.equal(out.intents[0].query, "Piskefløde", "except keeps the cooking-cream rule off the whipping cream");
+  assert.doesNotMatch(out.intents[0].rationale, /family rule/);
+});
+
+test("a family rule is matched before a generated one and keeps its own shape", () => {
+  const fam = demoFamily();
+  const rules = fam.meat.rules;
+  assert.equal(rules[0].id, "loeg-i-net", "the family's rule answers first");
+  const onion = rules.find((r) => r.id === "loeg-i-net");
+  assert.deepEqual(onion.match, ["løg"]);
+  assert.deepEqual(onion.except, ["rødløg"], "the words that hold the rule back survive the load");
+  assert.deepEqual(onion.avoid, ["sylte"], "and so do the products the family will not have");
+  assert.deepEqual(onion.alt, ["Løg"], "one more search when the net is not offered");
+  assert.equal(onion.maxKrPerKg, null, "no ceiling is invented for a rule that did not ask for one");
+  assert.ok(rules.filter((r) => r.query).length === rules.length, "every rule still names a query");
+});
+
+test("a family rule that cannot be honoured fails when the profile is read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fp-rules-"));
+  try {
+    writeFileSync(join(dir, "family-bad.json"), JSON.stringify({
+      name: "family-bad", purchasing: { rules: [{ match: ["fløde"] }] },
+    }));
+    assert.throws(() => loadFamily({ dir, name: "bad" }), /purchasing\.rules\[0\]\.id/);
+    writeFileSync(join(dir, "family-bad.json"), JSON.stringify({
+      name: "family-bad", purchasing: { rules: [{ id: "x", match: ["fløde"], query: "x".repeat(90) }] },
+    }));
+    assert.throws(() => loadFamily({ dir, name: "bad" }), /3-80 characters/);
+    writeFileSync(join(dir, "family-bad.json"), JSON.stringify({
+      name: "family-bad", purchasing: { rules: [{ id: "x", match: ["fløde"], query: "Fløde", maxKrPerKg: -5 }] },
+    }));
+    assert.throws(() => loadFamily({ dir, name: "bad" }), /maxKrPerKg/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// The buy path is where a rule either lives or dies. plan.mjs builds the object it sends to
+// the shop by hand, so a field left out of that one line silently makes every rule below it
+// decorative: the plan still prints "never zittauer" while the basket fills with it.
+test("what the plan loop asks the shop for keeps the rule's refusals", () => {
+  const it = {
+    query: "Ris", need: "500 g", mode: "cheapest", alt: ["Grødris"], rationale: "x",
+    avoidWords: ["19-23%"], maxUnitPrice: 100, minPackGrams: 500,
+  };
+  const sent = searchIntentOf(it, { avoid: ["Grøn Fjer"], purchasing: { tieBreakKr: 3 }, fresh: false });
+  assert.deepEqual(sent.avoidWords, ["19-23%"], "the words this family refuses must reach the buy");
+  assert.equal(sent.maxUnitPrice, 100, "and so must the ceiling they set per unit");
+  assert.equal(sent.minPackGrams, 500, "and the smallest pack they buy of it");
+  assert.deepEqual(sent.alt, ["Grødris"], "the alt chain travels too");
+  assert.deepEqual(sent.avoidBrands, ["Grøn Fjer"], "--avoid still lands, as brands");
+  assert.equal(sent.query, "Ris");
+  assert.equal(searchIntentOf(it, {}).minPackGrams, 500, "no options needed to keep the rule");
+});
+
+test("a pack floor buys the net bag, not the piece that covers the need cheaper", () => {
+  const CAN = { IsDeliveryAvailable: true, IsAvailableInStock: true };
+  const PIECE = { id: "p1", name: "Løg i bakke", price: 5, unitPrice: 45.45, unitLabel: "kr/kg", availability: CAN, pack: { qty: 1, unit: "stk", raw: "1 stk" } };
+  const NET = { id: "p2", name: "Løg Zittauer", price: 12, unitPrice: 12, unitLabel: "kr/kg", availability: CAN, pack: { qty: 1000, unit: "g", raw: "1 kg" } };
+  const need = parseNeed("200 g");
+  const loose = choosePack(need, [PIECE, NET], { name: "Løg", pieceWeight: 110 });
+  assert.equal(loose.candidate.id, PIECE.id, "without a floor the total decides: 2 pieces at 10 kr against a 12 kr net");
+  const floored = choosePack(need, [PIECE, NET], { name: "Løg", pieceWeight: 110, minPackGrams: 500 });
+  assert.equal(floored.candidate.id, NET.id, "a 500 g floor buys the net at 12 kr, 800 g of it spare");
+  assert.match(floored.why, /1 smaller pack\(s\) on this shelf were left out/, "and the line says what it left out");
+  const alone = choosePack(need, [PIECE], { name: "Løg", pieceWeight: 110, minPackGrams: 500 });
+  assert.equal(alone.candidate.id, PIECE.id, "a floor never turns a buy into a miss: no big pack here, so the pieces are bought");
+});
+
+test("a rule about the size of it keeps the recipe's own word as the search", () => {
+  const amounts = { household: { cookServings: 5 } };
+  const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] }, queryAsides: { words: [] } };
+  const recipe = { name: "T", servings: 5, ingredients: [{ text: "Løg", amount: "2", unit: "stk", grams: 200 }] };
+  const sizeOnly = { id: "loeg-net", family: true, match: ["løg"], except: ["rødløg"], query: null, alt: [], avoid: [], maxKrPerKg: null, minPackGrams: 500 };
+  const out = recipeIntents(recipe, { amounts, meat: { rules: [sizeOnly] }, exclusions });
+  assert.equal(out.intents[0].query, "Løg", "the word the recipe wrote is searched - a size rule has no product text to give");
+  assert.equal(out.intents[0].minPackGrams, 500, "and the size still travels with the need");
+  assert.match(out.intents[0].rationale, /family rule "loeg-net", 500 g or more a pack/, "the line says the size decided, with no product to name");
+  const red = { name: "T", servings: 5, ingredients: [{ text: "Rødløg", amount: "1", unit: "stk", grams: 100 }] };
+  const second = recipeIntents(red, { amounts, meat: { rules: [sizeOnly] }, exclusions });
+  assert.equal(second.intents[0].minPackGrams, undefined, "excepted: a red onion is not bought by the net bag");
 });

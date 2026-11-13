@@ -120,10 +120,65 @@ function householdOf(p) {
   };
 }
 
+/**
+ * Rules a family adds for goods the generated evidence does not cover: a product sold in
+ * several grades ("cooking cream is the 4 % one") or a format the family always buys
+ * ("onions and garlic come in a net"). The words stay here, in the profile, never in code.
+ * A family rule is matched before a generated one, and its `except` words keep a rule off a
+ * line where its own word means something else - "fløde" in "piskefløde" is not cooking cream.
+ */
+function familyRulesOf(profile) {
+  const list = (profile.purchasing || {}).rules;
+  if (list === undefined) return [];
+  if (!Array.isArray(list) || list.length > 40) {
+    throw new Error("purchasing.rules must be an array of at most 40 rules");
+  }
+  const check = (v, at, max, min, len, lower) => {
+    if (v === undefined) return [];
+    if (!Array.isArray(v) || v.length > max
+      || !v.every((w) => typeof w === "string" && w.trim().length >= min && w.length <= len)) {
+      throw new Error(`${at} must be at most ${max} entries of ${min}-${len} characters`);
+    }
+    return v.map((w) => (lower ? w.trim().toLowerCase() : w.trim()));
+  };
+  // Words are matched against a lower-cased product name; a text is a search query, so it
+  // keeps the case the family typed.
+  const words = (v, at, max, min) => check(v, at, max, min, 40, true);
+  const texts = (v, at, max) => check(v, at, max, 3, 80, false);
+  return list.map((r, i) => {
+    const at = `purchasing.rules[${i}]`;
+    if (!r || typeof r !== "object") throw new Error(`${at} must be an object`);
+    if (typeof r.id !== "string" || !r.id.trim() || r.id.length > 40) throw new Error(`${at}.id is required, up to 40 characters`);
+    const match = words(r.match, `${at}.match`, 12, 3);
+    if (match.length === 0) throw new Error(`${at}.match needs at least one word to look for in the ingredient line`);
+    // `query` is optional: leave it out to search the recipe's own word, and let the rule
+    // carry only the size or the refusals. A dead query costs one search every plan.
+    if (r.query !== undefined && (typeof r.query !== "string" || r.query.trim().length < 3 || r.query.length > 80)) {
+      throw new Error(`${at}.query must be the text to search for, 3-80 characters`);
+    }
+    if (r.maxKrPerKg !== undefined && !(Number.isFinite(r.maxKrPerKg) && r.maxKrPerKg > 0)) {
+      throw new Error(`${at}.maxKrPerKg must be a number of kroner above 0`);
+    }
+    if (r.minPackGrams !== undefined && !(Number.isFinite(r.minPackGrams) && r.minPackGrams >= 1 && r.minPackGrams <= 5000)) {
+      throw new Error(`${at}.minPackGrams must be between 1 and 5000 grams - a pack nobody sells is a mistake, not a taste`);
+    }
+    // `alt` is a search text, so it keeps the family's case; the word lists do not.
+    const alt = texts(r.alt, `${at}.alt`, 5);
+    return {
+      id: r.id.trim(), family: true, match,
+      except: words(r.except, `${at}.except`, 20, 2),
+      query: r.query === undefined ? null : r.query.trim(), alt,
+      avoid: words(r.avoid, `${at}.avoid`, 20, 2),
+      maxKrPerKg: r.maxKrPerKg === undefined ? null : r.maxKrPerKg,
+      minPackGrams: r.minPackGrams === undefined ? null : r.minPackGrams,
+    };
+  });
+}
+
 /** The meat rules from the generated evidence file, with the family's knobs on top. */
 function meatOf(profile, generated) {
   const knobs = (profile.meat || {}).perProtein || {};
-  const rules = (generated.rules || []).map((rule) => {
+  const rules = [...familyRulesOf(profile), ...(generated.rules || []).map((rule) => {
     const k = knobs[rule.id] || {};
     return {
       ...rule,
@@ -135,7 +190,7 @@ function meatOf(profile, generated) {
       // lists them per protein, so an out-of-stock item becomes a swap, not a miss.
       alt: [...(rule.alt || []), ...(k.alt || [])],
     };
-  });
+  })];
   return {
     schemaVersion: generated.schemaVersion || 1,
     policy: (profile.meat || {}).rule || generated.policy || {},

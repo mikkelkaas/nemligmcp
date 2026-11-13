@@ -77,6 +77,8 @@
     "_note": "How a pack is chosen. The planner covers the need for the lowest TOTAL price, never for the best price per unit. A food that keeps may overrun the need by a lot, because the price rule already stops it from costing more; fresh food may only overrun it by overshootPctFresh.",
     "minNameScore": 0.7,
     "qualifierWords": [],
+    "rules": [],
+    "_rules_note": "Your own product rules, matched before the mined ones and in this order. Each rule: id; match (words in an ingredient line that trigger it); except (lines where the word means something else, so a rule about fløde must skip piskefløde); query (what to search instead of the recipe's word, usually the grade you buy; leave it out when the rule is only about the size, and the recipe's own word is searched); avoid (words in a product name to keep out of the buy); alt (one more search when your own query is not offered); minPackGrams (the smallest pack of it you buy, 500 for onions sold by the net - a floor is skipped when the shelf has no pack that size, so it never loses you the meal). A rule that names a format spends money on purpose: a net of onions costs more than the two pieces one dish needs. The report line says which rule chose the product, so a rule is never quiet.",
     "overshootPctFresh": 25,
     "overshootPctStable": 400,
     "tieBreakKr": 3,

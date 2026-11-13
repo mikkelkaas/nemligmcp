@@ -252,6 +252,25 @@ anyone keeping a list.
   `exclusions.queryAliases` and map the recipe's word onto yours ("hård ost" -> the hard
   cheese you keep in the fridge). The matcher stays a reader of names; your cheese stays
   your taste.
+- A rule of your own (`purchasing.rules`) says what the planner searches for when an
+  ingredient line carries one of your words: the 4 % cooking cream, a net of onions.
+  `except` keeps a rule off a line where its word means something else, so a rule about
+  "fløde" must skip "piskefløde". `alt` is searched when your own text is not offered.
+  Leave `query` out when the rule is only about the size of it: the recipe's word is then
+  searched, which is cheaper and honest - on this shelf "Løg i net" answers the same six
+  products as bare "løg" and then refuses them, so the dead text only cost a search.
+  A format rule spends money on purpose: a net costs more than the two pieces one dish
+  needs. The plan line names the rule that chose the product, so a rule is never quiet.
+  Rules are matched in profile order, before the mined ones - a rule for "hvidløg" comes
+  before one for "løg", because the second word sits inside the first.
+- A rule may also name the smallest pack of it this family buys (`minPackGrams`). On an
+  onion rule, 500 buys the 1 kg bag at 12 kr for a need of 200 g instead of two 5 kr pieces,
+  and the line prints what it left out. A floor never blocks a buy: when the shelf has no
+  pack that size, the floor is ignored and the buy goes ahead.
+- A rule's refusals travel with the request to the shop (`plan.mjs:searchIntentOf`), so what
+  the family said never cannot re-enter on an alt search or on the total. That one line is
+  where a rule lives or dies: a field left out of it makes the rule decorative - the plan
+  prints "never zittauer" while the basket fills with it.
 - `qualifierWords` are the words that may stand in front of a product name without making
   it another product - for your family. "Parboiled ris" and "Basmati ris" are rice to a
   family that buys both, so those two words sit in that list and the price rule chooses

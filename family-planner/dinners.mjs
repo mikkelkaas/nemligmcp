@@ -34,6 +34,19 @@ function hasWord(text, word) {
 }
 const hitsWord = (text, list) => (list || []).find((w) => hasWord(text, w)) || null;
 
+/** The line in the report that says which rule chose this product, and what it insisted on. */
+function ruleLabel(rule) {
+  if (rule.family) {
+    const bits = [`family rule "${rule.id}"`];
+    if (rule.query) bits.push(`buy "${rule.query}"`);
+    if (rule.avoid?.length) bits.push(`never ${rule.avoid.join(", ")}`);
+    if (rule.minPackGrams) bits.push(`${rule.minPackGrams} g or more a pack`);
+    if (rule.maxKrPerKg) bits.push(`ceiling ${rule.maxKrPerKg} kr per kg`);
+    return bits.join(", ");
+  }
+  return `meat rule "${rule.id}": ${rule.fatBands?.length ? "fat " + rule.fatBands.join("/") + ", " : ""}ceiling ${rule.maxKrPerKg || "-"} kr per kg`;
+}
+
 // Words in front of the product, or a quantity stuck to it, that Namlig search does
 // not need. They made "Håndfuld bønnespirer" and "Ægnudler, ca. 200 g" unfindable.
 const NOISE = ["håndfuld", "hndsfuld", "knivspids", "lidt", "ca", "evt", "gerne", "fx", "til", "ell", "eller", "optøede", "friske", "frisk", "frosne", "frossen",
@@ -96,6 +109,10 @@ function scaleFactor(recipe, household) {
 function meatRuleFor(text, rules) {
   const t = fold(text);
   for (const r of rules || []) {
+    // A family rule's own word can mean something else on this line: "fløde" inside
+    // "piskefløde" is whipping cream, not the cooking cream the rule is about. The profile
+    // says where with `except`, and the rule is skipped.
+    if ((r.except || []).some((w) => t.includes(fold(w)))) continue;
     if ((r.match || []).some((m) => t.includes(fold(m)))) return r;
   }
   return null;
@@ -268,9 +285,11 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
     const need = row.grams ? `${row.grams} g` : row.litres ? `${row.litres} l` : `${row.pieces} stk`;
     const rule = meatRuleFor(row.text, meat.rules);
     // The shop writes "Parmesan", the family buys its own hard cheese: rewrite before searching.
+    // A family rule may carry no query of its own: then the recipe's word, or the family's alias
+    // for it, is searched, because that rule is about the size of the pack, not its name.
     const aliased = Object.entries(aliases).find(([w]) => hasWord(row.query, w));
-    const query = rule ? rule.query : (aliased ? aliased[1] : row.query);
-    if (aliased && !rule) row.query = query;
+    const query = (rule && rule.query) || (aliased ? aliased[1] : row.query);
+    if (aliased && !(rule && rule.query)) row.query = query;
     const why = `${row.recipeAmount || "as listed"} for ${recipe.servings || 4} in the recipe -> ${need} for ${needPortions || basePortions || "?"} portions${note ? ` (${note})` : ""}`;
     intents.push({
       source: `${sourcePrefix}:${recipe.slug || recipe.url}`,
@@ -279,9 +298,10 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
       alt: rule ? rule.alt || [] : [altQuery(row.text, asides)].filter((q) => q && q !== row.query),
       avoidWords: rule ? rule.avoid || [] : [],
       maxUnitPrice: rule && rule.maxKrPerKg ? rule.maxKrPerKg : undefined,
+      minPackGrams: rule && rule.minPackGrams ? rule.minPackGrams : undefined,
       need,
       mode: "cheapest",
-      rationale: rule ? `${why}; meat rule "${rule.id}": ${rule.fatBands?.length ? "fat " + rule.fatBands.join("/") + ", " : ""}ceiling ${rule.maxKrPerKg || "-"} kr per kg` : why,
+      rationale: rule ? `${why}; ${ruleLabel(rule)}` : why,
       ingredient: row.text,
     });
   }

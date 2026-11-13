@@ -160,7 +160,41 @@
     ],
     "maxOverrunFreshMl": 150,
     "_maxOverrunFreshMl_note": "invented for the test fixture",
-    "minNameScore": 0.7
+    "minNameScore": 0.7,
+    "rules": [
+      {
+        "id": "loeg-i-net",
+        "match": [
+          "løg"
+        ],
+        "except": [
+          "rødløg"
+        ],
+        "query": "Løg i net",
+        "alt": [
+          "Løg"
+        ],
+        "avoid": [
+          "sylte"
+        ],
+        "note": "invented for the test fixture: this family buys its cooking onions in a net, so a loose single piece is not what they want"
+      },
+      {
+        "id": "madlavningsfloede-4pct",
+        "match": [
+          "fløde"
+        ],
+        "except": [
+          "piskefløde"
+        ],
+        "query": "Madlavningsfløde 4%",
+        "avoid": [
+          "15%"
+        ],
+        "note": "invented for the test fixture: this family cooks with the 4 % cream, whatever the shelf discounts"
+      }
+    ],
+    "_rules_note": "invented for the test fixture: a rule rewrites the search for a line, except keeps it off a line where its word means something else"
   },
   "delivery": {
     "weekdayPrefer": [
