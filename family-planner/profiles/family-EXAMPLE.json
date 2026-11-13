@@ -39,7 +39,11 @@
   "budget": {
     "currency": "DKK",
     "softCapKr": "median order x orders per period",
-    "maxDaysPerPlan": 8
+    "maxDaysPerPlan": 8,
+    "maxKrPerPlan": "unset = the plan is written whole; a number makes it fit (swap the brand first, then put one line back)",
+    "minSwapKr": 5,
+    "swapNeverWords": [],
+    "_note": "softCapKr only warns. maxKrPerPlan decides: cheaper rival first (never one that delivers less than nine tenths, and never a word listed in swapNeverWords), then one line back on the shelf - treats before the household, the household before breakfast, breakfast before the child's lunch box, a dinner's own ingredient never. maxDaysPerPlan is the miners' number, the rest are yours."
   },
   "rotation": {
     "poolSize": 21,

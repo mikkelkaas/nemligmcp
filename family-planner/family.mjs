@@ -78,6 +78,19 @@ function householdOf(p) {
     // profile, no cap, and the planner says so instead of measuring against a guess.
     softCapKr: Number.isFinite(Number((p.budget || {}).softCapKr)) && Number((p.budget || {}).softCapKr) > 0
       ? Number(p.budget.softCapKr) : null,
+    // A ceiling is not a soft cap. The soft cap only warns; this one makes the plan
+    // swap brands and put lines back until it fits (trim.mjs). Unset, the plan is
+    // written whole, exactly as it was before the key existed.
+    maxKrPerPlan: Number.isFinite(Number((p.budget || {}).maxKrPerPlan)) && Number((p.budget || {}).maxKrPerPlan) > 0
+      ? Number(p.budget.maxKrPerPlan) : null,
+    // Under this, a brand swap is churn rather than a saving: the same product, less
+    // money, and the family still has to like what came home.
+    minSwapKr: Number.isFinite(Number((p.budget || {}).minSwapKr)) && Number((p.budget || {}).minSwapKr) >= 0
+      ? Number(p.budget.minSwapKr) : 5,
+    // Products a family will not have swapped, by word in their name or brand: a diaper
+    // size, a medicine, the one bread a child eats. Empty means the planner may swap any.
+    swapNeverWords: Array.isArray((p.budget || {}).swapNeverWords)
+      ? p.budget.swapNeverWords.map((w) => String(w || "").trim()).filter(Boolean).slice(0, 30) : [],
     timezone: h.timezone || "Europe/Copenhagen",
     neverBuy: p.neverBuy || [],
     recipeRule: {

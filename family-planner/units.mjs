@@ -185,8 +185,10 @@ export function cheapest(candidates, opts = {}) {
     campaignTip: campaignOf(pick, pool), alternatives: pool.filter((c) => c.id !== pick.id).slice(0, 3) };
 }
 
-/** Drop unavailable products and avoided brands; boost the preferred sku to the front. */
-function eligibleOf(candidates, opts) {
+/** Drop unavailable products and avoided brands; boost the preferred sku to the front.
+ *  Exported: a trim decision runs the same filter over the rivals of the sku it is
+ *  looking at, so a saving is never taken on a product the shop cannot deliver. */
+export function eligibleOf(candidates, opts) {
   const prefer = String(opts.preferSku || "");
   const avoid = (opts.avoidBrands || []).map((b) => String(b).toLowerCase());
   // avoidWords rejects a product by its NAME, not its brand: "19-23%" mince, "ben" in

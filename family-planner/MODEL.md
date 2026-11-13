@@ -149,6 +149,32 @@ should keep using: kr per product and portions per kr, compared with what this f
 actually paid. A plan that costs 1,4 times the family's own median basket is too big, no
 matter what the absolute number is.
 
+`budget.maxKrPerPlan` is different: it is a ceiling, and a ceiling gets met (`trim.mjs`).
+Two moves, each printed and kept in the plan file under `trim`.
+
+The brand first, never the product. The resolver hands over the rivals of what it picked
+(`alternatives`, already filtered for delivery and the family's brand rules), so a cheaper
+rival that passed the same name guard can be bought without a second call. Three things stop
+a supposed saving. Under `budget.minSwapKr` a brand swap is churn, not money. A rival that
+delivers under nine tenths of the original is a smaller shop, not a cheaper one — `delivered`
+turns a pack into grams, litres or pieces, so 2 x 180 g is never traded for 2 x 430 g, and 10
+eggs never for 15. And `budget.swapNeverWords` names products the family will not have
+swapped: a diaper size, a medicine, the one bread a child eats.
+
+Then, and only if the swaps were not enough, one line goes back on the shelf. Protection
+comes from where a line is listed: treats 1, the household 2, breakfast 3, the child's lunch
+box 4, an item asked for by hand 5, a dinner's own ingredient 0 and never cut. A line feeding
+two blocks is protected by the stronger one, so a banana in the lunch box is not a treat to
+cut. Inside a block the dearest line goes first, because that is how fewest lines are
+touched. If it still does not fit, the plan writes itself whole and prints `trimShortfall`:
+what no budget is allowed to take. A basket with a hole in the middle of dinner is not
+cheaper, it is a second trip.
+
+`apply.mjs` reads the ledger back and checks the claim: the substitute of a swap must be in
+the plan, a deferred line must not be, `trimAfter` must equal the items, and `trimShortfall`
+must follow from the ceiling. The report prints both pack sizes of a swap: only a person can
+tell a 20-pack of pants from 22 tapes, so the plan shows the number instead of deciding.
+
 ## 6. The loop: the plan learns from the basket you approved
 
 The plan is meant to be about 95 % right. The last 5 % is yours: in the app you take two
@@ -244,12 +270,11 @@ thin layer, not the planner.
 
 ## Still open
 
-1. `budget.maxKrPerPlan` should trim a plan instead of warning, in a fixed order: never
-   bought before, then premium versions of a product the family does buy, then extras.
-2. The sale rule must compare against the SKU this family actually buys, not only the
-   cheapest item on the shelf.
-3. Piece weights should come from the shop's declared pack weight when it exposes one.
-4. The name threshold (`purchasing.minNameScore`, 0,7) blocked lines whose words did not fit
+1. The sale rule must compare against the SKU this family actually buys, not only the
+   cheapest item on the shelf. The rivals of a pinned sku are now on the plan line
+   (`alternatives`), so this is a decision left to make, not data left to collect.
+2. Piece weights should come from the shop's declared pack weight when it exposes one.
+3. The name threshold (`purchasing.minNameScore`, 0,7) blocked lines whose words did not fit
    the shop's name. Measured 2026-11-12 over the cached shelf (187 queries, their 6 top names
    each): most blocks were a dirty query, not a wrong threshold. "Spinat alternativt grønkål"
    asks for spinach and names a fallback, so the query was spinach plus two words no product

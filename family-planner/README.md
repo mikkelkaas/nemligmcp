@@ -130,6 +130,29 @@ and it refuses to run without `--approve I-APPROVE-THIS-BASKET`.
 | `slots.mjs` | ranks bookable timeslots by price, window and weekday; drops slots whose order deadline passed | nothing |
 | `apply.mjs` | writes an approved plan, re-reads and verifies the basket | `data/plans/applied-<stamp>.json` |
 
+## A budget that decides
+
+`budget.softCapKr` is a warning line: the plan prints over-cap and writes the basket
+anyway. `budget.maxKrPerPlan` is a ceiling, and a ceiling is met. The plan then makes two
+kinds of move, prints every one of them, and keeps them in the plan file under `trim`.
+
+1. The brand, not the product. The resolver already saw the rivals of the product it
+   picked, so a cheaper one that passes the same name guard, the same delivery check and
+   the same brand rules is bought instead — by `--max-kr`, or by the profile. A rival that
+   delivers less than nine tenths of what the family was getting is refused: two 180 g
+   cups are not two 430 g tubs, and a smaller shop is not a cheaper one. A saving under
+   `budget.minSwapKr` (5 kr) is brand churn, not a saving, and a word in
+   `budget.swapNeverWords` keeps a product out of the swap: a diaper size, a medicine, the
+   one bread a child eats.
+2. One line back on the shelf — only when the swaps were not enough. A treat goes before
+   the household, the household before breakfast, breakfast before the child's lunch box,
+   and a dinner's own ingredient never: a basket without its potatoes is not cheaper, it
+   is a second trip to the shop. Which block a line came from decides this, so a banana in
+   the child's box is protected as the box and not as a snack.
+
+When even that does not fit, the plan says so and still writes the plan whole:
+`trimShortfall` is what no budget is allowed to take. `--trim off` returns to warning.
+
 ## Profiles (edit these, they are the memory)
 
 Everything here is built from your own order history, and `.gitignore` keeps all of it out
@@ -137,8 +160,9 @@ of git except `profiles/family-EXAMPLE.json`. A clone therefore arrives with no 
 write yours with `init-family.mjs`, as "One profile to tweak" describes.
 
 - `profiles/family-<name>.json` — the file you edit: who eats and how much, the soft budget
-  in `budget.softCapKr`, `basket.neverClearBasket`, and the delivery preference (window,
-  weekdays, `delivery.minWindowHours`). `profiles/family-EXAMPLE.json` shows the shape.
+  in `budget.softCapKr`, the hard ceiling in `budget.maxKrPerPlan` (see "A budget that decides"),
+  `basket.neverClearBasket`, and the delivery preference (window, weekdays,
+  `delivery.minWindowHours`). `profiles/family-EXAMPLE.json` shows the shape.
 - `profiles/pantry.json` — rebuy staples per block: `breakfast`, `kidLunchbox`,
   `snacks`, `household`. Each item has `query`, `qtyPerCycle`, `everyNDays`, `mode`
   (`cheapest` or `history`), optional `sku`, `alt` and `per`. **You write this file

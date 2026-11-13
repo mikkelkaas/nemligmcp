@@ -21,6 +21,7 @@ import { resolveIntent, parseNeed, loadCache, saveCache } from "./catalog.mjs";
 import { toBaseMeasure, choosePack } from "./units.mjs";
 import { chooseDinners, recipeIntents, readRotation, readCookHistory } from "./dinners.mjs";
 import { biasIntent, addIntentsOf, productWord } from "./learn.mjs";
+import { trimItems } from "./trim.mjs";
 import { loadFamily } from "./family.mjs";
 
 import { HOME as BASE, writeJsonAtomic } from "./paths.mjs";
@@ -45,7 +46,7 @@ export { unknownFlags };
 
 const KNOWN_FLAGS = ["family", "days", "people", "breakfast", "lunchbox", "snacks", "household",
   "soft-cap", "avoid", "fresh", "serial", "max-minutes", "dinners", "cores", "covers",
-  "max-per-protein", "extra", "extra-file", "debug", "help"];
+  "max-per-protein", "extra", "extra-file", "max-kr", "trim", "debug", "help"];
 
 function yesNo(value, dflt) {
   const s = String(value == null ? "" : value).trim().toLowerCase();
@@ -265,7 +266,7 @@ export function mergeItems(resolved, purchase) {
       sku: r.pick.sku, name: r.pick.name, brand: r.pick.brand, price: r.pick.price,
       unitPrice: r.pick.unitPrice, unitLabel: r.pick.unitLabel, pack: r.pick.pack,
       url: r.pick.url, packs: 0, sources: [], why: [], rationales: [], recipe: null, mode: r.mode, onSale: !!r.pick.onSale,
-      needMeasure: null, needAmount: 0,
+      needMeasure: null, needAmount: 0, alternatives: [],
     };
     // Two different names can land on the same shelf item (a recipe's "Æg" and the
     // breakfast "Skrabeæg"). Their needs are summed so the pack decision sees the whole
@@ -277,6 +278,12 @@ export function mergeItems(resolved, purchase) {
     }
     e.packs += r.packs;
     e.sources.push(r.source);
+    // The rivals this shelf offered for the line, kept on the item so a trim decision can
+    // weigh them without asking the shop again. A product is never its own rival.
+    for (const alt of r.alternatives || []) {
+      if (!alt || !alt.sku || String(alt.sku) === String(key)) continue;
+      if (!e.alternatives.some((x) => String(x.sku) === String(alt.sku))) e.alternatives.push(alt);
+    }
     e.why.push(r.why);
     if (r.rationale) e.rationales.push(r.rationale);
     if (r.sourceLabel && !e.recipe) e.recipe = r.sourceLabel;
@@ -298,6 +305,7 @@ export function mergeItems(resolved, purchase) {
       why: [...new Set(e.why)].join("; "),
       rationale: [...new Set(e.rationales)].join(" | "),
       recipe: e.recipe,
+      alternatives: e.alternatives.slice(0, 3),
     };
   }).sort((a, b) => a.sources[0].localeCompare(b.sources[0]) || a.name.localeCompare(b.name));
   const substitutions = unresolved.filter((u) => u.substitution)
@@ -429,6 +437,17 @@ function markdownHeader(plan, diff) {
   if (plan.uncoveredDays > 0) L.push(`- WARNING: ${plan.uncoveredDays} evening(s) have no dinner - name one with --dinners`);
   L.push("", `${plan.saleItems} of ${plan.items.length} products are on sale.${plan.priceCacheAgeHours ? ` Prices are at most ${plan.priceCacheAgeHours} h old (search cache).` : ""}`, "");
   L.push(`**Planned spend: ${plan.planTotal.toFixed(2)} kr** for ${diff.adds.length} purchases (${plan.items.length} products). Soft cap: ${o.softCapKr === null ? "none set (budget.softCapKr)" : o.softCapKr + " kr - " + (plan.overSoftCap ? "EXCEEDED - confirm before applying" : "ok")}.`);
+  if ((plan.trim || []).length) {
+    L.push("", `## Trimmed to fit ${plan.capKr} kr`, "");
+    for (const t of plan.trim) {
+      L.push(t.action === "swap"
+        ? `- swap: ${t.name} ${t.from.total.toFixed(2)} kr -> ${t.to.name}, ${t.to.packs} x ${t.to.price.toFixed(2)} kr = ${t.to.total.toFixed(2)} kr, saves ${t.savedKr.toFixed(2)} kr`
+          + `${t.fromPack && t.toPack ? `, ${t.fromPack} -> ${t.toPack}` : ""} (${t.why})`
+        : `- put back: ${t.name} (${t.total.toFixed(2)} kr) - ${t.protectedBy} line, the least protected of what was left`);
+    }
+    L.push("", `Trimmed from ${plan.trimBefore.toFixed(2)} kr to ${plan.trimAfter.toFixed(2)} kr.`
+      + (plan.trimShortfall > 0 ? ` Still ${plan.trimShortfall.toFixed(2)} kr over: what is left is a dinner's own ingredients.` : ""));
+  }
   if (plan.keptInFull) L.push(`${plan.keptInFull} product(s) already in the basket at the planned quantity or more - nothing added for those.`);
   if (plan.untouchedInBasket.length) L.push(`${plan.untouchedInBasket.length} product(s) in the basket are not in the plan and are left untouched: ${plan.untouchedInBasket.map((u) => u.name + " x" + u.qty).join(", ")}`);
   L.push("");
@@ -660,6 +679,22 @@ function timingLine(t) {
 }
 
 /** Console summary: the headline numbers, the warnings, and where to read more. */
+/** The trim ledger on the terminal: every move the ceiling forced, in the order it made them. */
+function printTrim(trimmed, capKr) {
+  console.log(`  trim: ${trimmed.before.toFixed(2)} kr is ${(trimmed.before - capKr).toFixed(2)} kr over the ${capKr} kr ceiling`);
+  for (const t of trimmed.actions) {
+    if (t.action === "swap") {
+      const size = t.fromPack && t.toPack ? `, ${t.fromPack} -> ${t.toPack}` : "";
+      console.log(`    swap  ${t.name} ${t.from.total.toFixed(2)} kr -> ${t.to.name}, ${t.to.packs} x ${t.to.price.toFixed(2)} kr = ${t.to.total.toFixed(2)} kr (-${t.savedKr.toFixed(2)} kr${size})`);
+      continue;
+    }
+    console.log(`    defer ${t.name} ${t.total.toFixed(2)} kr back on the shelf (${t.protectedBy})`);
+  }
+  console.log(`    = ${trimmed.after.toFixed(2)} kr` + (trimmed.shortfall > 0
+    ? `: STILL ${trimmed.shortfall.toFixed(2)} kr OVER. What is left is a dinner's own ingredients, and a budget does not cut those.`
+    : `, ${(capKr - trimmed.after).toFixed(2)} kr under the ceiling.`));
+}
+
 function printSummary(plan, diff, options, planTotal, jsonPath, mdPath) {
   if ((plan.substitutions || []).length) {
     console.log("");
@@ -670,6 +705,11 @@ function printSummary(plan, diff, options, planTotal, jsonPath, mdPath) {
   console.log("");
   console.log(`PLAN (dry run): ${diff.adds.length} purchases, ${plan.saleItems} on sale, ${planTotal.toFixed(2)} kr added. Basket now ${plan.basketBefore.lines} lines / ${plan.basketBefore.totalProducts} kr.`);
   if (plan.overSoftCap) console.log(`WARNING: over the ${options.softCapKr} kr soft cap by ${(planTotal - options.softCapKr).toFixed(2)} kr.`);
+  if (plan.capKr) {
+    console.log(plan.trimShortfall > 0
+      ? `CEILING ${plan.capKr} kr: CANNOT BE MET - ${plan.trimShortfall.toFixed(2)} kr still over after ${plan.trim.length} trim move(s).`
+      : `Ceiling ${plan.capKr} kr: ${planTotal.toFixed(2)} kr, ${(plan.capKr - planTotal).toFixed(2)} kr spare${plan.trim.length ? `, after ${plan.trim.length} trim move(s)` : ""}.`);
+  }
   if (plan.unresolved.length) console.log(`WARNING: ${plan.unresolved.length} intent(s) found no product — fix them before applying.`);
   if ((plan.timing || {}).stale) console.log(`WARNING: ${plan.timing.stale} line(s) were decided on a shelf the shop could not answer - the price cache from the run before was used, check those lines.`);
   if ((plan.recipeGaps || []).length) console.log(`NOTE: ${plan.recipeGaps.length} recipe line(s) name something Namlig has no product for (an "add yourself" line, a link) — listed under Left out, they do not block applying.`);
@@ -690,6 +730,9 @@ function readOptions() {
     snacks: yesNo(a("snacks", null), false),
     household: householdMode(a("household", "auto")),
     softCapKr: a("soft-cap", null),   // no default: the profile decides, see softCapOf
+    // A ceiling is not a warning: budget.maxKrPerPlan makes the plan trim itself.
+    maxKrPerPlan: a("max-kr", null),
+    trim: a("trim", "on"),            // "off" plans it whole and lets the soft cap warn only
     avoid: (a("avoid", "") || "").split(",").map((s) => s.trim()).filter(Boolean),
     fresh: process.argv.includes("--fresh"),
     // --serial is the polite switch: one call at a time, wider spacing. Use it when the
@@ -710,6 +753,7 @@ const USAGE = [
   "usage: node plan.mjs [options]  (dry run: nothing is written to the basket)",
   "  --days 8                1-14 evenings        --breakfast|--lunchbox|--snacks yes|no",
   "  --household auto|off    --people N           --soft-cap <kr>  (default: the profile's budget.softCapKr)",
+  "  --max-kr <kr>           --trim on|off        (default: the profile's budget.maxKrPerPlan; a ceiling is met by swapping the brand first, then putting lines back)",
   "  --family <name>         --covers 2           --dinners <name>    (a menu name)",
   "  --cores                 --max-per-protein N  --avoid \"brand,word\"",
   "  --extra \"Name:300g\"    --fresh (ignore the 24 h price cache)",
@@ -762,7 +806,18 @@ async function main() {
   warnUnknownFlags(process.argv, KNOWN_FLAGS);
   const { mcp, resolved, oldestCacheMs, timing } = await resolveAll(live, options);
   const tAfterResolve = Date.now();
-  const { items, unresolved, recipeGaps, substitutions, substitutedAway } = mergeItems(resolved, options.purchasing);
+  const merged = mergeItems(resolved, options.purchasing);
+  // A ceiling the family set is a request to decide, not a request to be warned: the
+  // brand goes first, the treats go first among the removals, and a dinner's own
+  // ingredient is never touched. --trim off plans it whole and lets the warning stand.
+  const capKr = yesNo(arg("trim", "on"), true) ? softCapOf(options.maxKrPerPlan, household.maxKrPerPlan) : null;
+  const trimmed = trimItems(merged.items, {
+    capKr, minSwapKr: household.minSwapKr, purchasing: options.purchasing,
+    swapNeverWords: household.swapNeverWords,
+  });
+  if (trimmed.actions.length) printTrim(trimmed, capKr);
+  const items = trimmed.items;
+  const { unresolved, recipeGaps, substitutions, substitutedAway } = merged;
   const basket = await mcp.call("get_basket", {}, { timeoutMs: CALL_TIMEOUT });
   if (basket.isError) throw new Error("get_basket failed: " + basket.text.slice(0, 200));
   const bJson = basket.json || {};
@@ -804,6 +859,11 @@ async function main() {
     timing,
     planTotal,
     overSoftCap: options.softCapKr !== null && planTotal > options.softCapKr,
+    capKr,
+    trim: trimmed.actions,
+    trimBefore: trimmed.before,
+    trimAfter: trimmed.after,
+    trimShortfall: trimmed.shortfall,
     basketBefore: { lines: (bJson.Lines || []).length, totalProducts: Number(bJson.TotalProductsPrice ?? 0), minOrder: bJson.MinimumOrderTotal ?? null },
     keptInFull: diff.keptInFull,
     untouchedInBasket: diff.untouchedInBasket,

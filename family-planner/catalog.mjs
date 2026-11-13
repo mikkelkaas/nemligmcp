@@ -15,7 +15,7 @@
 // Everything prints JSON. Only read-only MCP tools are used (search_products).
 import { readFileSync, mkdirSync } from "node:fs";
 import { connectGated, warnUnknownFlags } from "./lib.mjs";
-import { parsePack, packsFor, cheapest, choosePack, pieceGrams } from "./units.mjs";
+import { parsePack, packsFor, cheapest, choosePack, pieceGrams, eligibleOf } from "./units.mjs";
 import { nameMatches, norm, tokens, score as nameScore, MIN_NAME_SCORE } from "./match.mjs";
 
 import { CACHE_PATH, writeJsonAtomic } from "./paths.mjs";
@@ -225,12 +225,21 @@ async function attempt(mcp, query, intent, cache) {
   const pinMissed = mode === "history" && intent.sku && !pinned ? String(intent.sku) : null;
   if (pinned) {
     const packs = need ? packsFor(need, pinned.pack, { pieceGrams: pieceGrams(pinned.name), name: pinned.name }) : 1;
+    // The rivals of the sku the family actually buys, through the same filter as any
+    // other pick: deliverable, not an avoided brand, under the unit-price ceiling. A
+    // trim decision reads these, so it never promises a saving the shop cannot deliver.
+    const rivals = eligibleOf(matching.filter((p) => String(p.id) !== String(pinned.id)), {
+      avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
+    }).eligible.slice()
+      .sort((a, b) => (Number(a.unitPrice) || Number.MAX_VALUE) - (Number(b.unitPrice) || Number.MAX_VALUE)
+        || (Number(a.price) || Number.MAX_VALUE) - (Number(b.price) || Number.MAX_VALUE))
+      .slice(0, 3);
     return {
       ok: true, query, mode, pick: pickOf(pinned), packs, need,
       total: Number((pinned.price * packs).toFixed(2)),
       why: "family favourite sku, still in stock" + (pinned.onSale ? "; tilbud" : ""), compare: "sku-pin",
       candidates: matching.length, cached, ageMs, stale,
-      alternatives: matching.filter((p) => p.id !== pinned.id).slice(0, 3).map(altOf),
+      alternatives: rivals.map(altOf),
     };
   }
   const res = cheapest(matching, {
@@ -317,7 +326,12 @@ function pickOf(p) {
   };
 }
 function altOf(a) {
-  return { sku: a.id, name: a.name, price: a.price, unitPrice: a.unitPrice };
+  // pack travels: "cheaper" is only cheaper once the same need is covered, and that
+  // needs the alternative's pack size, not just its label price.
+  return {
+    sku: a.id, name: a.name, brand: a.brand, price: a.price, unitPrice: a.unitPrice,
+    unitLabel: a.unitLabel || null, pack: a.pack || null, onSale: !!a.onSale,
+  };
 }
 function arg(name, dflt) {
   const i = process.argv.indexOf("--" + name);

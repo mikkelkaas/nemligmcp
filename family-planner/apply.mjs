@@ -406,5 +406,49 @@ export function validatePlan(plan) {
     const sum = Number(basis.reduce((t, it) => t + Number(it.total), 0).toFixed(2));
     if (Math.abs(sum - Number(plan.planTotal)) > 0.5) problems.push(`planTotal ${plan.planTotal} does not match the ${where}, which add up to ${sum}`);
   }
+  problems.push(...trimProblems(plan, skus));
+  return problems;
+}
+
+/**
+ * A plan that trimmed itself has to be believed on one point only: the rivals it moved to
+ * are really in the basket, the lines it put back really are not, and the money still adds
+ * up against the ceiling it says it fitted.
+ */
+function trimProblems(plan, skus) {
+  const problems = [];
+  if (plan.trim === undefined || plan.trim === null) return problems;
+  if (!Array.isArray(plan.trim)) return ["trim is not a list"];
+  const cap = Number(plan.capKr);
+  if (plan.trim.length && !(Number.isFinite(cap) && cap > 0)) {
+    problems.push(`trim has ${plan.trim.length} move(s) but capKr "${plan.capKr}" is not a number of kroner`);
+  }
+  for (const [i, t] of plan.trim.entries()) {
+    const name = String((t && t.name) || "?").slice(0, 30);
+    const at = `trim ${i + 1} (${String((t && t.action) || "?")} ${name})`;
+    if (t && t.action === "swap") {
+      const from = Number(t.from && t.from.total), to = Number(t.to && t.to.total);
+      if (!Number.isFinite(from) || !Number.isFinite(to)) { problems.push(`${at}: the two totals are not both numbers`); continue; }
+      if (Math.abs((from - to) - Number(t.savedKr)) > 0.02) problems.push(`${at}: savedKr ${t.savedKr} is not ${from} - ${to}`);
+      if (!skus.has(String(t.to && t.to.sku))) problems.push(`${at}: the substitute ${String((t.to && t.to.name) || (t.to && t.to.sku))} is not in the plan`);
+      continue;
+    }
+    if (t && t.action === "defer") {
+      if (skus.has(String(t.sku))) problems.push(`${at}: ${name} was put back on the shelf but is still in the plan`);
+      continue;
+    }
+    problems.push(`${at}: not a swap and not a deferral`);
+  }
+  const itemsSum = Number(plan.items.reduce((sum, it) => sum + Number(it.total), 0).toFixed(2));
+  const after = Number(plan.trimAfter);
+  if (Number.isFinite(after) && Math.abs(itemsSum - after) > 0.5) {
+    problems.push(`trimAfter ${after} is not the ${plan.items.length} planned items, which add up to ${itemsSum}`);
+  }
+  if (Number.isFinite(cap) && cap > 0 && Number.isFinite(after)) {
+    const want = Number(Math.max(0, after - cap).toFixed(2));
+    if (Math.abs(want - Number(plan.trimShortfall)) > 0.05) {
+      problems.push(`trimShortfall ${plan.trimShortfall} is not ${after} kr measured against the ${cap} kr ceiling`);
+    }
+  }
   return problems;
 }

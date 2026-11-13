@@ -67,6 +67,7 @@ node plan.mjs --days 8 --breakfast yes --lunchbox yes --snacks no \
 `--dinners` only selects from the pinned cores, so add `--cores` to use it. Without
 `--cores` the rotation pool decides the menu (`profiles/recipe-pool.json`) and `plan.mjs`
 says so. Other flags: `--covers N` nights per dinner, `--family <name>`, `--soft-cap N`,
+`--max-kr N` (a ceiling: swap brands first, then put lines back) and `--trim off` (warn only),
 `--avoid "brand,word"`, `--extra "Name:qty"` for a substitution you accepted,
 `--max-per-protein N`, `--fresh` (ignore the 24 h price cache), `--serial` (one request at
 a time), `--max-minutes N` (stop the run, default 15).`--help` prints the usage and writes
@@ -85,6 +86,8 @@ Read `data/plans/plan-latest.md`, then report:
 - the dinners and the day pairs they cover;
 - item count and total in kr;
 - anything above the profile's `budget.softCapKr`;
+- every move a `budget.maxKrPerPlan` ceiling forced: a brand swap (from, to, what it saved,
+  both pack sizes) or a line put back on the shelf, with the block it came from;
 - every `NOT FOUND` intent that is not a recipe line — these block `apply.mjs`. A line a
   recipe names that Namlig has nothing for at all is listed under `Left out of the
   recipes` and does not block;
