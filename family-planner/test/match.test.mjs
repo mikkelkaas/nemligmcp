@@ -5,7 +5,7 @@
 // basket than the profile asked for.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { norm, tokens, score, nameMatches } from "../match.mjs";
+import { norm, tokens, score, nameMatches, shelfContext } from "../match.mjs";
 import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf } from "../units.mjs";
 import { saleBeatsPin } from "../catalog.mjs";
 import { choosePack } from "../units.mjs";
@@ -749,4 +749,45 @@ test("saleBeatsPin: four refusals", () => {
   assert.equal(saleBeatsPin("Mayonnaise (let)", usual(), 1, [tilbud()], null, { purchasing: { swapNeverWords: ["mayonnaise"] } }), null,
     "budget.swapNeverWords protects a line from a discount too");
   assert.equal(saleBeatsPin("Mayonnaise (let)", usual(), 1, [], null, {}), null, "no rival, no decision");
+});
+
+// The shop states more about a product than its name: the brand and the shelf category it
+// stands in. Those words are the shop's own claim, so they may stand in for the two-way
+// head-noun check - which is how a brand-first name ("Polskey Vodka") and a category word
+// ("hård ost" over the shelf's own "Specialost, hård") reach the price rule at all.
+// Measured 2026-11-13 over a cached shelf of 191 queries: 109 candidates came in, none went
+// out, and the cheapest accepted candidate became cheaper on 42 of the queries.
+const VODKA_SHELF = "Vin og spiritus Vodka";
+
+test("the shelf's own words answer for the head noun", () => {
+  const polskey = "Polskey Vodka (37,5%)";
+  assert.equal(score("vodka", polskey), 0, "name alone: the first word is not vodka, so the rule refuses it");
+  assert.equal(score("vodka", polskey, [], VODKA_SHELF), 1, "the shelf calls this product vodka, so it is vodka");
+  assert.equal(score("vodka", "Absolut vodka (40%)", [], "Absolut Vin og spiritus Vodka"), 1,
+    "a brand in front of the product word is the same case");
+  assert.equal(score("færdig pizzadej", "Pizzadej m. fuldkorn", [], "Køl Fersk Dej"), 1,
+    "a shopper writes 'færdig', no producer prints it, so it is not asked for");
+  // "hård ost" is NOT carried by the words alone: "ost" is three letters, below the four
+  // the compound suffix rule needs, so it stays at half the query and is refused. A family
+  // settles that one in data - their profile maps the words onto the cheese they buy - and
+  // the matcher stays what it is: a reader of names, not of tastes.
+  assert.equal(score("hård ost", "Emmentaler i blok", [], "Mejeri Specialost, hård (parmesan, pecorino, osv.)"), 0.5,
+    "the category word alone does not reach the threshold, so the family's own alias decides");
+});
+
+test("the shelf's words never loosen the checks that guard a different product", () => {
+  assert.equal(score("jordbær", "Yoghurt m. jordbær 3,1%", [], "First Price Mejeri Yoghurt"), 0,
+    "strawberry is the flavour of a yoghurt, and the category says so");
+  assert.equal(score("porrer", "Fransk tærte m. laks/porrer", [], "Køl Tærter"), 0,
+    "a word behind 'm.' inside a ready dish is not the ingredient");
+  assert.equal(score("hakket oksekød", "Oksekød udskåret", [], "Kød Oksekød"), 0,
+    "'hakket' is not a word we drop: the shelf prints it, and a steak is not mince");
+  assert.equal(score("asparges (hvide)", "Aspargessnitter (fine)", [], "Paradiso Tørvarer Asparges"), 0.5,
+    "the recipe asked for white asparagus: canned pieces answer one of the two words");
+  assert.equal(score("asparges", "Aspargessnitter (fine)", [], "Paradiso Tørvarer Asparges"), 1,
+    "a query that only says asparagus does accept the pieces - the price rule then compares them");
+  assert.equal(nameMatches("agurk", "Agurkesalat", 0.7, [], "Køl Salater"), true === false,
+    "a prepared salad is still not a cucumber, category or not");
+  assert.equal(shelfContext({ brand: "", mainGroup: "Mejeri", subGroup: "Skyr" }), "Mejeri Skyr",
+    "an empty brand contributes no word");
 });

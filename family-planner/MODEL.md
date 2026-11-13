@@ -305,6 +305,22 @@ the measurement is the part worth keeping, not the decision.
   name a piece count and 53 declare a multi-pack, all of them read now. It moved nothing
   in their 8-day basket (48 purchases, 1382,85 kr before and after), which is what a
   correct weight should do when the shop's numbers agree with the estimate.
+- **A name is read together with what the shop says next to it.** (was: "some products are
+  missing because the matcher reads only the first word of a name"). `match.mjs` required
+  the name's first word to appear in the query, so a name that puts its brand first was
+  never a candidate: `Polskey Vodka` and `Absolut vodka` both scored 0 against "Vodka", and
+  the planner bought a third bottle 42,20 kr dearer. The shop's own words about a product -
+  its brand and the shelf category it stands in (`shelfContext`: brand, main group, sub
+  group) - now answer for both directions of the head-noun check, because they are the
+  shop's claim and not a guess. A word no producer prints ("færdig", "almindelig") is no
+  longer asked for at all: "Færdig pizzadej" is sold as "Pizzadej". Measured over the 191
+  queries in this shelf's cache: 109 candidates came in, none went out, and on 42 of the
+  queries the cheapest accepted candidate became cheaper (130,78 kr summed; the vodka line
+  42,20 kr, pesto 15,49 kr, majs 17,05 kr). Every golden shelf moved 0,0 %.
+  Two things this did NOT fix, and the honest reason: "hård ost" over the category
+  "Specialost, hård" still reaches only half the query, because "ost" is three letters and
+  the compound rule needs four, so that one is a family alias in their profile instead of a
+  matcher rule; and a product sold per piece still cannot meet one sold per kilo.
 - **The name threshold was a dirty query, not a wrong number.** Measured 2026-11-12 over
   the cached shelf (187 queries, their 6 top names each): most blocks were a query carrying
   words no product has. "Spinat alternativt grønkål" asks for spinach and names a fallback,
@@ -326,5 +342,21 @@ the measurement is the part worth keeping, not the decision.
 
 ## Still open
 
-None. When a plan does something wrong, write the measurement here before fixing it, and
-move it up into the model when the number is in.
+1. **Two price axes never meet, so the cheapest cover can be invisible** (`comparablePool`,
+   `units.mjs`). The pool keeps only the group with most members, so when eight products are
+   listed per kilo and two per piece, the per-piece ones are dropped before the comparison.
+   Measured 2026-11-13 on a real 8-day plan: six cloves of garlic ("6 stk") became 4 net
+   bags of 200 g - 800 g of garlic for 53,32 kr - while the same shelf sells `Hvidløg øko.`
+   at 4,00 kr a head, and one head holds more cloves than the recipe asked for. The axis
+   that was largest won, not the one that covered the need cheapest. Same shape on the
+   vinegar line: four 30 g bottles for a decilitre. Before changing it, count how many of
+   the 191 cached queries have their cheapest covering product on the minority axis, and
+   check the four pieces-per-head words (`PIECE_GRAMS`: `fed` is not the same thing as the
+   `stk` a recipe line turns it into, which is how 6 cloves became 6 of whatever a net is).
+2. **A recipe line naming a dish the shop has no product for** still blocks `apply.mjs`.
+   "Raita" (a yoghurt side) is today's case: the family would accept a yoghurt, so the fix
+   is a profile alt, not a matcher rule. "Kogevand fra pasta" was today's other case and is
+   now a pantry word, because it is tap water.
+
+When a plan does something wrong, write the measurement here before fixing it, and move it
+up into the model when the number is in.

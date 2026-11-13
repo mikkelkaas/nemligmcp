@@ -6,7 +6,12 @@
 //      must appear in the product name, and the first token of the name must appear
 //      in the query. "agurk" matches "Agurk" but not "Agurkesalat" (a prepared salad
 //      is not a cucumber), and "jordbær" does not match "Yoghurt m. jordbær".
-//   3. the remaining query tokens must cover at least `minScore` of the query.
+//      The shop's own words about the product - its brand and the shelf category it
+//      sits in (`shelfContext`) - stand in for both directions, because they are the
+//      shop's claim, not the shopper's guess: a brand-first name under the category
+//      "Vodka" is vodka, and a hard cheese under "Specialost, hård" answers "hård ost".
+//   3. the remaining query tokens must cover at least `minScore` of the query, and
+//      words no producer prints ("færdig", "almindelig") are not asked for at all.
 //      A token also counts when it only differs by an inflection (karrypasta vs
 //      karrypastaen), which is why we accept a shared prefix of 60% length.
 //
@@ -37,6 +42,13 @@ export function tokens(s) {
     .split(" ")
     .filter((w) => w.length > 1 && !STOP.has(w) && !QUALIFIER.has(w));
 }
+
+// Words a shopper writes and the shelf never repeats: "Færdig pizzadej" is sold as
+// "Pizzadej", "Almindelig ris" as "Ris". Dropped from the query, because requiring them
+// loses a real match for a word no producer prints. "hakket", "revet" and "røget" are
+// deliberately NOT here: the shelf does repeat those words, and a steak is not mince.
+const UNWRITTEN = new Set(["færdig", "faerdig", "færdigkøbt", "klar", "almindelig",
+  "almindeligt", "normal", "normalt", "sædvanlig", "meget", "lidt", "den", "det", "en"]);
 
 // Preparation and grade words that sit in front of the real product name. They do
 // not carry the product identity, so they do not have to appear in the query.
@@ -120,28 +132,44 @@ function oneLetterApart(a, b) {
   return diff <= 1;
 }
 
-/** 0 = clearly different product, 1 = every query token found.
+/** What the shop states beside the product name: its own brand and the two shelf
+ *  categories it sits in. "Polskey Vodka" under the category "Vodka" says the first
+ *  word is a brand and not the product - the one thing the reverse head check cannot
+ *  read out of a name. Returns "" for a caller that has no shelf context. */
+export function shelfContext(product) {
+  if (!product) return "";
+  return [product.brand, product.mainGroup, product.subGroup].filter(Boolean).join(" ");
+}
+
+/** 0 = clearly different product, 1 = every query word found.
  *  `qualifierWords` are this family's own front-of-name words that keep the product
- *  itself, so one call site can judge the shelf by the family's reading of it. */
-export function score(query, name, qualifierWords = []) {
-  const q = tokens(query);
+ *  itself, so one call site can judge the shelf by the family's reading of it.
+ *  `where` is `shelfContext(product)`: the product's own brand and shelf category. */
+export function score(query, name, qualifierWords = [], where = "") {
+  const q = tokens(query).filter((t) => !UNWRITTEN.has(t));
   const n = tokens(name);
   if (q.length === 0 || n.length === 0) return 0;
+  const ctx = tokens(where);
   const inN = (tok) => n.some((t) => tokenAccepts(t, tok));
   const inQ = (tok) => q.some((t) => tokenAccepts(t, tok));
+  const inCtx = (tok) => ctx.some((t) => tokenAccepts(t, tok));
+  // The shelf itself calls this product that word: the category "Specialost, hård
+  // (parmesan, pecorino, osv.)" answers a query for "hård ost", and the category
+  // "Vodka" answers it for "Polskey Vodka" whatever the brand in front is.
+  const shelfSays = inCtx(q[0]);
   // Head noun both ways. One direction alone is not enough: "Jordbær" would accept
   // "Yoghurt m. jordbær", and "Ost" would accept "Pølse m. ost".
   // Exception: a name that merely starts with a preparation word ("Frisk panang
   // karrypasta (sød)") keeps its identity in the second token, so the reverse check
   // is skipped for those words.
   const reverseNeeded = !descriptiveOf(qualifierWords).has(n[0]);
-  if (!inN(q[0])) return 0;
-  if (reverseNeeded && !inQ(n[0])) return 0;
+  if (!inN(q[0]) && !shelfSays) return 0;
+  if (reverseNeeded && !shelfSays && !inQ(n[0])) return 0;
   // A name that adds a processing word the query never asked for is a different
   // product: a query for "Dild" must not answer "Dild dip mix", and "Karry" must not
   // answer "Karry sauce". Words already in the query never count as extras.
   if (hasPreparedExtra(n, q)) return 0;
-  const hit = q.filter(inN).length;
+  const hit = q.filter((t) => inN(t) || inCtx(t)).length;
   return Number((hit / q.length).toFixed(3));
 }
 
@@ -151,7 +179,7 @@ export function score(query, name, qualifierWords = []) {
  *  planner accept just anything. */
 export const MIN_NAME_SCORE = 0.7;
 
-/** Convenience predicate used by the resolver. */
-export function nameMatches(query, name, minScore = MIN_NAME_SCORE, qualifierWords = []) {
-  return score(query, name, qualifierWords) >= minScore;
+/** Convenience predicate used by the resolver. `where` is `shelfContext(product)`. */
+export function nameMatches(query, name, minScore = MIN_NAME_SCORE, qualifierWords = [], where = "") {
+  return score(query, name, qualifierWords, where) >= minScore;
 }

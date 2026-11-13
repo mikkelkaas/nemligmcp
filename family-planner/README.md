@@ -231,6 +231,16 @@ anyone keeping a list.
   accepts closer names, higher blocks more lines into the plan's `NOT FOUND` list. The
   plan prints the best name and score it saw, so a blocked line is a decision you can
   read, not a guess. `apply.mjs` refuses a plan with such a line.
+- The shop's own words count as evidence next to the name: the product's brand and the
+  shelf category it stands in. That is how a brand-first name (`Polskey Vodka`, sold under
+  the category "Vodka") gets compared on price at all, and why "Færdig pizzadej" finds the
+  `Pizzadej` in the chill cabinet - no producer prints the word "færdig", so it is not
+  asked for. It cannot loosen a real difference: a strawberry is still the flavour of a
+  yoghurt, and "hakket" is still demanded, because the shelf does print that word.
+- When the words genuinely do not reach the product you buy, say so in your profile under
+  `exclusions.queryAliases` and map the recipe's word onto yours ("hård ost" -> the hard
+  cheese you keep in the fridge). The matcher stays a reader of names; your cheese stays
+  your taste.
 - `qualifierWords` are the words that may stand in front of a product name without making
   it another product - for your family. "Parboiled ris" and "Basmati ris" are rice to a
   family that buys both, so those two words sit in that list and the price rule chooses

@@ -16,7 +16,7 @@
 import { readFileSync, mkdirSync } from "node:fs";
 import { connectGated, warnUnknownFlags } from "./lib.mjs";
 import { parsePack, packsFor, cheapest, choosePack, pieceWeightOf, eligibleOf } from "./units.mjs";
-import { nameMatches, norm, tokens, score as nameScore, MIN_NAME_SCORE } from "./match.mjs";
+import { nameMatches, shelfContext, norm, tokens, score as nameScore, MIN_NAME_SCORE } from "./match.mjs";
 
 import { CACHE_PATH, writeJsonAtomic } from "./paths.mjs";
 // What this script understands, so a typo in a flag is named instead of ignored.
@@ -215,9 +215,11 @@ async function attempt(mcp, query, intent, cache) {
   const mode = intent.mode || "cheapest";
   const { products, cached, ageMs, stale } = await search(mcp, query, { take: intent.take || DEFAULT_TAKE, cache, force: !!intent.force });
   if (products.length === 0) return { ok: false, query, why: "search returned nothing", candidates: 0, cached, ageMs };
-  const matching = products.filter((p) => nameMatches(query, p.name, minNameScore(intent), qualifierWords(intent)));
+  const matching = products.filter((p) => nameMatches(query, p.name, minNameScore(intent), qualifierWords(intent), shelfContext(p)));
   if (matching.length === 0) {
-    const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name, qualifierWords(intent))})`).join(", ");
+    // The three names the shop answered with, each with the score it reached, so a
+    // blocked line is a decision a person can read rather than a magic number.
+    const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name, qualifierWords(intent), shelfContext(p))})`).join(", ");
     return { ok: false, query, why: `no name reached ${minNameScore(intent)} (best: ${top})`, candidates: products.length, cached, ageMs };
   }
   const need = intent.need ? (typeof intent.need === "string" ? parseNeed(intent.need) : intent.need) : null;
@@ -309,7 +311,7 @@ async function proposeSubstitute(mcp, query, intent, cache) {
     } catch {
       continue;
     }
-    const pool = products.filter((p) => nameMatches(q, p.name, minNameScore(intent), qualifierWords(intent)));
+    const pool = products.filter((p) => nameMatches(q, p.name, minNameScore(intent), qualifierWords(intent), shelfContext(p)));
     const res = cheapest(pool, {
       avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
     preferSale: intent.preferSale, saleTolerancePct: intent.saleTolerancePct,
