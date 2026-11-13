@@ -1,5 +1,5 @@
 {
-  "comment": "pins: two big appetites - two members at appetite 1.7 and a pot cooked for ten servings, so the same demo dishes need more packs and the basket is dearer than the standing case",
+  "comment": "pins: two big appetites - two members at appetite 1.7 over the same demo pot of 6 servings, so the ask is 6.8 portions and the same demo dishes need more packs and a dearer basket than the standing case. The pot size is NOT hand-set any more.",
   "argv": [
     "--days",
     "8",
@@ -35,11 +35,11 @@
     },
     "amounts.json": {
       "household": {
-        "cookServings": 10,
         "people": 2,
         "adults": 2,
         "children": 0
-      }
+      },
+      "_comment": "the demo pot stays at its own size here on purpose: the appetite of the members is the only thing allowed to change what a dinner buys"
     }
   },
   "shelf": {}

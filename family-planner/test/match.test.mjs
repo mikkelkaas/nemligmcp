@@ -637,3 +637,35 @@ test("a refused dish never comes back and a rested one waits its turn", () => {
   assert.ok(!urls.includes("/b"), "refused dish must not be chosen: " + urls.join(","));
   assert.deepEqual(urls, ["/c", "/a"]);
 });
+
+// --- one pot, sized by who eats it -----------------------------------------------
+// The ask for a dinner is portions a night times the nights the dish runs; the number it
+// is divided by is the pot the mined amounts were already scaled to,
+// household.cookServings in profiles/amounts.json. Both sides of that division used to
+// carry the household's own appetite, so appetite cancelled out and every family bought
+// the identical pot whatever it ate.
+const curry = { name: "Kylling curry", slug: "kylling-curry", servings: 4,
+  ingredients: [{ text: "Kyllingekød", amount: 400, unit: "g", grams: 400, litres: null }] };
+const noFilters = { pantryWords: { words: [] }, freshHerbs: { words: [] },
+  neverBought: { words: [] }, queryAsides: { words: [] } };
+// 400 g over the recipe's 4 servings is 100 g a portion, so the expectations below are
+// exact and carry no rounding argument. A need is rounded UP to the nearest 50 g below a
+// kilo and to the nearest 250 g above it (dinners.mjs:109), which the second case pins.
+const potFor = (portions, standardPortions) => recipeIntents(curry, {
+  amounts: { household: { cookServings: 5 } }, meat: { rules: [] }, exclusions: noFilters,
+  portions, standardPortions,
+}).intents[0].need;
+
+test("the pot a dinner buys follows the appetites that eat it", () => {
+  assert.equal(potFor(4, 5), "400 g", "a four-portion ask buys what the recipe states");
+  assert.equal(potFor(8, 5), "800 g", "double the eaters, double the chicken");
+  assert.equal(potFor(2, 5), "200 g", "half the eaters, half the chicken");
+});
+
+test("a need is rounded up to a weight a shopper can read", () => {
+  // 1.25 (4 servings to the 5-serving pot) x 1.36 (5 portions to 6.8) x 400 g = 680 g.
+  assert.equal(potFor(6.8, 5), "700 g", "680 g rounds up to the nearest 50 g below a kilo");
+  // 1.25 x 1.6 x 400 = 800 g exactly, so this line proves the 250 g step is not a fudge
+  // factor: an exact number stays exact.
+  assert.equal(potFor(8, 5), "800 g", "an exact figure is left alone");
+});

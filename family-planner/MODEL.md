@@ -27,9 +27,23 @@ The profile lists who eats and how much, under `dinners.members` (`family.mjs:72
 2 x 1.0 + 1 x 0.6 = **2.6 portions a night**. A family with two teenagers is
 `[{adult,2,1.0},{teen,2,1.2}]` = 4.4. Appetite is the only diet knob that matters for
 quantity; what the family eats is handled by the exclusions and the meat rules.
-`init-family.mjs` writes the simpler `household.adults` plus `household.children` pair; the
-planner then derives portions a night from `dinners.servingsPerDinner` divided by
+`init-family.mjs` writes the simpler `household.adults` plus `household.children` pair. With
+no `members` list the planner falls back to `dinners.servingsPerDinner` divided by
 `dinners.daysPerDinner` (`family.mjs:47-49`).
+
+What a dinner buys. The ask for one dinner is portions a night times the nights that
+dish runs (`portionsPerNight` x `nightsOf`, `nights.mjs:54`). It is divided by the pot the
+recipe amounts were already scaled to: `household.cookServings` in `profiles/amounts.json`,
+measured from the family's own orders (`dinners.mjs:88`, `plan.mjs:541`). Until 2026-11-13
+both sides of that division carried the household's own appetite, so appetite cancelled out
+and every family bought the identical pot whatever it ate. The bug survived here because one
+family's numbers line up by accident: 2,6 x 2 = 5,2 portions against a mined pot of 5
+servings, a 4 % error, and 48 lines on an 8-day plan moved by less than 1 %. Where the two
+numbers do not line up the error is large. The golden case `one-night-dish` needs 2,9 portions and
+was buying a 6-serving pot: 1032,45 kr against 632,45 kr for the correct ask, 63 % more food
+than eight one-night dinners need. `two-teenagers` needs 6,8 portions, and writing that case
+needed the pot hand-set to 10 servings before a bigger basket appeared at all. Both cases now
+scale through `members` alone, and `one-adult` shrank 70,20 kr by itself.
 
 ## 2. Dinners: nights, decided per dish
 
@@ -233,12 +247,3 @@ thin layer, not the planner.
    .qualifierWords`), the guard skips those, and the price rule picks between them - today 1 kg
    parboiled at 11,95 kr on sale against the 500 g need. Dried oregano went to `pantryWords`
    with the other dried spices, because the cupboard has it and `--extra` buys it when it is dry.
-6. A dish that repeats is cooked at one size, whatever the household. `dinners.members` gives
-   portions per night, and a pot is sized by `dinners.servingsPerDinner`; when the same dish
-   runs for `maxNightsPerDinner` nights the portions are not multiplied by those nights, so a
-   family of two teenagers and a family of one adult get the same number of packs for a curry
-   cooked twice. Found while writing the golden cases `one-adult` and `two-teenagers`, which
-   work around it through `cookServings` in `profiles/amounts.json`. A fix has to say which
-   number is the ask: portions a night times the nights this dish runs, then compared with what
-   one pot covers - and the same dish on two days in a row is leftovers, not a second pot.
-   Untouched until that is settled, because both readings change every pack count in the suite.

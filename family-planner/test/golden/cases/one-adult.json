@@ -1,5 +1,5 @@
 {
-  "comment": "pins: one adult - one member at appetite 1.1, three servings per pot and three plates to shop for, so every demo recipe ask and every pack comes out smaller than the standing case",
+  "comment": "pins: one adult - one member at appetite 1.1 over the demo pot of 6 servings, so the ask is 2.2 portions and every demo recipe and every pack comes out smaller than the standing case. The pot size is NOT hand-set any more: appetite is what moves it.",
   "argv": [
     "--days",
     "8",
@@ -35,11 +35,11 @@
     },
     "amounts.json": {
       "household": {
-        "cookServings": 3,
         "people": 1,
         "adults": 1,
         "children": 0
-      }
+      },
+      "_comment": "the demo pot stays at its own size here on purpose: the appetite of the members is the only thing allowed to change what a dinner buys"
     }
   },
   "shelf": {}

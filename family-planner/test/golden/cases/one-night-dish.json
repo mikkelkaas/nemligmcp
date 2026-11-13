@@ -1,5 +1,5 @@
 {
-  "comment": "pins: one-night dinners - maxNightsPerDinner 1 makes every demo dish cook fresh for a single evening, so nine evenings need more dishes than the pool holds and one evening is reported uncovered",
+  "comment": "pins: maxNightsPerDinner 1 - nine evenings need more dishes than the pool holds, one evening reported uncovered; and a dish that runs one night buys the pot for one night, which is half the standing ask. That second pin is new: the ask used to be measured against itself, so a one-night dish was bought at the two-night pot.",
   "argv": [
     "--days",
     "9",

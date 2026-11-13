@@ -393,7 +393,7 @@ function markdownHeader(plan, diff) {
     const protein = m.protein ? `, ${m.protein}` : "";
     const nights = Number(m.nights || m.covers || 1);
     const how = nights === 1 ? "one night only, cooked fresh"
-      : `cooked once, eaten ${nights} nights (${Math.round((plan.portionsPerNight || 0) * nights)} portions for ${(plan.members || []).map((x) => `${x.count} ${x.role}${x.count > 1 ? "s" : ""}`).join(" + ") || o.people + " people"})`;
+      : `cooked once, eaten ${nights} nights (${Number(((plan.portionsPerNight || 0) * nights).toFixed(1))} portions for ${(plan.members || []).map((x) => `${x.count} ${x.role}${x.count > 1 ? "s" : ""}`).join(" + ") || o.people + " people"})`;
     const keeps = m.reheat === "fresh" ? ", does not keep" : m.reheat === "great" ? ", better the next day" : "";
     L.push(`- dag ${m.days}: ${m.name}${m.minutes ? " (" + m.minutes + " min)" : ""}${protein} — ${how}${keeps}${link}`);
   }
@@ -532,11 +532,19 @@ function poolDinnerIntents(options, wanted, rules) {
     console.log(`  warn: --dinners "${w}" is not in the recipe pool - use a name from the menu or the recipe url`);
   }
   let intents = [], leftOut = [];
-  const stdPortions = Number((fam.household.portionsPerNight || 2.6) * fam.household.maxNightsPerDinner) || 5;
-  const portionNote = `${(fam.household.portionsPerNight || 0).toFixed(1)} portions a night`;
+  // The base a real ask is divided by is the pot the recipe amounts were already scaled
+  // to: household.cookServings in profiles/amounts.json, measured from this family's own
+  // history. It used to be portionsPerNight x maxNightsPerDinner - the same household
+  // appetite on both sides of the division - so appetite cancelled out: a family of two
+  // teenagers and a family of one adult bought the identical pot. Keep the appetite on one
+  // side only, and the number becomes what a portion costs in food.
+  const cookBase = Number((amounts.household || {}).cookServings) || 5;
+  const portionsPerNight = Number(fam.household.portionsPerNight) || 3;   // nights.mjs fallback
+  const stdPortions = cookBase;
+  const portionNote = `${portionsPerNight.toFixed(1)} portions a night`;
   for (const r of pick.chosen) {
     const entry = (pick.menu || []).find((m) => (m.url || m.id) === r.url) || {};
-    const portionsForThis = Number(((fam.household.portionsPerNight || 2.6) * (entry.nights || entry.covers || 2)).toFixed(1));
+    const portionsForThis = Number((portionsPerNight * (entry.nights || entry.covers || 2)).toFixed(1));
     const built = recipeIntents(r, { amounts, meat, exclusions, sourcePrefix: "dinner",
       portions: portionsForThis, standardPortions: stdPortions, note: `${entry.nights || entry.covers || 2} ${entry.nights === 1 ? "night" : "nights"}, ${portionNote}` });
     for (const it of built.intents) intents.push({ ...it, preferSale: rules.preferSale, saleTolerancePct: rules.saleTolerancePct });
