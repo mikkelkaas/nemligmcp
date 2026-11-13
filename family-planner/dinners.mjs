@@ -13,6 +13,7 @@
 // price-per-kg ceiling this family uses.
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { subunitGrams } from "./units.mjs";
 import { join } from "node:path";
 
 const fold = (s) => String(s || "").toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/[^a-z0-9% ]/g, " ").replace(/\s+/g, " ").trim();
@@ -101,7 +102,7 @@ function meatRuleFor(text, rules) {
 }
 
 /** Amount text for Namlig: grams, litres or pieces, rounded to something buyable. */
-function needTextOf(ing, factor) {
+function needTextOf(ing, factor, pieceWeights) {
   const grams = Number(ing.grams) || 0;
   const litres = Number(ing.litres) || 0;
   if (grams > 0) {
@@ -116,6 +117,16 @@ function needTextOf(ing, factor) {
   }
   const pieces = Number(ing.amount) || 1;
   const rounded = Math.max(1, Math.ceil(pieces * factor));
+  // "6 fed hvidløg" is six cloves off one head, not six packets, and the shelf sells a
+  // head by the piece and a net bag by the kilo. Weighed here, at 5 g a clove, the need
+  // reaches the pack rule as a measure and one 4 kr head can meet a 200 g bag. A recipe
+  // word that is not a known part stays a piece: a count, never a guess.
+  const per = subunitGrams(ing.unit, pieceWeights);
+  if (per) {
+    const g = rounded * per;
+    const weighed = g >= 1000 ? Math.ceil(g / 250) * 250 : Math.max(25, Math.ceil(g / 25) * 25);
+    return { need: `${weighed} g`, unit: "g", grams: weighed };
+  }
   return { need: `${rounded} stk`, unit: "stk", pieces: rounded };
 }
 
@@ -221,7 +232,7 @@ export function chooseDinners(pool, opts) {
 }
 
 /** One recipe to shopping intents, with what was left out and why. */
-export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix = "dinner", portions = null, standardPortions = null, note = "" }) {
+export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix = "dinner", portions = null, standardPortions = null, note = "", pieceWeights = null }) {
   let factor = scaleFactor(recipe, amounts.household || {});
   // A dinner that runs one night cooks half the pot of a dinner that runs two.
   const needPortions = Number(portions) || Number(amounts.household?.cookServings) || 0;
@@ -241,7 +252,7 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
     if (herb) { leftOut.push({ text, reason: "fresh herb (" + herb + ") - not used from a recipe" }); continue; }
     const never = hitsWord(text, exclusions.neverBought?.words);
     if (never) { leftOut.push({ text, reason: "we never buy " + never }); continue; }
-    const size = needTextOf(ing, factor);
+    const size = needTextOf(ing, factor, pieceWeights);
     const key = fold(text) + "|" + size.unit;
     // Start the row empty and then add: copying `size` in and adding it again doubles
     // the first occurrence, which once turned 425 g of chicken into 850 g.

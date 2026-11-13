@@ -6,9 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { norm, tokens, score, nameMatches, shelfContext } from "../match.mjs";
-import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf } from "../units.mjs";
+import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf, choosePack, subunitGrams, SUBUNIT_GRAMS } from "../units.mjs";
 import { saleBeatsPin } from "../catalog.mjs";
-import { choosePack } from "../units.mjs";
 import { consolidateIntents } from "../plan.mjs";
 import { pairPlanToOrder, observedDelta, learnedFrom, biasIntent, addIntentsOf } from "../learn.mjs";
 
@@ -790,4 +789,53 @@ test("the shelf's words never loosen the checks that guard a different product",
     "a prepared salad is still not a cucumber, category or not");
   assert.equal(shelfContext({ brand: "", mainGroup: "Mejeri", subGroup: "Skyr" }), "Mejeri Skyr",
     "an empty brand contributes no word");
+});
+
+// A recipe counts PARTS of the unit the shop sells, and the shop prices some goods by the
+// piece and others by the kilo. Both cases used to end in the same wrong place: "6 fed" was
+// answered with 6 packs, and a per-piece product never met a per-kilo one because the
+// comparison kept only the biggest price axis. Measured 2026-11-13 on a pinned 4-dinner menu:
+// the same basket, 1154,53 kr before and 1105,25 kr after, on five lines that moved.
+const NET = { id: "a1", name: "Hvidløg i net", price: 13.33, unitPrice: 66.65, unitLabel: "kr/kg",
+  availability: { IsDeliveryAvailable: true, IsAvailableInStock: true }, pack: { qty: 200, unit: "g", raw: "200 g" } };
+const HEAD = { id: "a2", name: "Hvidløg øko.", price: 4, unitPrice: 4, unitLabel: "kr/stk",
+  availability: { IsDeliveryAvailable: true, IsAvailableInStock: true }, pack: { qty: 1, unit: "stk", raw: "1 stk." } };
+
+test("a recipe's part is weighed, not counted as packs", () => {
+  assert.equal(subunitGrams("fed"), 5, "a garlic clove");
+  assert.equal(subunitGrams("skiver"), 25, "a slice, in whatever plural the recipe wrote");
+  assert.equal(subunitGrams("stk"), null, "a pack is not a part - that stays a count");
+  assert.equal(subunitGrams("fed", { fed: 8 }), 8, "a family that reads a clove heavier says so in purchasing.pieceWeights");
+  assert.ok(Object.keys(SUBUNIT_GRAMS).length <= 8, "the built-in part table stays small and every entry defensible");
+});
+
+test("a 4 kr head meets a 13,33 kr net bag: the whole shelf is compared", () => {
+  const OIL = { id: "a3", name: "Hvidløg i krydderolie", price: 17.8, unitPrice: 98.89, unitLabel: "kr/kg",
+    availability: { IsDeliveryAvailable: true, IsAvailableInStock: true }, pack: { qty: 290, unit: "g", raw: "290 g" } };
+  const shelf = [NET, OIL, HEAD];
+  const cheap = cheapest(shelf, {});
+  assert.equal(cheap.poolSize, 2, "the price-axis group is the two products listed per kilo, so the head is not in it");
+  assert.equal(cheap.pool.some((c) => c.id === HEAD.id), false, "the head cannot be compared per unit - it is priced per piece");
+  assert.equal(cheap.shelf.length, 3, "`shelf` keeps all three, because the decision is a total, not a unit price");
+  const bought = choosePack({ qty: 50, unit: "g" }, cheap.shelf, { name: NET.name });
+  assert.equal(bought.candidate.name, HEAD.name, "what the plan asked for costs 4 kr in one head, 13,33 kr in a net bag, 17,80 in oil");
+  assert.equal(bought.packs, 1);
+  assert.equal(bought.total, 4);
+  const counted = choosePack({ qty: 3, unit: "stk" }, cheap.shelf, { name: NET.name, pieceGrams: pieceGrams("hvidløg") });
+  assert.equal(counted.candidate.name, HEAD.name, "three of them, counted, is three heads - not three net bags");
+});
+
+test("a recipe counting parts asks for a weight, not that many packs", () => {
+  const amounts = { household: { cookServings: 5 } };
+  const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] }, queryAsides: { words: [] } };
+  const recipe = { name: "T", servings: 5, ingredients: [
+    { text: "Hvidløg", amount: "6", unit: "fed" },
+    { text: "Løg", amount: "2", unit: "stk" },
+  ] };
+  const out = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions });
+  const garlic = out.intents.find((i) => i.query === "Hvidløg");
+  const onion = out.intents.find((i) => i.query === "Løg");
+  assert.equal(garlic.need, "50 g", "6 cloves at 5 g, rounded up on the step the planner weighs in");
+  assert.match(garlic.rationale, /6 fed/, "the plan still shows the part the recipe wrote");
+  assert.equal(onion.need, "2 stk", "a count of sold units stays a count: '2 stk' is two of what the shop sells");
 });

@@ -320,7 +320,8 @@ the measurement is the part worth keeping, not the decision.
   Two things this did NOT fix, and the honest reason: "hård ost" over the category
   "Specialost, hård" still reaches only half the query, because "ost" is three letters and
   the compound rule needs four, so that one is a family alias in their profile instead of a
-  matcher rule; and a product sold per piece still cannot meet one sold per kilo.
+  matcher rule; the price-axis case, which hid a 4 kr garlic head behind a 13,33 kr net
+  bag, is settled by the entry below.
 - **The name threshold was a dirty query, not a wrong number.** Measured 2026-11-12 over
   the cached shelf (187 queries, their 6 top names each): most blocks were a query carrying
   words no product has. "Spinat alternativt grønkål" asks for spinach and names a fallback,
@@ -340,23 +341,35 @@ the measurement is the part worth keeping, not the decision.
   laks/porrer" when the query is "porrer". Cutting the query fixes 26 of 28 such pairs and
   buys nothing wrong.
 
+- **A part of a thing is weighed, and the whole shelf is compared.** (was: "two price axes
+  never meet, so the cheapest cover can be invisible"). Two bugs stood behind the same
+  absurd line - six cloves of garlic bought as four 200 g net bags, 800 g and 53,32 kr, when
+  the shelf sells a head at 4,00 kr. First, a recipe counting PARTS was answered with that
+  many PACKS: "6 fed" is six cloves off one head, and "stk" was all the need remembered
+  about the word `fed`. A part is now weighed where the need is made (`SUBUNIT_GRAMS`, 5 g a
+  clove, 25 g a slice), so the shelf is met with a measure like any other, and a family that
+  reads a part differently says so once in `purchasing.pieceWeights` - bounded to a word of
+  2-14 letters and 1 g to 2 kg, so a typo cannot weigh a clove at half a kilo. Second,
+  `comparablePool` kept only the biggest price axis, so anything priced per piece was gone
+  before the comparison: the head at 4,00 kr a piece never met the net bag at 66,65 kr a
+  kilo. `cheapest` now returns the unit-price group it compares AND `shelf` - everything the
+  filters left - and what to BUY is decided over that whole list on the total, as the model
+  has always said it should. A line whose winner is priced on another axis says so.
+  Measured on a pinned four-dinner menu, same shelf, same everything (`--cores` makes a run
+  reproducible, which is what made this measurable at all): 1154,53 kr before, 1105,25 kr
+  after, five lines moved. Garlic 13,33 -> 4,00 kr; cooking cream 59,00 -> 31,80 kr; three
+  pears 30,00 -> 24,75 kr; carrots for dinner 20,00 -> 18,00 kr; dill 12,00 -> 10,00 kr.
+  What this costs, and it is not nothing: a 1 kg net of onions at 12,00 kr now LOSES to three
+  loose onions at 15,00 kr, because a kilo of fresh onions is 203 % more than the plan asked
+  for and the overshoot cap calls that waste. A family that stores onions puts "løg" in
+  `purchasing.stableWords` and the net wins again. Every golden shelf moved 0,0 %, which is
+  the honest signal that the fixture shelves had no per-piece goods to hide: the two new
+  tests are the coverage.
+
 ## Still open
 
-1. **Two price axes never meet, so the cheapest cover can be invisible** (`comparablePool`,
-   `units.mjs`). The pool keeps only the group with most members, so when eight products are
-   listed per kilo and two per piece, the per-piece ones are dropped before the comparison.
-   Measured 2026-11-13 on a real 8-day plan: six cloves of garlic ("6 stk") became 4 net
-   bags of 200 g - 800 g of garlic for 53,32 kr - while the same shelf sells `Hvidløg øko.`
-   at 4,00 kr a head, and one head holds more cloves than the recipe asked for. The axis
-   that was largest won, not the one that covered the need cheapest. Same shape on the
-   vinegar line: four 30 g bottles for a decilitre. Before changing it, count how many of
-   the 191 cached queries have their cheapest covering product on the minority axis, and
-   check the four pieces-per-head words (`PIECE_GRAMS`: `fed` is not the same thing as the
-   `stk` a recipe line turns it into, which is how 6 cloves became 6 of whatever a net is).
-2. **A recipe line naming a dish the shop has no product for** still blocks `apply.mjs`.
-   "Raita" (a yoghurt side) is today's case: the family would accept a yoghurt, so the fix
-   is a profile alt, not a matcher rule. "Kogevand fra pasta" was today's other case and is
-   now a pantry word, because it is tap water.
-
-When a plan does something wrong, write the measurement here before fixing it, and move it
-up into the model when the number is in.
+None right now. Two lines that blocked the basket today were family facts, not code: a word
+the household never buys goes in `exclusions.neverBought` and is named in the plan instead of
+blocking it, and pasta water is tap water (`pantryWords`). When a plan does something wrong,
+write the measurement here before fixing it, and move it up into the model when the number is
+in.

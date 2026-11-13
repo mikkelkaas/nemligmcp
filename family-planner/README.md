@@ -225,6 +225,17 @@ anyone keeping a list.
 - Pieces are weighed with the weight the shop prints on the pack ("4 x 125 g",
   "2 stk. / 260 g", "180 g / 10 skiver"); the table in `units.mjs` covers only what the
   shop sells loose. A candidate's unknown weight is never borrowed from another product.
+- A recipe that counts PARTS is weighed, not counted: "6 fed hvidløg" is six cloves off one
+  head, so the plan asks for 30-50 g and buys one 4 kr head instead of that many packets.
+  The default weights for parts (`fed` 5 g, `skive` 25 g) live in the code because they are
+  the language's, not one family's; correct any of them for your household under
+  `purchasing.pieceWeights`, e.g. `"pieceWeights": { "fed": 8 }`.
+- What to buy is decided over the WHOLE shelf, on the total for the need - so a product
+  priced per piece competes with one priced per kilo (`4 kr / stk` against `66,65 kr / kg`
+  is decided by what your 50 g costs, not by which price axis has more products on it). The
+  plan line names the two axes when they differ. Expect a basket that moves a little when
+  this first runs for you: measured on a pinned menu, the same shelf cost 1154,53 kr before
+  and 1105,25 kr after, on five lines.
 - `minNameScore` (default 0,7, `family.mjs:144`) is how sure the planner must be that a
   shelf name is the product
   the recipe asked for: the share of the query's words the name has to contain. Lower

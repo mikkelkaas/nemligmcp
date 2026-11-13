@@ -270,8 +270,9 @@ async function attempt(mcp, query, intent, cache) {
   // One decision over the whole shelf, as a person does: cover the need for the lowest
   // total price, with bounded slack. Falls back to ceil(need/pack) when the need cannot
   // be compared with any pack on the shelf.
-  const bought = need && (res.pool || []).length > 0
-    ? choosePack(need, res.pool, { name: res.pick.name, pieceWeight: pieceWeightOf(res.pick), ...(intent.purchasing || {}) })
+  const onShelf = (res.shelf && res.shelf.length ? res.shelf : res.pool) || [];
+  const bought = need && onShelf.length > 0
+    ? choosePack(need, onShelf, { name: res.pick.name, pieceWeight: pieceWeightOf(res.pick), ...(intent.purchasing || {}) })
     : null;
   const chosen = bought ? bought.candidate : res.pick;
   const packs = bought ? bought.packs : (need ? packsFor(need, res.pick.pack, { pieceWeight: pieceWeightOf(res.pick), name: res.pick.name }) : 1);
@@ -287,6 +288,12 @@ async function attempt(mcp, query, intent, cache) {
   bits.push(mode === "history" && intent.sku ? `usual sku ${intent.sku} not offered today — cheapest option used` : "cheapest per unit");
   if (res.saleNote) bits.push(res.saleNote);
   if (bought) bits.push(bought.why);
+  // Say it out loud when the winner is priced on a different axis than the shelf's
+  // cheapest per unit: a person reading "4 kr" against "13,33 kr" should not have to
+  // work out that one is per head and the other per kilo.
+  if (bought && bought.candidate && String(bought.candidate.unitLabel || "") !== String(res.pick.unitLabel || "")) {
+    bits.push(`priced ${bought.candidate.unitLabel || "per pack"} against ${res.pick.unitLabel || "per pack"} on this shelf - the total for what the plan asked for decided it`);
+  }
 
   const why = bits.join("; ");
   return {

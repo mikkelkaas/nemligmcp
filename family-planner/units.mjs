@@ -112,10 +112,33 @@ const COUNT_UNITS = new Set(["stk", "dåse", "flaske", "pose", "karton", "skive"
  */
 export const PIECE_GRAMS = {
   pære: 190, æble: 170, citron: 100, lime: 70, appelsin: 150, mandarin: 90, banana: 120, banan: 120,
-  avocado: 200, agurk: 600, peberfrugt: 150, gulerod: 90, løg: 110, hvidløg: 8, kartoffel: 90,
+  avocado: 200, agurk: 600, peberfrugt: 150, gulerod: 90, løg: 110, kartoffel: 90,
   chili: 15, broccoli: 400, blomkål: 900, majs: 220, melon: 1200, fennikel: 150, radise: 10,
+  // A loose piece of garlic is a whole head, which is what the shop sells it as. One of
+  // its cloves is `fed` in SUBUNIT_GRAMS - the two numbers are not interchangeable, and
+  // 8 g here once made 6 cloves of garlic read as 6 of whatever a 200 g net bag is.
   spinat: 30, purløg: 5, persille: 15, ingefær: 40, svamp: 20, æg: 65, tomat: 120, agurkesalat: 600,
+  hvidløg: 50,
 };
+
+/**
+ * A recipe counts PARTS of the unit the shop sells: "6 fed hvidløg" is six cloves off
+ * one head, "3 skiver brød" is three slices off one loaf. A part is not a pack, so it
+ * must never be answered with that many packs - which is what "1 stk" silently allowed.
+ * Weighed into grams where the need is made, so the shelf is met with a measure like
+ * any other. A family that reads a number differently sets it in their profile under
+ * `purchasing.pieceWeights`; a word that is not listed stays a piece, never a guess.
+ */
+export const SUBUNIT_GRAMS = { fed: 5, skive: 25, skiver: 25, bådkartoffel: 120 };
+
+/** Grams for one part of this recipe's unit word, or null when the word is not a part. */
+export function subunitGrams(word, extra = {}) {
+  const w = String(word || "").toLowerCase().replace(/\s+/g, "").replace(/er$/, "");
+  if (!w) return null;
+  const mine = Number((extra || {})[w] !== undefined ? (extra || {})[w] : (extra || {})[w + "e"]);
+  if (Number.isFinite(mine) && mine > 0) return mine;
+  return Number(SUBUNIT_GRAMS[w]) || Number(SUBUNIT_GRAMS[w + "er"]) || null;
+}
 
 /** The typical weight of one piece of this product, or null when it is not loose produce. */
 export function pieceGrams(name) {
@@ -219,7 +242,12 @@ export function cheapest(candidates, opts = {}) {
     pick = swapped.pick;
   }
   if (pick.onSale && !saleNote) saleNote = "on sale";
-  return { pick, considered: eligible.length, poolSize: pool.length, pool: pool.slice(0, 8), rejected, mode, saleNote,
+  // `shelf` is every candidate that survived the filters, whatever it is priced in. The
+  // axis pool decides a price PER UNIT and a tie; what to buy is decided on the TOTAL
+  // over the whole shelf, so a 4 kr head priced per piece can beat a 13,33 kr net bag
+  // priced per kilo. Both views are returned because they answer different questions.
+  return { pick, considered: eligible.length, poolSize: pool.length, pool: pool.slice(0, 8), shelf: eligible.slice(),
+    rejected, mode, saleNote,
     campaignTip: campaignOf(pick, pool), alternatives: pool.filter((c) => c.id !== pick.id).slice(0, 3) };
 }
 

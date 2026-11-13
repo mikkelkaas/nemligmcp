@@ -203,6 +203,14 @@ function purchasingOf(p) {
       : ["mælk", "fløde", "smør", "yoghurt", "ost", "fisk", "laks", "ørken", "rejer", "musling", "filet",
          "hakket", "kogt", "stegt", "spinat", "salat", "urter", "persille", "dild", "agurk", "tomat",
          "peberfrugt", "svamp", "avocado", "banan", "æble", "pære", "melon"],
+    // How much one PART of a recipe's unit weighs, for a family who reads it differently:
+    // "fed" (a garlic clove) is 5 g in the code default. Only a lower-case word of 2-14
+    // letters and a weight between 1 g and 2 kg are accepted, so a typo in a profile
+    // cannot make the planner weigh a clove at 500 g.
+    pieceWeights: Object.fromEntries(
+      Object.entries(raw.pieceWeights || {})
+        .filter(([w, g]) => /^[\p{L}]{2,14}$/u.test(String(w).trim()) && Number(g) > 0 && Number(g) <= 2000)
+        .map(([w, g]) => [String(w).trim().toLowerCase(), Number(g)])),
   };
 }
 

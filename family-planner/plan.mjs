@@ -612,6 +612,7 @@ function poolDinnerIntents(options, wanted, rules) {
     const entry = (pick.menu || []).find((m) => (m.url || m.id) === r.url) || {};
     const portionsForThis = Number((portionsPerNight * (entry.nights || entry.covers || 2)).toFixed(1));
     const built = recipeIntents(r, { amounts, meat, exclusions, sourcePrefix: "dinner",
+      pieceWeights: ((fam.household || {}).purchasing || {}).pieceWeights || null,
       portions: portionsForThis, standardPortions: stdPortions, note: `${entry.nights || entry.covers || 2} ${entry.nights === 1 ? "night" : "nights"}, ${portionNote}` });
     for (const it of built.intents) intents.push({ ...it, preferSale: rules.preferSale, saleTolerancePct: rules.saleTolerancePct });
     for (const lo of built.leftOut) leftOut.push({ ...lo, recipe: r.name });
