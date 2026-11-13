@@ -58,6 +58,48 @@ function checkProfile(out) {
       : "read profiles/family-EXAMPLE.json, run the miners below, then init-family.mjs"));
 }
 
+/**
+ * profiles/pantry.json: the rebuy lines for breakfast, the lunch box, snacks and paper.
+ * Nothing in this repository writes it - it is the one file a family writes themselves -
+ * so a clone never has it, and a plan without it simply buys no such lines.
+ */
+function checkPantry(out) {
+  const file = `${PROFILES}/pantry.json`;
+  if (!existsSync(file)) {
+    out.push(finding("profiles/pantry.json", WARN,
+      "no pantry file, so a plan buys no breakfast, lunch box, snack or paper lines",
+      "cp profiles/pantry-EXAMPLE.json profiles/pantry.json, edit the cycle and the lines, then run pin-skus.mjs to fill the skus"));
+    return;
+  }
+  let parsed = null;
+  try {
+    parsed = JSON.parse(readFileSync(file, "utf8"));
+  } catch (e) {
+    out.push(finding("profiles/pantry.json", BLOCK, "it does not parse: " + e.message.slice(0, 90),
+      "fix the JSON; profiles/pantry-EXAMPLE.json shows the shape"));
+    return;
+  }
+  const blocks = parsed && parsed.blocks ? parsed.blocks : {};
+  const named = Object.keys(blocks).filter((b) => (blocks[b] || []).length > 0);
+  if (named.length === 0) {
+    out.push(finding("profiles/pantry.json", WARN, "it has no lines in any block",
+      "copy the blocks you want out of profiles/pantry-EXAMPLE.json"));
+    return;
+  }
+  const perPerson = Object.values(blocks).flat().filter((it) => it && it.per && it.per !== "cycle").length;
+  out.push(finding("profiles/pantry.json", OK, named.join(", ") + " (" +
+    Object.values(blocks).reduce((n, l) => n + (l || []).length, 0) + " lines" +
+    (perPerson ? ", " + perPerson + " counted per person" : "") + ")"));
+  // A block plan.mjs never looks at is lines that are never bought, and the family has no
+  // way to notice: the plan comes back looking complete.
+  const read = ["breakfast", "kidLunchbox", "snacks", "household"];
+  const unknown = Object.keys(blocks).filter((b) => !read.includes(b) && (blocks[b] || []).length > 0);
+  if (unknown.length) {
+    out.push(finding("profiles/pantry.json", WARN, unknown.join(", ") + " block(s) plan.mjs never reads, so those lines are never bought",
+      "the blocks a plan uses are: " + read.join(", ")));
+  }
+}
+
 /** The evidence files, mined from one family's own orders: a new install has none. */
 function checkData(out) {
   const wanted = [
@@ -173,6 +215,7 @@ async function main() {
   checkEnv(out);        // credentials first: every step below needs them, so say so before asking for them
   checkProfile(out);
   checkData(out);
+  checkPantry(out);   // the file only a person writes: a clone has none, and a plan notices
   checkWritable(out);
   checkDocker(out);
   if (process.argv.includes("--online")) await checkEndpoint(out);

@@ -90,17 +90,46 @@ function dinnerIntents(cores, wantedIds, rules) {
   return out;
 }
 
-/** Intents from a pantry block, gated by the stock cycle when one is defined. */
-function blockIntents(items, blockName, days, cycleDays, staplesByName, staplesBySku, rules) {
+/**
+ * Intents from a pantry block, gated by the stock cycle when one is defined.
+ *
+ * Exported for the suite: the three bases below are arithmetic, and arithmetic is cheap to
+ * pin and expensive to get wrong.
+ *
+ * `per` says what a line's quantity counts. `cycle` (the default, and every line mined
+ * from an order history) means that number is what THIS household buys per cycle, so a
+ * plan for 8 days scales it by days and nothing else - the mined number already contains
+ * the family. `person-cycle` and `person-day` mean one unit per person, and those grow
+ * with the household: a lunch box is a fixed kit, so it scales with heads, not with
+ * appetite. Nobody reinterprets a mined number: a line says which base it is written on.
+ */
+export function blockIntents(items, blockName, days, cycleDays, staplesByName, staplesBySku, rules, people = 1) {
   const out = [];
   for (const it of items || []) {
     const qtyPerCycle = Number(it.qtyPerCycle || 1);
-    const overCycle = Math.max(1, Math.ceil((qtyPerCycle * days) / Math.max(1, cycleDays)));
+    const per = String(it.per || "cycle").toLowerCase();
+    const onHead = per === "person-day" || per === "person-cycle";
+    const heads = onHead ? Math.max(0, Math.round(Number(people) || 0)) : 1;
+    let overCycle = per === "person-day"
+      ? Math.ceil(qtyPerCycle * heads * days)
+      : Math.ceil((qtyPerCycle * heads * days) / Math.max(1, cycleDays));
+    if (per === "cycle") overCycle = Math.max(1, overCycle);   // a mined line always buys at least one pack
     // A pantry line is a MEASURE: "1 pære per lunch box" is 8 pieces over 8 days, about
     // 1,5 kg, and must meet the 1 kg bag - not buy three of them. Lines that count packs
     // (mælk, køkkenrulle) leave unit out and keep the old pack arithmetic.
     const need = it.unit ? `${overCycle} ${it.unit}` : `${overCycle} stk`;
-    const measureNote = it.unit ? `${qtyPerCycle} ${it.unit} per cycle x ${days} d / ${cycleDays} d cycle` : `${overCycle} packs over ${days} d`;
+    const unitWord = it.unit || "packs";
+    const measureNote = per === "person-day"
+      ? `${qtyPerCycle} ${unitWord} per person-day x ${heads} ${heads === 1 ? "person" : "people"} x ${days} d`
+      : per === "person-cycle"
+        ? `${qtyPerCycle} ${unitWord} per person-cycle x ${heads} ${heads === 1 ? "person" : "people"} x ${days} d / ${cycleDays} d cycle`
+        : it.unit ? `${qtyPerCycle} ${it.unit} per cycle x ${days} d / ${cycleDays} d cycle` : `${overCycle} packs over ${days} d`;
+    if (onHead && heads <= 0) {
+      out.push({ source: blockName + ":" + it.id, sourceLabel: blockName, query: it.query,
+        skipped: `skipped: ${per} lines need a person to count for, and household.blockPeople.${blockName} is 0`,
+        sku: it.sku, mode: it.mode });
+      continue;
+    }
     let gate = null;
     if (it.everyNDays) {
       const known = (it.sku ? staplesBySku.get(String(it.sku)) : null) || staplesByName.get(norm(it.query)) || staplesByName.get(norm(it.name));
@@ -476,6 +505,9 @@ function markdownNotes(plan) {
 
 /** Every intent for this run: dinners in menu order, then the enabled pantry blocks. */
 function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, household) {
+  // No file and an empty file mean the same thing to a plan: those blocks buy nothing, and
+  // the person reading the basket should be told that rather than count the lines.
+  const pantryBlocksPresent = Boolean(pantry && pantry.blocks && Object.keys(pantry.blocks).length);
   const wanted = (arg("dinners", "") || "").split(",").map((s) => s.trim()).filter(Boolean);
   const wantedIds = wanted.length ? wanted : dinners.cores.slice(0, Math.ceil(options.days / dinners.coversDays)).map((c) => c.id);
   const rules = saleRules(household);
@@ -487,9 +519,23 @@ function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, h
   if (!poolState.usedPool) intents = intents.concat(dinnerIntents(dinners.cores, wantedIds, rules));
   const blocks = [["breakfast", options.breakfast, "breakfast"], ["kidLunchbox", options.lunchbox, "lunchbox"],
     ["snacks", options.snacks, "snacks"], ["household", options.household !== "off", "household"]];
+  if (!pantryBlocksPresent) {
+    console.log("  warn: no profiles/pantry.json - no breakfast, lunch-box, snack or household lines will be bought");
+    console.log("        the shape is profiles/pantry-EXAMPLE.json; pin-skus.mjs can fill its sku fields afterwards");
+  }
   for (const [block, enabled, label] of blocks) {
     if (!enabled) continue;
-    intents = intents.concat(blockIntents(pantry.blocks[block], label, options.days, pantry.cycleDays, staplesByName, staplesBySku, rules));
+    const lines = pantry.blocks ? pantry.blocks[block] : null;
+    const people = (options.blockPeople || {}).people || {};
+    const heads = Number(people[block]);
+    const built = blockIntents(lines, label, options.days, pantry.cycleDays, staplesByName, staplesBySku, rules,
+      Number.isFinite(heads) ? heads : 1);
+    if ((lines || []).some((it) => String(it.per || "cycle") !== "cycle")) {
+      const where = (options.blockPeople || {}).fromOverride || [];
+      console.log(`  block ${label}: ${Number.isFinite(heads) ? heads : 1} people counted for the per-person lines`
+        + ` (${where.includes(block) ? "household.blockPeople" : "dinners.members"})`);
+    }
+    intents = intents.concat(built);
   }
   const extra = process.argv.flatMap((a, i2) => (a === "--extra" ? [process.argv[i2 + 1]] : []));
   const dinnerIds = poolState.usedPool ? poolState.dinnerIds : wantedIds;
@@ -684,6 +730,9 @@ async function main() {
   }
   const options = readOptions();
   const fam = loadFamily({ name: arg("family", null) });
+  // How many people each pantry block is bought for, set once here: collectIntents sees the
+  // derived household, not the profile object the headcounts are derived from.
+  options.blockPeople = fam.blockPeople || { people: {}, fromOverride: [] };
   options.family = fam;
   const household = fam.household;
   const pantry = fam.pantry;

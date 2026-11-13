@@ -205,3 +205,25 @@ test("the soft cap comes from the flag, then the profile, then nowhere", () => {
   assert.equal(softCapOf("0", null), null, "a zero cap is not a cap");
   assert.equal(softCapOf(null, null), null, "a family that set no budget gets no cap and no warning");
 });
+
+// --- plan.mjs: what a pantry line's quantity counts ------------------------------
+import { blockIntents } from "../plan.mjs";
+
+const noHistory = new Map();
+const saleOff = { preferSale: false, saleTolerancePct: 0 };
+const oneLine = (extra) => [{ id: "x", query: "Æble", qtyPerCycle: 1, unit: "stk", ...extra }];
+// 8 days planned, a 9-day cycle: the numbers below are chosen so each basis gives a
+// different, hand-checkable count and no rounding can hide a wrong factor.
+const lineFor = (extra, people) => blockIntents(oneLine(extra), "lunchbox", 8, 9, noHistory, noHistory, saleOff, people)[0];
+
+test("a pantry line states the basis its quantity is written on", () => {
+  assert.equal(lineFor({}, 3).need, "1 stk", "a mined line is what the household buys per cycle");
+  assert.match(lineFor({}, 3).note, /1 stk per cycle x 8 d \/ 9 d cycle/, "the old wording is unchanged");
+  assert.equal(lineFor({ per: "person-day" }, 3).need, "24 stk", "1 x 3 people x 8 days");
+  assert.equal(lineFor({ per: "person-day" }, 3).note, "1 stk per person-day x 3 people x 8 d");
+  assert.equal(lineFor({ per: "person-cycle" }, 3).need, "3 stk", "1 x 3 x 8 / 9 rounds up to 3");
+  assert.equal(lineFor({ per: "person-cycle" }, 1).note, "1 stk per person-cycle x 1 person x 8 d / 9 d cycle");
+  assert.equal(lineFor({ per: "person-day" }, 0).need, undefined, "nobody to count for buys nothing");
+  assert.match(lineFor({ per: "person-day" }, 0).skipped, /household.blockPeople.lunchbox is 0/, "and says why");
+  assert.equal(lineFor({}, 0).need, "1 stk", "a mined line keeps its floor even with no head-count");
+});

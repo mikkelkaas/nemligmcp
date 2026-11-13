@@ -1,0 +1,136 @@
+{
+  "comment": "pins: the control for lunchbox-two-children. Same two children, same eight days, no `per` on any line, so every quantity is the household total per cycle and two children cost no more than one. That is the behaviour a mined pantry.json has today, and it must stay exactly this cheap unless a line says otherwise.",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "no",
+    "--lunchbox",
+    "yes",
+    "--snacks",
+    "no",
+    "--household",
+    "off"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "dinners": {
+        "members": [
+          {
+            "role": "adult",
+            "count": 2,
+            "appetite": 1.1
+          },
+          {
+            "role": "child",
+            "count": 2,
+            "appetite": 0.7
+          }
+        ]
+      }
+    },
+    "pantry.json": {
+      "blocks": {
+        "kidLunchbox": [
+          {
+            "id": "kornvang-rugbroed",
+            "query": "Rugbrød Kornvang rugbrød",
+            "sku": "9000009",
+            "mode": "cheapest",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line"
+          },
+          {
+            "id": "brune-spegepoelser",
+            "query": "Spegepølse Brune spegepølser",
+            "sku": "9000010",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line"
+          },
+          {
+            "id": "havelhavarti",
+            "query": "Ost Havelhavarti skåret",
+            "sku": "9000008",
+            "mode": "cheapest",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line"
+          },
+          {
+            "id": "smaegulerodder",
+            "query": "Gulerod Små gulerødder",
+            "sku": "9000011",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line"
+          },
+          {
+            "id": "minipeberfrugter",
+            "query": "Peberfrugt Mini peberfrugter",
+            "sku": "9000012",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "everyNDays": 20
+          },
+          {
+            "id": "lang-agurk",
+            "query": "Agurk Lang agurk",
+            "sku": "9000013",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "unit": "stk"
+          },
+          {
+            "id": "tomater-paa-vine",
+            "query": "Tomat Tomater på vine",
+            "sku": "9000014",
+            "mode": "cheapest",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "unit": "stk",
+            "everyNDays": 20
+          },
+          {
+            "id": "roede-aebler",
+            "query": "Æble Røde æbler",
+            "sku": "9000015",
+            "mode": "cheapest",
+            "qtyPerCycle": 4,
+            "_note": "invented demo line",
+            "unit": "stk"
+          },
+          {
+            "id": "groenne-paerer",
+            "query": "Pære Grønne pærer",
+            "sku": "9000016",
+            "mode": "cheapest",
+            "qtyPerCycle": 3,
+            "_note": "invented demo line",
+            "unit": "stk"
+          },
+          {
+            "id": "makrelbiter",
+            "query": "Makrel Makrelbiter i sauce",
+            "sku": "9000017",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "everyNDays": 21
+          },
+          {
+            "id": "husets-mayonnaise",
+            "query": "Mayonnaise Husets mayonnaise",
+            "sku": "9000018",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "everyNDays": 45
+          }
+        ]
+      }
+    }
+  },
+  "shelf": {}
+}

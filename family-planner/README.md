@@ -141,7 +141,15 @@ write yours with `init-family.mjs`, as "One profile to tweak" describes.
   weekdays, `delivery.minWindowHours`). `profiles/family-EXAMPLE.json` shows the shape.
 - `profiles/pantry.json` — rebuy staples per block: `breakfast`, `kidLunchbox`,
   `snacks`, `household`. Each item has `query`, `qtyPerCycle`, `everyNDays`, `mode`
-  (`cheapest` or `history`), optional `sku` and `alt`.
+  (`cheapest` or `history`), optional `sku`, `alt` and `per`. **You write this file
+  yourself**: no script in this repository creates it (`pin-skus.mjs` only fills in the
+  `sku` of lines you wrote), so a clone has none and the plan
+  says so out loud instead of buying no breakfast in silence. Copy
+  `profiles/pantry-EXAMPLE.json`, which documents every field and carries invented
+  quantities, and set `cycleDays` to how often you shop. `per` says what a line's
+  quantity counts — `cycle` (the default, and what a number measured from your own
+  orders means), `person-day` (an apple per lunch box per day) or `person-cycle` (a
+  cheese pack per child per cycle).
 - `profiles/dinners.json` — the dinner cores your history supports. Each stays within the
   profile's `dinners.maxRecipeMinutes` and covers `dinners.maxNightsPerDinner` evenings for
   your household's portions. An ingredient has `query`, `need` and optional `alt`.
@@ -334,7 +342,7 @@ in the plan.
 Rebuild the generated data with these, in this order, about once a month:
 
 ```bash
-node mine-history.mjs            # order history to data/staples.json + profiles/pantry.json
+node mine-history.mjs            # order history to data/staples.json, history-raw.json, recipes.json, patterns.json
 node mine-recipes.mjs            # every order's raw lines, recipe lines included
 node mine-recipes-fetch.mjs      # the recipe page of every recipe you have ordered
 node mine-recipes-analyze.mjs    # recipe ingredients vs what you actually bought

@@ -669,3 +669,20 @@ test("a need is rounded up to a weight a shopper can read", () => {
   // factor: an exact number stays exact.
   assert.equal(potFor(8, 5), "800 g", "an exact figure is left alone");
 });
+
+// --- who a pantry block is bought for --------------------------------------------
+import { blockPeopleOf } from "../family.mjs";
+
+test("a block's head-count comes from the members and can be overridden", () => {
+  const twoAdultsOneChild = { dinners: { members: [{ role: "adult", count: 2, appetite: 1 }, { role: "child", count: 1, appetite: 0.6 }] } };
+  const derived = blockPeopleOf(twoAdultsOneChild, { people: 5 }).people;
+  assert.deepEqual(derived, { breakfast: 3, kidLunchbox: 1, snacks: 1, household: 1 });
+  // A family where the grown-ups take a lunch box too says so; the planner cannot guess it.
+  const adultsToo = blockPeopleOf({ ...twoAdultsOneChild, household: { blockPeople: { kidLunchbox: 3 } } }, { people: 5 });
+  assert.equal(adultsToo.people.kidLunchbox, 3, "the profile wins");
+  assert.deepEqual(adultsToo.fromOverride, ["kidLunchbox"], "and the plan says which block was overridden");
+  // A family with no children buys no child lines, rather than one set by habit.
+  const noChildren = blockPeopleOf({ dinners: { members: [{ role: "adult", count: 2, appetite: 1 }] } }, { people: 2 });
+  assert.equal(noChildren.people.kidLunchbox, 0, "nobody to pack for");
+  assert.equal(noChildren.people.breakfast, 2, "but breakfast is still for everyone");
+});

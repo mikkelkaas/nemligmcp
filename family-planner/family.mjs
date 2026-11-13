@@ -19,6 +19,32 @@ function readJson(path, fallback) {
   }
 }
 
+/**
+ * How many people a pantry block is bought for. A lunch box is a fixed kit per person, so
+ * the lines that mean "one per person per day" scale with heads, not with appetite: a
+ * three-year-old and a teenager both put one apple and one slice of bread in a box.
+ * The paper-and-cleaning block scales with nobody. `household.blockPeople` in the profile
+ * overrides any of these, because the planner cannot know who packs a lunch box in a
+ * family where the grown-ups take one too.
+ */
+export function blockPeopleOf(profile, household) {
+  const members = ((profile || {}).dinners || {}).members || [];
+  const heads = (list) => list.reduce((n, m) => n + (Number(m.count) || 0), 0);
+  const isChild = (m) => /child|teen|ung|barn|baby/i.test(String((m || {}).role || ""));
+  const children = heads(members.filter(isChild));
+  const total = heads(members) || Number((household || {}).people) || 1;
+  const derived = { breakfast: total, kidLunchbox: children, snacks: children, household: 1 };
+  const override = ((profile || {}).household || {}).blockPeople || {};
+  const people = {}, fromOverride = [];
+  for (const block of Object.keys(derived)) {
+    const raw = Number(override[block]);
+    const useOverride = Number.isFinite(raw) && raw >= 0;
+    people[block] = useOverride ? raw : derived[block];
+    if (useOverride) fromOverride.push(block);
+  }
+  return { people, fromOverride, derived };
+}
+
 /** The active profile: --name or NEMLIG_FAMILY_PROFILE, else the only family-*.json. */
 export function findProfileFile(dir = PROFILES, name = process.env.NEMLIG_FAMILY_PROFILE || null) {
   // family-EXAMPLE.json is the shipped template, not a family.
@@ -209,6 +235,10 @@ export function loadFamily({ dir = PROFILES, name = null } = {}) {
     amounts: readJson(`${dir}/amounts.json`, {}),
     pool: readJson(`${dir}/recipe-pool.json`, { pool: [] }),
     dinners: readJson(`${dir}/dinners.json`, { dinners: [] }),
-    pantry: readJson(`${dir}/pantry.json`, { items: [] }),
+    // A missing pantry.json means no breakfast and no lunch-box lines, not a crash:
+    // nothing in this repository writes that file, so a fresh clone has none.
+    pantry: readJson(`${dir}/pantry.json`, { blocks: {}, cycleDays: 30 }),
+    pantryExists: existsSync(`${dir}/pantry.json`),
+    blockPeople: blockPeopleOf(profile, householdOf(profile)),
   };
 }
