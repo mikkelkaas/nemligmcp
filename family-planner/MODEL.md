@@ -204,6 +204,23 @@ well and is not the light mayonnaise. Each of these choices is printed on the pl
 counted in the run summary, because it is the only place the planner overrides a favourite
 on price.
 
+A pinned favourite is still bound by the never-list (`attempt`, `catalog.mjs`). The rivals of
+a pin were filtered by `avoidBrands` and `avoidWords`; the pin itself was not, so a family
+that typed `--avoid "First Price"` got the First Price yoghurt on the plan anyway, printed as
+"family favourite sku, still in stock". Measured live on 2026-11-14: that flag emptied every
+rival of that brand on the shelf and still bought it, 1 line left of 7. Now the favourite
+passes the same two filters as its rivals, and the line reads "usual sku 5006632 refused:
+brand First Price - your own never-list outranks the favourite". The unit-price ceiling is
+deliberately NOT one of those filters: a favourite is what a family buys at its own price, and
+the comparison above already weighs it against the shelf. The plan's
+`## Favourite SKUs not bought today` keeps the two reasons apart, because a favourite the
+family refused and a favourite the shelf dropped are different conversations. The golden case
+that refuses an invented brand (`over-cap-trim`) had its baseline re-recorded on 2026-11-14 for
+exactly this reason: the refused milk no longer slips in as a favourite, so the case is 35
+lines and 1740,94 kr against 36 lines and 1803,94 kr, with 3 unsolved lines instead of 2 - and
+every one of them now reads "your own never-list refused them (brand Nordvang)" instead of
+"not available".
+
 `apply.mjs` reads the ledger back and checks the claim: the substitute of a swap must be in
 the plan, a deferred line must not be, `trimAfter` must equal the items, and `trimShortfall`
 must follow from the ceiling. The report prints both pack sizes of a swap: only a person can
@@ -405,6 +422,30 @@ as a taste on 2026-11-13.
   product is out, the 40 kr one is chosen); without it, the refused product is bought. That
   object is now a function (`searchIntentOf`) with a test over it - the tests that call
   `resolveIntent` pass the fields by hand and could never have seen this.
+
+- **A flag word is believed, and a flag that cannot be believed says so.** (found while
+  evaluating the whole codebase on 2026-11-14: 21 live scenarios, graded A-, one of them F).
+  `yesNo` accepted `yes|no|ja|nej|true|false|1|0` and nothing else, while `--help` and README
+  documented `--trim on|off`. So `--trim off` fell back to the default `on`. Measured on this
+  family's shelf, two copies of one state, one 14-day menu: `--trim on` ended at 1499,30 kr
+  against the 1500 kr ceiling, `--trim off` ended at the same 1499,30 kr, where the basket
+  with no ceiling was 2469,61 kr. The same fall-back made `--breakfast off` buy breakfast.
+  Both words now mean what the help text says, the ceiling is decided by one exported function
+  (`capOf`), and a bound a flag carries is reported before a single shop call:
+  `--days 99999 is outside 1-14 - this run uses 14 evenings instead`. Determinism was measured
+  the same afternoon: the same command against an identical home gives an identical item
+  sequence, and five runs against the live home gave three different baskets, because the menu
+  alternates against the plan the previous run wrote. That plan is now named in the plan file
+  (`menuAgainst`) and in the plan markdown, because an explained move is not a bug.
+  Two more findings came out of the same battery, and both were silent and both were money.
+  `planAgeHours` reached for a seventh capture group out of six, so a plan file carrying only
+  its da-DK stamp was read as having no age at all and the 12 h gate never spoke; it now
+  refuses a stamp it cannot read rather than taking it for fresh, and `--allow-stale` is still
+  the way out. And the first probe of the plan file looked for the basket total under `total`
+  and reported it missing: the field is `planTotal`, and `validatePlan` already checks it
+  against the items - which is how a plan with no products was refused with `trimAfter 1333.8
+  is not the 0 planned items, which add up to 0`. Name the field you measured, not the one you
+  guessed.
 
 One loose end, and it is a family's to cut: their profile still maps `piskefløde` onto
 "Fløde" in `queryAliases`, and the 4 % rule answers that line first, so the alias is dead

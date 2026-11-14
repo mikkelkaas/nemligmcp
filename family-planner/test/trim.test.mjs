@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { trimItems, bestSwap, packsForAlt, delivered, rankOf, rankLabel } from "../trim.mjs";
+import { capOf } from "../plan.mjs";
 
 const item = (over = {}) => ({
   sku: "100", name: "Produkt", brand: "Brand", price: 10, packs: 1, total: 10,
@@ -186,4 +187,20 @@ test("the child's lunch box is the last thing a ceiling cuts", () => {
   ];
   const r = trimItems(items, { capKr: 35, minSwapKr: 5 });
   assert.deepEqual(r.actions.map((a) => [a.action, a.sku]), [["defer", "b"]], "breakfast goes before the lunch box");
+});
+
+test("--trim off plans a basket over its ceiling whole; --trim on meets the ceiling", () => {
+  // The measured case from a real shelf: 1600 kr planned against a 1500 kr budget. With
+  // --trim off the flag used to be read as yes, so this basket came back trimmed anyway and
+  // the plan carried a warning nobody had asked for.
+  const items = [item({ sku: "100", total: 900, price: 900 }), item({ sku: "101", total: 700, price: 700 })];
+  assert.equal(capOf("off", "1500", null), null, "off hands the trimmer no ceiling");
+  const off = trimItems(items, { capKr: capOf("off", "1500", null) });
+  assert.equal(off.actions.length, 0, "nothing is put back");
+  assert.equal(off.after, 1600, "the whole basket stands, over the ceiling and all");
+  assert.equal(off.shortfall, 0, "and it is not reported as a shortfall");
+  const on = trimItems(items, { capKr: capOf("on", "1500", null) });
+  assert.equal(on.actions.length, 1, "on meets the ceiling by putting one line back");
+  assert.equal(on.after, 700);
+  assert.equal(on.shortfall, 0);
 });

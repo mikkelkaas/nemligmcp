@@ -1,8 +1,7 @@
 {
- "items": 36,
- "total": 1803.94,
+ "items": 35,
+ "total": 1740.94,
  "skus": [
-  "9000001",
   "9000003",
   "9000004",
   "9000005",
@@ -39,7 +38,7 @@
   "9000039",
   "9000040"
  ],
- "unresolved": 2,
+ "unresolved": 3,
  "score": {
   "accuracy": 1,
   "completeness": 1,

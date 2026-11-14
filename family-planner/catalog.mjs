@@ -224,36 +224,44 @@ async function attempt(mcp, query, intent, cache) {
   }
   const need = intent.need ? (typeof intent.need === "string" ? parseNeed(intent.need) : intent.need) : null;
   const pinned = mode === "history" && intent.sku ? matching.find((p) => String(p.id) === String(intent.sku)) : null;
-  const pinMissed = mode === "history" && intent.sku && !pinned ? String(intent.sku) : null;
-  if (pinned) {
-    const packs = need ? packsFor(need, pinned.pack, { pieceWeight: pieceWeightOf(pinned), name: pinned.name }) : 1;
+  // A pinned favourite is still bound by the family's never-list. "Never this brand" is the
+  // stronger statement of the two, and the rivals below are filtered that way already - the
+  // pin was not, so a brand the family refused came back as the favourite. maxUnitPrice is
+  // deliberately NOT checked here: that is a price preference, and sale-vs-usual below
+  // already trades the pin against the rivals on price.
+  const pinCheck = pinned ? eligibleOf([pinned], { avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords }) : null;
+  const pinRefused = pinCheck && pinCheck.eligible.length === 0 ? (pinCheck.rejected[0] || { why: "refused by the never-list" }) : null;
+  const keep = pinned && !pinRefused ? pinned : null;
+  const pinMissed = mode === "history" && intent.sku && !keep ? String(intent.sku) : null;
+  if (keep) {
+    const packs = need ? packsFor(need, keep.pack, { pieceWeight: pieceWeightOf(keep), name: keep.name }) : 1;
     // The rivals of the sku the family actually buys, through the same filter as any
     // other pick: deliverable, not an avoided brand, under the unit-price ceiling. A
     // trim decision reads these, so it never promises a saving the shop cannot deliver.
-    const rivals = eligibleOf(matching.filter((p) => String(p.id) !== String(pinned.id)), {
+    const rivals = eligibleOf(matching.filter((p) => String(p.id) !== String(keep.id)), {
       avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
     }).eligible.slice()
       .sort((a, b) => (Number(a.unitPrice) || Number.MAX_VALUE) - (Number(b.unitPrice) || Number.MAX_VALUE)
         || (Number(a.price) || Number.MAX_VALUE) - (Number(b.price) || Number.MAX_VALUE))
       .slice(0, 3);
-    const pinTotal = Number((pinned.price * packs).toFixed(2));
-    const sale = saleBeatsPin(query, pinned, packs, rivals.map(altOf), need, intent);
+    const pinTotal = Number((keep.price * packs).toFixed(2));
+    const sale = saleBeatsPin(query, keep, packs, rivals.map(altOf), need, intent);
     if (sale) {
-      const kept = [pickOf(pinned)].concat(rivals.filter((r) => String(r.id) !== String(sale.rival.id)));
+      const kept = [pickOf(keep)].concat(rivals.filter((r) => String(r.id) !== String(sale.rival.id)));
       return {
         ok: true, query, mode, pick: pickOf(sale.rival), packs: sale.packs, need, total: sale.total,
-        why: `the usual sku ${pinned.id} is not today's deal: ${sale.rival.name} on sale, ${sale.packs} x `
+        why: `the usual sku ${keep.id} is not today's deal: ${sale.rival.name} on sale, ${sale.packs} x `
           + `${Number(sale.rival.price).toFixed(2)} kr = ${sale.total.toFixed(2)} kr against ${pinTotal.toFixed(2)} kr `
-          + `for the usual (${pinned.name})`,
-        compare: "sale-vs-usual", usual: pinned.id, savedKr: sale.savedKr,
+          + `for the usual (${keep.name})`,
+        compare: "sale-vs-usual", usual: keep.id, savedKr: sale.savedKr,
         candidates: matching.length, cached, ageMs, stale,
         alternatives: kept.slice(0, 3).map(altOf),
       };
     }
     return {
-      ok: true, query, mode, pick: pickOf(pinned), packs, need,
+      ok: true, query, mode, pick: pickOf(keep), packs, need,
       total: pinTotal,
-      why: "family favourite sku, still in stock" + (pinned.onSale ? "; tilbud" : ""), compare: "sku-pin",
+      why: "family favourite sku, still in stock" + (keep.onSale ? "; tilbud" : ""), compare: "sku-pin",
       candidates: matching.length, cached, ageMs, stale,
       alternatives: rivals.map(altOf),
     };
@@ -264,8 +272,17 @@ async function attempt(mcp, query, intent, cache) {
   });
   if (!res.pick) {
     const sub = await proposeSubstitute(mcp, query, intent, cache);
-    return { ok: false, query, why: "all " + matching.length + " name matches were unavailable" + (sub ? " - cheapest alternative found, see substitution" : ""),
-      candidates: matching.length, substitution: sub, cached, ageMs };
+    // "Unavailable" and "refused" are different sentences. A shelf that holds exactly the
+    // product your never-list refuses is not empty, and a person reading "not available"
+    // would go looking for stock instead of reading their own words.
+    const split = eligibleOf(matching, { avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice });
+    const refusals = [...new Set(split.rejected.filter((r) => /brand|name says/i.test(String(r.why || ""))).map((r) => r.why))];
+    const refusedText = refusals.length && split.eligible.length === 0
+      ? `; your own never-list refused them (${refusals.slice(0, 2).join(", ")})` : "";
+    return { ok: false, query, why: "all " + matching.length + " name matches were unavailable" + refusedText
+        + (sub ? " - cheapest alternative found, see substitution" : ""),
+      candidates: matching.length, substitution: sub, cached, ageMs,
+      pinMissed: pinMissed || null, pinRefused: pinRefused ? String(pinRefused.why || "refused by the never-list") : null };
   }
   // One decision over the whole shelf, as a person does: cover the need for the lowest
   // total price, with bounded slack. Falls back to ceil(need/pack) when the need cannot
@@ -288,7 +305,13 @@ async function attempt(mcp, query, intent, cache) {
       ? `need ${need.qty} ${need.unit}, pack is ${res.pick.pack.qty} ${res.pick.pack.unit} - bought ${packs} pack`
       : null;
   const bits = [];
-  bits.push(mode === "history" && intent.sku ? `usual sku ${intent.sku} not offered today — cheapest option used` : "cheapest per unit");
+  if (mode === "history" && intent.sku) {
+    // Two different reasons, and a person reads them differently: the shelf let the
+    // favourite go, or the family's own never-list outranked it.
+    bits.push(pinRefused
+      ? `usual sku ${intent.sku} refused: ${pinRefused.why} - your own never-list outranks the favourite`
+      : `usual sku ${intent.sku} not offered today — cheapest option used`);
+  } else bits.push("cheapest per unit");
   if (res.saleNote) bits.push(res.saleNote);
   if (bought) bits.push(bought.why);
   // Say it out loud when the winner is priced on a different axis than the shelf's
@@ -303,7 +326,11 @@ async function attempt(mcp, query, intent, cache) {
     ok: true, query, mode, pick: pickOf(chosen), packs, need,
     total: Number((chosen.price * packs).toFixed(2)),
     why: mismatch ? why + "; " + mismatch : why,
-    compare: res.mode, candidates: matching.length, cached, ageMs, stale, pinMissed, campaignTip: res.campaignTip || null,
+    compare: res.mode, candidates: matching.length, cached, ageMs, stale, pinMissed,
+    // The reason the favourite was not bought, when the family's own never-list is why. The
+    // plan prints it, so a pin that vanished is never mistaken for a product out of stock.
+    pinRefused: pinRefused ? String(pinRefused.why || "refused by the never-list") : null,
+    campaignTip: res.campaignTip || null,
     alternatives: (res.alternatives || []).map(altOf),
   };
 }

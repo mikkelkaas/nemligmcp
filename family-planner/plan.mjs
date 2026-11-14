@@ -48,11 +48,98 @@ const KNOWN_FLAGS = ["family", "days", "people", "breakfast", "lunchbox", "snack
   "soft-cap", "avoid", "fresh", "serial", "max-minutes", "dinners", "cores", "covers",
   "max-per-protein", "extra", "extra-file", "max-kr", "trim", "debug", "help"];
 
-function yesNo(value, dflt) {
+/** A flag word for yes or no, in the words a person actually types, Danish included.
+ *  Returns null when the word means neither, so the caller reports what it used instead.
+ *  "on" and "off" belong here: --trim is documented as on|off, and an unknown word fell
+ *  back to the default. So "--trim off" trimmed anyway, and "--breakfast off" bought
+ *  breakfast. Both were believed, and neither was true. */
+export function boolWord(value) {
   const s = String(value == null ? "" : value).trim().toLowerCase();
-  if (["yes", "y", "ja", "true", "1"].includes(s)) return true;
-  if (["no", "n", "nej", "false", "0"].includes(s)) return false;
-  return dflt;
+  if (["yes", "y", "ja", "on", "true", "1"].includes(s)) return true;
+  if (["no", "n", "nej", "off", "false", "0"].includes(s)) return false;
+  return null;
+}
+function yesNo(value, dflt) {
+  const b = boolWord(value);
+  return b === null ? dflt : b;
+}
+
+/** A whole number inside a range, or the default when the value is no number at all. */
+export function clampInt(raw, min, max, dflt) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+// One row per flag that carries a value, holding the same limits readOptions applies to it.
+// One table for both, so a note can never promise a number the run did not use. Two flags
+// are left out on purpose: --household reports its own value through householdMode, and
+// --max-per-protein falls back to the profile's rotation number, which no flag can name.
+const MINUTES_DEFAULT = clampInt(process.env.NEMLIG_MAX_MINUTES, 1, 60, 15);
+const FLAG_SPECS = [
+  { name: "days", kind: "int", min: 1, max: 14, dflt: 8, unit: "evenings", unitOne: "evening" },
+  { name: "people", kind: "int", min: 1, max: 99, dflt: 5, unit: "people", unitOne: "person" },
+  { name: "covers", kind: "int", min: 1, max: 14, dflt: 2, unit: "days a dinner covers" },
+  { name: "max-minutes", kind: "int", min: 1, max: 60, dflt: MINUTES_DEFAULT, unit: "minutes of shop calls", unitOne: "minute of shop calls" },
+  { name: "max-kr", kind: "kr", applies: "the profile's ceiling" },
+  { name: "soft-cap", kind: "kr", applies: "the profile's soft cap" },
+  { name: "trim", kind: "bool", dfltWord: "on" },
+  { name: "breakfast", kind: "bool", dfltWord: "yes" },
+  { name: "lunchbox", kind: "bool", dfltWord: "yes" },
+  { name: "snacks", kind: "bool", dfltWord: "no" },
+  { name: "avoid", kind: "empty", none: "names nothing - this run avoids nothing" },
+  { name: "dinners", kind: "empty", none: "names no dish - this run uses the rotation" },
+  { name: "extra", kind: "empty", none: "names nothing - this run adds no extra list" },
+  { name: "extra-file", kind: "empty", none: "names no file - this run reads no extra list" },
+  { name: "family", kind: "empty", none: "names no profile - this run takes the only profile in the folder, or stops and asks which one" },
+];
+
+/** The value a flag was given, or undefined when the flag is absent. A flag word in the
+ *  value position is no value: --avoid --days 8 avoids nothing, it does not avoid "--days". */
+function flagValue(argv, name) {
+  const i = argv.indexOf("--" + name);
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  if (v === undefined || String(v).startsWith("--")) return "";
+  return String(v);
+}
+
+/** One note per flag whose value could not be used as given, naming the value that was used.
+ *  A silent default is what made --trim off decorative: the flag was read, the behaviour was
+ *  not. Printed before a single shop call, so a typo costs no wait and no re-plan. */
+export function flagNotes(argv, known = KNOWN_FLAGS) {
+  const notes = [];
+  for (const spec of FLAG_SPECS) {
+    if (!known.includes(spec.name)) continue;
+    const raw = flagValue(argv, spec.name);
+    if (raw === undefined) continue;
+    const note = noteOfFlag(spec, raw);
+    if (note) notes.push(note);
+  }
+  return notes;
+}
+
+function noteOfFlag(spec, raw) {
+  if (spec.kind === "int") {
+    const applied = clampInt(raw, spec.min, spec.max, spec.dflt);
+    const unit = applied === 1 && spec.unitOne ? spec.unitOne : spec.unit;
+    if (!Number.isFinite(Number(raw))) {
+      return `--${spec.name} "${raw}" is not a number - this run uses ${applied} ${unit} instead`;
+    }
+    if (applied === Number(raw)) return null;
+    return `--${spec.name} ${raw} is outside ${spec.min}-${spec.max} - this run uses ${applied} ${unit} instead`;
+  }
+  if (spec.kind === "kr") {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return null;
+    return `--${spec.name} "${raw}" is not an amount in kr above 0 - this run uses ${spec.applies} instead`;
+  }
+  if (spec.kind === "bool") {
+    if (boolWord(raw) !== null) return null;
+    return `--${spec.name} "${raw}" is not yes or no - this run uses ${spec.dfltWord} instead`;
+  }
+  if (raw.trim() !== "") return null;
+  return `--${spec.name} "" ${spec.none}`;
 }
 function norm(s) {
   return String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -357,11 +444,15 @@ function bulkOffersOf(resolved) {
   return [...by.values()].sort((a, b) => b.beatsBy - a.beatsBy).slice(0, 10);
 }
 
-/** Favourite SKUs the profile pins but Namlig no longer returns. */
+/** Favourite SKUs the profile pins that were not bought: gone from the shelf, or refused by
+ *  the family's own never-list. The difference is a different conversation, so it is kept. */
 function stalePinsOf(resolved) {
   const out = [];
   for (const r of resolved) {
-    if (r.ok && r.pinMissed) out.push({ sku: r.pinMissed, source: r.source, using: r.pick ? r.pick.name : "cheapest" });
+    if (r.ok && r.pinMissed) out.push({
+      sku: r.pinMissed, source: r.source, using: r.pick ? r.pick.name : "cheapest",
+      refused: r.pinRefused || null,
+    });
   }
   return out;
 }
@@ -369,11 +460,19 @@ function stalePinsOf(resolved) {
 /** The cap a run is measured against: --soft-cap wins, else the profile, else none.
  *  Exported for the suite: a family that set no budget must get no warning, and that
  *  needs a profile without a budget to prove, which is cheaper to test than to run. */
-export function softCapOf(flagValue, profileValue) {
-  const flag = Number(flagValue);
+export function softCapOf(flagKr, profileValue) {
+  const flag = Number(flagKr);
   if (Number.isFinite(flag) && flag > 0) return flag;
   const profile = Number(profileValue);
   return Number.isFinite(profile) && profile > 0 ? profile : null;
+}
+
+/** The ceiling this run must meet, or null when it may only warn about the soft cap.
+ *  --trim off is the one thing that must never be read as yes: it plans the whole basket
+ *  and lets the warning stand. Kept out of main so the suite can prove it on one shelf. */
+export function capOf(trimWord, flagKr, profileKr) {
+  if (!yesNo(trimWord == null ? "on" : trimWord, true)) return null;
+  return softCapOf(flagKr, profileKr);
 }
 
 /** Sale policy, read from the household profile so a family tunes it in one place. */
@@ -499,6 +598,12 @@ function markdownSwaps(plan) {
 
 function markdownNotes(plan) {
   const L = [];
+  if (plan.menuAgainst && plan.menuAgainst.at) {
+    L.push("", "## Menu ranked against", "");
+    L.push(`The menu is the least recently cooked draw, and the rotation ranks it against one plan file.`);
+    L.push(`That plan: ${plan.menuAgainst.at}, ${plan.menuAgainst.dinners} dinners, ${plan.menuAgainst.total.toFixed(2)} kr (data/plans/plan-latest.json before this run).`);
+    L.push("Run the same command again and the menu moves, so the basket can differ. This line is what changed.");
+  }
   if ((plan.bulkOffers || []).length) {
     L.push("", "## Bulk offers — cheaper only at the stated quantity (not applied)", "");
     for (const b of plan.bulkOffers) {
@@ -506,10 +611,13 @@ function markdownNotes(plan) {
     }
   }
   if ((plan.stalePins || []).length) {
-    L.push("", "## Stale favourite SKUs — Namlig did not offer them today", "");
-    L.push("Refresh with `node pin-skus.mjs --write` (run `node mine-history.mjs` first if it has been a while).");
+    const gone = plan.stalePins.filter((p) => !p.refused);
+    L.push("", "## Favourite SKUs not bought today", "");
+    if (gone.length) L.push("Refresh with `node pin-skus.mjs --write` (run `node mine-history.mjs` first if it has been a while).");
     L.push("");
-    for (const p of plan.stalePins) L.push(`- ${p.source}: sku ${p.sku} not offered, used ${p.using}`);
+    for (const p of plan.stalePins) {
+      L.push(`- ${p.source}: sku ${p.sku} ${p.refused ? `refused by your own never-list (${p.refused})` : "not offered"}, used ${p.using}`);
+    }
   }
   if (plan.skipped.length) {
     L.push("", "## Skipped by stock cycle", "");
@@ -579,7 +687,7 @@ function poolDinnerIntents(options, wanted, rules) {
   const COOKED = BASE + "/data/cooked-log.jsonl";
   const cookedTimes = readCookHistory({ linesFile: BASE + "/data/order-lines-raw.jsonl", rotationFile: BASE + "/data/rotation.json", cookedFile: COOKED });
   const lastUsed = readRotation({ plansDir: BASE + "/data/plans", linesFile: BASE + "/data/order-lines-raw.jsonl", rotationFile: BASE + "/data/rotation.json", cookedFile: COOKED });
-  const coversDays = Number(arg("covers", "2")) || 2;
+  const coversDays = options.covers;
   const pick = chooseDinners(fam.pool.pool, {
     days: options.days, coversDays, lastUsed, wanted,
     preferLeftovers: fam.household.preferLeftovers,
@@ -741,8 +849,11 @@ function printSummary(plan, diff, options, planTotal, jsonPath, mdPath) {
 function readOptions() {
   const a = (name, dflt) => arg(name, dflt);
   return {
-    days: Math.max(1, Math.min(14, Number(a("days", "8")) || 8)),
-    people: Math.max(1, Number(a("people", "5")) || 5),
+    // Every bound here is the bound flagNotes quotes, through clampInt. Two places that
+    // clamp the same flag differently is how a note ended up lying about the run.
+    days: clampInt(a("days", "8"), 1, 14, 8),
+    people: clampInt(a("people", "5"), 1, 99, 5),
+    covers: clampInt(a("covers", "2"), 1, 14, 2),
     breakfast: yesNo(a("breakfast", null), true),
     lunchbox: yesNo(a("lunchbox", null), true),
     snacks: yesNo(a("snacks", null), false),
@@ -750,7 +861,7 @@ function readOptions() {
     softCapKr: a("soft-cap", null),   // no default: the profile decides, see softCapOf
     // A ceiling is not a warning: budget.maxKrPerPlan makes the plan trim itself.
     maxKrPerPlan: a("max-kr", null),
-    trim: a("trim", "on"),            // "off" plans it whole and lets the soft cap warn only
+    trim: a("trim", "on"),            // off plans it whole and lets the soft cap warn only
     avoid: (a("avoid", "") || "").split(",").map((s) => s.trim()).filter(Boolean),
     fresh: process.argv.includes("--fresh"),
     // --serial is the polite switch: one call at a time, wider spacing. Use it when the
@@ -761,15 +872,13 @@ function readOptions() {
 }
 
 /** A run may not spend more than this much wall clock on shop calls. */
-function maxRunMinutes(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 15;
-  return Math.max(1, Math.min(60, Math.floor(n)));
+export function maxRunMinutes(value) {
+  return clampInt(value, 1, 60, 15);
 }
 
 const USAGE = [
   "usage: node plan.mjs [options]  (dry run: nothing is written to the basket)",
-  "  --days 8                1-14 evenings        --breakfast|--lunchbox|--snacks yes|no",
+  "  --days 8                1-14 evenings        --breakfast|--lunchbox|--snacks yes|no|on|off|ja|nej",
   "  --household auto|off    --people N           --soft-cap <kr>  (default: the profile's budget.softCapKr)",
   "  --max-kr <kr>           --trim on|off        (default: the profile's budget.maxKrPerPlan; a ceiling is met by swapping the brand first, then putting lines back)",
   "  --family <name>         --covers 2           --dinners <name>    (a menu name)",
@@ -778,6 +887,7 @@ const USAGE = [
   "  --serial                one request at a time, wider spacing",
   "  --max-minutes 15        stop the run after this much wall clock",
   "  --debug                 print the stack on a failure",
+  "  A value that cannot be used as given is reported with a warn line, naming the value used.",
   "plan file: data/plans/plan-latest.md and plan-latest.json",
 ].join("\n");
 
@@ -791,6 +901,15 @@ async function main() {
     console.log("  warn  --dinners only picks from the pinned cores: add --cores, else the rotation pool decides the menu");
   }
   const options = readOptions();
+  // Before a single shop call: a flag whose value was not used as given says so here, and
+  // says what the run went to instead. Silence is how --trim off survived being false.
+  for (const note of flagNotes(process.argv, KNOWN_FLAGS)) console.log("  warn  " + note);
+  warnUnknownFlags(process.argv, KNOWN_FLAGS);
+  // The rotation ranks dinners by how recently they were cooked and reads data/plans to do
+  // it, so the menu is a move against the last plan written. Name that plan: the same
+  // command run twice can buy a different basket, and that looks like a bug without a line.
+  const menuAgainst = previousPlanOf(BASE + "/data/plans");
+  console.log(menuLineOf(menuAgainst));
   const fam = loadFamily({ name: arg("family", null) });
   // How many people each pantry block is bought for, set once here: collectIntents sees the
   // derived household, not the profile object the headcounts are derived from.
@@ -821,14 +940,13 @@ async function main() {
   const live = grouped.intents;
   console.log(`Resolving ${live.length} intents (${grouped.collapsed} product(s) summed across lines, ${skipped.length} skipped by stock cycle) against Namlig...`);
 
-  warnUnknownFlags(process.argv, KNOWN_FLAGS);
   const { mcp, resolved, oldestCacheMs, timing } = await resolveAll(live, options);
   const tAfterResolve = Date.now();
   const merged = mergeItems(resolved, options.purchasing);
   // A ceiling the family set is a request to decide, not a request to be warned: the
   // brand goes first, the treats go first among the removals, and a dinner's own
   // ingredient is never touched. --trim off plans it whole and lets the warning stand.
-  const capKr = yesNo(arg("trim", "on"), true) ? softCapOf(options.maxKrPerPlan, household.maxKrPerPlan) : null;
+  const capKr = capOf(options.trim, options.maxKrPerPlan, household.maxKrPerPlan);
   const trimmed = trimItems(merged.items, {
     capKr, minSwapKr: household.minSwapKr, purchasing: options.purchasing,
     swapNeverWords: household.swapNeverWords,
@@ -861,6 +979,7 @@ async function main() {
     dinnerMenu: menu.menu,
     dinnerSource: dinnerSource || "cores",
     dinnerLeftOut: leftOut || [],
+    menuAgainst,
     uncoveredDays: menu.uncoveredDays,
     daysPerDinner: menu.daysPerDinner,
     householdNote: famText,
@@ -896,6 +1015,29 @@ async function main() {
   const paths = writePlan(plan, diff);
   console.log(`Timing: plan written in ${((Date.now() - tAfterResolve) / 1000).toFixed(1)}s, whole run ${((Date.now() - tRun) / 1000).toFixed(1)}s.`);
   printSummary(plan, diff, options, planTotal, paths.jsonPath, paths.mdPath);
+}
+
+/** The plan file this run's menu was ranked against: the newest plan on disk before this
+ *  run, read through the same alias the rotation reads. Returns null when there is none,
+ *  and { broken: true } when the file is there but cannot be read - a guess is not a fact.
+ *  Called before writePlan, because after it there is no "before" left to name. */
+export function previousPlanOf(plansDir) {
+  const alias = plansDir + "/plan-latest.json";
+  if (!existsSync(alias)) return null;
+  let prev = null;
+  try { prev = JSON.parse(readFileSync(alias, "utf8")); } catch { return { broken: true }; }
+  if (!prev || typeof prev !== "object") return { broken: true };
+  const menu = Array.isArray(prev.dinnerMenu) ? prev.dinnerMenu : [];
+  const total = Number(prev.planTotal);
+  return { at: prev.createdAt || prev.atIso || "unknown time", dinners: menu.length, total: Number.isFinite(total) ? total : 0 };
+}
+
+/** One line saying which plan the menu was a move against, or why that cannot be said. */
+function menuLineOf(prev) {
+  if (!prev) return "Menu: no earlier plan on disk, so every dish counted as never cooked.";
+  if (prev.broken) return "Menu: the newest plan file could not be read, so the menu was ranked without it.";
+  return `Menu: ranked against the plan of ${prev.at} - ${prev.dinners} dinners, ${prev.total.toFixed(2)} kr. `
+    + "The rotation moves against that plan, so the same command twice can buy a different basket.";
 }
 
 /** Save the plan under a timestamp plus the two plan-latest aliases. */

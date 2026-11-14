@@ -286,33 +286,58 @@ async function writeBasket({ plan, planPath, slotId, keepGoing, wantCards, house
   if (failed.length) process.exitCode = 1;
 }
 
-/** Refuse to write when the plan is not applicable. Returns null when all is well. */
-function refusalReason(plan, planMaxAgeHours) {
-  if ((plan.unresolved || []).length > 0 && !process.argv.includes("--ignore-unresolved")) {
+/** Refuse to write when the plan is not applicable. Returns null when all is well.
+ *  Exported for the suite: these two refusals are the last thing between a stale plan and a
+ *  real basket, and they are worth testing without anybody's shop. The flags arrive as a
+ *  list so a test can hand them over instead of rewriting process.argv. */
+export function refusalReason(plan, planMaxAgeHours, argv = process.argv) {
+  if ((plan.unresolved || []).length > 0 && !argv.includes("--ignore-unresolved")) {
     const lines = (plan.unresolved || []).map((u) => "  - " + u.query + " (" + u.source + ")").join("\n");
     return { code: 4, text: `REFUSED: ${plan.unresolved.length} intent(s) had no product. Fix them, or pass --ignore-unresolved to add only what was found.\n${lines}` };
   }
   const maxAge = Number(planMaxAgeHours || 12);
   const ageHours = planAgeHours(plan);
-  if (ageHours !== null && ageHours > maxAge && !process.argv.includes("--allow-stale")) {
+  if (argv.includes("--allow-stale")) return null;
+  if (ageHours === null) {
+    // No readable stamp is not the same as a fresh plan. A plan file is hand-editable, so a
+    // stamp can be lost on the way to the shop, and an ancient basket costs real money.
+    return { code: 5, text: "REFUSED: this plan carries no readable time stamp, so its age cannot be checked. Run plan.mjs again, or pass --allow-stale." };
+  }
+  if (ageHours > maxAge) {
     return { code: 5, text: `REFUSED: this plan is ${ageHours.toFixed(1)} h old and Namlig prices change daily. Run plan.mjs again, or pass --allow-stale.` };
   }
   return null;
 }
 
-/** Hours since the plan was created, or null when the stamp cannot be read. */
-function planAgeHours(plan) {
+/** Hours since the plan was made. atIso first, because it is an instant. Then the da-DK stamp
+ *  the plan file prints for a person to read: that is a wall clock in Copenhagen, and its
+ *  punctuation is locale data, so only the digits are trusted. Null when neither can be read:
+ *  an unreadable stamp must never look like a plan made a moment ago. The group order here was
+ *  wrong once - seven references into six groups - and the age gate went quiet along with it. */
+export function planAgeHours(plan) {
   const stamped = Date.parse(String(plan.atIso || ""));
   if (Number.isFinite(stamped)) return (Date.now() - stamped) / 3600000;
-  const m = /^(\d{2})\.(\d{2})\.(\d{4}), (\d{2})\.(\d{2})\.(\d{2})/.exec(String(plan.createdAt || ""));
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})\D+(\d{2})[.:](\d{2})[.:](\d{2})/.exec(String(plan.createdAt || ""));
   if (!m) return null;
-  const iso = `${m[3]}-${m[2]}-${m[1]}T${m[5]}:${m[6]}:${m[7]}Z`;
-  const created = Date.parse(iso.replace(/Z$/, "")) ;
-  if (!Number.isFinite(created)) return null;
-  const nowCph = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Copenhagen", hour12: false });
-  const now = Date.parse(nowCph.replace(" ", "T"));
-  if (!Number.isFinite(now)) return null;
+  // The stamp carries no zone, so compare wall clock with wall clock and use only the
+  // difference: "now" in Copenhagen written the same way, and neither instant is claimed.
+  const created = Date.parse(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}Z`);
+  const now = Date.parse(copenhagenWallClock() + "Z");
+  if (!Number.isFinite(created) || !Number.isFinite(now)) return null;
   return (now - created) / 3600000;
+}
+
+/** The Copenhagen wall clock as "YYYY-MM-DDTHH:MM:SS", built from parts rather than from a
+ *  locale string, because the shape of a locale string is data that can rename its own fields. */
+function copenhagenWallClock(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Copenhagen", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  }).formatToParts(date);
+  const of = (type) => { const hit = parts.find((x) => x.type === type); return hit ? hit.value : ""; };
+  const hour = of("hour") === "24" ? "00" : of("hour");   // en-GB has been known to call midnight 24
+  const stamp = `${of("year")}-${of("month")}-${of("day")}T${hour}:${of("minute")}:${of("second")}`;
+  return Number.isFinite(Date.parse(stamp + "Z")) ? stamp : "";
 }
 
 /** Book the timeslot the person approved, only after something was actually added. */

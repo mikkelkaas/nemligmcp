@@ -129,6 +129,7 @@ and it refuses to run without `--approve I-APPROVE-THIS-BASKET`.
 | `plan.mjs` | builds the plan, resolves every intent, diffs the live basket | `data/plans/plan-<stamp>.{json,md}` |
 | `slots.mjs` | ranks bookable timeslots by price, window and weekday; drops slots whose order deadline passed | nothing |
 | `apply.mjs` | writes an approved plan, re-reads and verifies the basket | `data/plans/applied-<stamp>.json` |
+| `tools/scenario-check.mjs` | the evaluation battery: the guards, the arithmetic, the flag notes and the shop scenarios, against a scratch copy of the home | only its own scratch folders in `/tmp` |
 
 ## A budget that decides
 
@@ -151,7 +152,9 @@ kinds of move, prints every one of them, and keeps them in the plan file under `
    the child's box is protected as the box and not as a snack.
 
 When even that does not fit, the plan says so and still writes the plan whole:
-`trimShortfall` is what no budget is allowed to take. `--trim off` returns to warning.
+`trimShortfall` is what no budget is allowed to take. `--trim off` returns to warning, and
+means it - the basket is planned whole, over the ceiling and all. `test/trim.test.mjs` proves
+both halves on one shelf, because `--trim off` was once read as yes.
 
 ## Profiles (edit these, they are the memory)
 
@@ -301,7 +304,14 @@ anyone keeping a list.
 - Bulk campaigns (`Fast mixtilbud`) are listed under `Bulk offers` with the quantity
   they need. They are never applied automatically.
 - `apply.mjs` refuses a plan older than 12 h (`--allow-stale` overrides), because
-  Namlig moves prices every day.
+  Namlig moves prices every day. It refuses a plan whose stamp it cannot read too: a
+  missing stamp is not proof of a fresh basket.
+- A flag value the planner could not use as given is reported before the first shop call,
+  with the value it used instead. `--days 99999` says it planned 14 evenings; `--days 0`
+  says one evening; `--max-kr abc` says the profile's ceiling decided.
+- The plan names the plan file its menu was ranked against (`menuAgainst`), because the
+  rotation moves against that file. Run one command twice and the basket can differ: the
+  plan says which plan moved.
 - A need in pieces means packs: `2 stk` kokosmælk is 2 cans, even though the pack
   reads `400 ml`. A need in `g`/`kg`/`ml`/`l` compares against the pack size.
 
@@ -344,6 +354,15 @@ lines instead: no one cooks a fish salad for dinner.
   the run too. A run cannot exceed `NEMLIG_MAX_CALLS` (default 400) calls.
 - `--household` accepts `auto` or `off`; any other value warns. An unknown `--flag` warns
   instead of being ignored. `--extra` without a name in front of the colon is skipped aloud.
+- `--avoid` outranks a pinned favourite. A brand or a word you refuse is not bought, even when
+  the profile pins that product. Measured 2026-11-14: before the fix, the flag emptied every
+  rival of that brand from the shelf and still bought the refused yoghurt as a favourite.
+- `--trim off` leaves a basket over the ceiling whole. `--trim on` brings it under. Both halves
+  run against one shelf in `node tools/scenario-check.mjs`.
+- A value the planner cannot read prints a warning line. `--breakfast off` used to buy
+  breakfast, because the code read `no` and `off` meant yes.
+- The plan JSON names the menu it alternated against (`menuAgainst`), so a total that moves
+  between two runs can be explained instead of guessed at.
 - A failure prints one line plus `--debug for the stack`; the stack itself is behind
   `--debug`.
 - Measured 2026-11-12, 8 days, one family: 45 s with one call at a time, 10 s through the
@@ -359,6 +378,7 @@ lines instead: no one cooks a fish salad for dinner.
 node mine-history.mjs            # after 5+ new orders
 node pin-skus.mjs --write        # re-pin favourite SKUs
 node --test test/*.test.mjs      # the suite, incl. a stubbed search (no network)
+node tools/scenario-check.mjs    # the battery: guards, arithmetic, notes, shop scenarios
 rm -f data/product-cache.json    # if prices or ranges look stale
 node doctor.mjs                  # one line per check, and the command that answers it
 ```

@@ -959,3 +959,43 @@ test("a rule about the size of it keeps the recipe's own word as the search", ()
   const second = recipeIntents(red, { amounts, meat: { rules: [sizeOnly] }, exclusions });
   assert.equal(second.intents[0].minPackGrams, undefined, "excepted: a red onion is not bought by the net bag");
 });
+
+test("a favourite pinned on a refused brand is not bought, and the plan says why", async () => {
+  // Measured on the live shelf on 2026-11-14: "--avoid First Price" emptied every rival of
+  // that brand and then bought the pinned First Price yoghurt anyway, because the never-list
+  // filtered the rivals and never looked at the pin.
+  const CAN = { IsDeliveryAvailable: true, IsAvailableInStock: true };
+  const PINNED = { Id: "5006632", Name: "Yoghurt med jordbær", Brand: "Lavpris", Price: 14.18, UnitPriceCalc: 47.25, UnitPriceLabel: "kr/l", Description: "300 ml", Availability: CAN };
+  const RIVAL = { Id: "77", Name: "Yoghurt med jordbær", Brand: "Gomor", Price: 16, UnitPriceCalc: 53.33, UnitPriceLabel: "kr/l", Description: "300 ml", Availability: CAN };
+  const mcp = {
+    async call(tool, args) {
+      if (tool !== "search_products" || String(args.query).toLowerCase() !== "yoghurt jordbær") {
+        return { isError: true, text: "unexpected " + tool, json: null };
+      }
+      return { isError: false, text: "", json: { Products: { Products: [PINNED, RIVAL] } } };
+    },
+  };
+  const intent = { query: "Yoghurt jordbær", need: "600 g", mode: "history", sku: "5006632" };
+  const kept = await resolveIntent(mcp, intent, {});
+  assert.equal(String(kept.pick.sku), "5006632", "without a refusal the favourite is bought, as always");
+  assert.equal(kept.compare, "sku-pin");
+  const refused = await resolveIntent(mcp, { ...intent, avoidBrands: ["Lavpris"] }, {});
+  assert.equal(refused.ok, true, "the line is still filled");
+  assert.equal(String(refused.pick.sku), "77", "with the rival, not the refused brand");
+  assert.equal(refused.pinMissed, "5006632", "the plan knows the favourite was passed over");
+  assert.match(String(refused.pinRefused), /brand Lavpris/, "and that it was the never-list, not an empty shelf");
+  assert.match(refused.why, /your own never-list outranks the favourite/, "and the plan line says so in words");
+  // The same refusal on a shelf that holds nothing else: not "out of stock", a refusal.
+  const alone = {
+    async call(tool, args) {
+      if (tool !== "search_products" || String(args.query).toLowerCase() !== "yoghurt jordbær") {
+        return { isError: true, text: "unexpected " + tool, json: null };
+      }
+      return { isError: false, text: "", json: { Products: { Products: [PINNED] } } };
+    },
+  };
+  const empty = await resolveIntent(alone, { ...intent, avoidBrands: ["Lavpris"] }, {});
+  assert.equal(empty.ok, false, "with nothing else on the shelf the line is not filled");
+  assert.match(empty.why, /your own never-list refused them \(brand Lavpris\)/, "and it is named as a refusal, not as an empty shelf");
+  assert.ok(!empty.substitution || String(empty.substitution.brand || "") !== "Lavpris", "a proposal never carries the refused brand either");
+});
