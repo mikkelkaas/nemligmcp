@@ -249,6 +249,18 @@ version is managed by semantic-release at release time.
 No npm token secret is needed: publishing uses npm Trusted Publishing (OIDC).
 `GITHUB_TOKEN` is provided automatically by Actions.
 
+## Request security
+
+Product details accept only product-page paths or URLs on
+`https://www.nemlig.com`, without query strings or fragments. Outbound API
+requests are limited to the configured Nemlig HTTPS origins; cookies are sent
+only to `www.nemlig.com`. Redirects are rejected, including same-origin
+redirects, and API fetches time out after 15 seconds.
+
+HTTP requests are limited to 64 KiB by default. JSON-RPC batches are rejected,
+and tool arguments are limited to 100 array elements and object keys in total.
+These limits are sufficient for the scalar inputs exposed by the current tools.
+
 ## Notes / internals
 
 - **Transport:** stdio by default; one Streamable HTTP transport (`MCP_TRANSPORT=http` or `--http`) with per-client sessions, serving either a trusted LAN or a secret-path public endpoint. The server logs only to stderr — stdout is the JSON-RPC channel in stdio mode.

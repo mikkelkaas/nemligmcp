@@ -22,7 +22,7 @@ export function createServer(sharedClient?: ApiClient): McpServer {
   const server = new McpServer({
     name: "nemligmcp",
     version: PACKAGE_VERSION,
-  });
+  }, { maxToolInputElements: 100 });
 
   registerAllTools(server, client);
   return server;
