@@ -1,5 +1,5 @@
 {
-  "comment": "pins: a meat-free table - the pool is replaced by four invented vegetarian dishes, so no meat rule fires and every dinner ask is a vegetable, a starch or a dairy product",
+  "comment": "pins: a meat-free table - the pool is replaced by four invented vegetarian dishes, so no meat rule fires and every dinner ask is a vegetable, a starch or a dairy product. The four do not fill eight evenings under rotation.maxPerProtein, so that cap bends and the fourth dinner's three lines are bought: two evenings that used to go without a dinner.",
   "argv": [
     "--days",
     "8",

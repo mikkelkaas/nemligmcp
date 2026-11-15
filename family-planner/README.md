@@ -457,6 +457,15 @@ recently cooked first, alternating a new dish with a known one, at most
 `rotation.maxPerProtein` dinners per protein and at least `rotation.minFishDishes` fish dish
 in the plan.
 
+A pool smaller than the period makes the rotation bend its own rules, in the order a family
+would: wait out a cooldown, then one protein more often, then two versions of a dinner, and
+only then cook one dish twice - never three times. Every bend is printed under `What the
+rotation decided, and what it bent`, and the dish cooked twice says so on both of its evenings.
+A cooking asks for the food of its own evenings, so a dish cooked twice is bought twice. When
+`poolTooSmallForThePeriod` is the rule that bent, the fix is the pool. The rotation may fill
+`rotation.maxPerProtein` x the proteins in the pool x `dinners.maxNightsPerDinner` evenings;
+raise `POOL_SIZE` in `pick-recipe-pool.mjs` (21 today) above that need and rebuild.
+
 Rebuild the generated data with these, in this order, about once a month:
 
 ```bash
@@ -495,7 +504,9 @@ ingredients, so a single "Rejer" line cannot turn "Nudler med kylling" into a fi
 - `profiles/amounts.json` holds the mined amounts; every dinner line in the plan file
   prints the arithmetic behind its quantity.
 - `data/rotation.json` is written by `apply.mjs` after a successful write, so a dry run
-  never consumes the rotation. `--cores` goes back to the pinned cores in
+  never consumes the rotation. A meal cooked without ordering it is recorded with
+  `node log-dinner.mjs --dish "<name from the menu>"`, which appends `data/cooked-log.jsonl`;
+  a plan that was only printed moves nothing. `--cores` goes back to the pinned cores in
   `profiles/dinners.json`; `--covers 2`, `--max-per-protein 2` and `--dinners <name>`
   steer the rotation.
 

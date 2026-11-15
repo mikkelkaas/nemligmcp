@@ -147,12 +147,114 @@ function needTextOf(ing, factor, pieceWeights) {
   return { need: `${rounded} stk`, unit: "stk", pieces: rounded };
 }
 
-/** Pick the dinners for this period: least recently cooked, capped per protein. */
+/** A dinner the family has never cooked sits this far back in the queue: oldest of all, so a
+ *  dish they have eaten last month can never beat one they have never tried. */
+const NEVER_COOKED = 9999;
+
+/**
+ * The queue the rotation draws from: least recently cooked first, a liked dish pushed forward,
+ * and - while `alternate` holds - a never-cooked dish placed between two the family knows, so
+ * the table keeps its favourites and the rotation still moves. Strict alternation: new, known,
+ * new, known, then whatever is left of the longer half.
+ */
+function orderQueue(rest, { rank, alternate }) {
+  const sorted = rest.slice().sort((a, b) => rank(b) - rank(a) || (b.score || 0) - (a.score || 0));
+  if (!alternate) return sorted;
+  const fresh = sorted.filter((p) => rank(p) >= 3650);
+  const known = sorted.filter((p) => rank(p) < 3650);
+  const out = [];
+  for (let i = 0; i < Math.max(fresh.length, known.length); i++) {
+    if (fresh[i]) out.push(fresh[i]);
+    if (known[i]) out.push(known[i]);
+  }
+  return out;
+}
+
+/**
+ * Fill the period. A family rule is bent one at a time, in this order, and only while evenings
+ * are still empty: the cooldown first, then the per-protein cap, then the ban on two versions
+ * of the same dinner. Every bend is recorded with the rule, the dish and the reason, because a
+ * plan that quietly broke a rule is worse than one that says it had to.
+ */
+function fillPeriod({ queue, forced, days, coversOf, maxPerProtein, isResting, noVariants, coolDays, coolTimes }) {
+  // One entry per cooking, not per dish: a dish can be cooked twice in a week when the pool is
+  // too small for the period, and each cooking needs its own evenings and its own food.
+  const chosen = [], relaxed = [], used = {};
+  const covered = () => chosen.reduce((n, e) => n + e.nights, 0);
+  const times = (p) => chosen.filter((e) => e.dish === p).length;
+  const push = (p, bend) => {
+    const left = days - covered();
+    if (left <= 0) return false;
+    chosen.push({ dish: p, nights: Math.max(1, Math.min(coversOf(p), left)), repeated: times(p) > 0 });
+    used[p.protein] = (used[p.protein] || 0) + 1;
+    for (const b of bend || []) relaxed.push(b);
+    return true;
+  };
+  for (const f of forced) push(f, null);
+  // Every bend a pass allows, named as it is allowed, so a dish that needed two rules to get
+  // in reports both. A plan that bent a rule and said nothing is the failure mode to avoid.
+  const bends = {
+    cooldown: (p) => ({ rule: "cooldown", dish: p.name, because: `the ${days} evenings do not fill without a dish eaten ${coolTimes} times in ${coolDays} days` }),
+    cap: (p) => ({ rule: "maxPerProtein", dish: p.name, because: `the cap is ${maxPerProtein} and the pool holds too few other proteins for ${days} evenings` }),
+    variant: (p) => ({ rule: "neverTwoVariantsOfTheSameDinner", dish: p.name, because: `${days} evenings cannot be covered without a second version of ${p.protein || p.name}` }),
+    reuse: (p) => ({ rule: "poolTooSmallForThePeriod", dish: p.name, because: `the pool runs out before the ${days} evenings do, so this dish is cooked twice - run node pick-recipe-pool.mjs to widen it` }),
+  };
+  // The ladder, in the order a family would bend its own rules: wait out a cooldown, then eat
+  // one protein more often, then accept two versions of a dinner, and only then cook one dish
+  // twice. Nothing above this pass runs once the evenings are covered.
+  const passes = [
+    { rest: false, cap: maxPerProtein, variants: noVariants, reuse: false, bend: () => [] },
+    { rest: true, cap: maxPerProtein, variants: noVariants, reuse: false, bend: (p) => [bends.cooldown(p)] },
+    { rest: true, cap: Infinity, variants: noVariants, reuse: false,
+      bend: (p) => (isResting(p) ? [bends.cooldown(p), bends.cap(p)] : [bends.cap(p)]) },
+    { rest: true, cap: Infinity, variants: false, reuse: false,
+      bend: (p) => [bends.variant(p)].concat((used[p.protein] || 0) >= maxPerProtein ? [bends.cap(p)] : [])
+        .concat(isResting(p) ? [bends.cooldown(p)] : []) },
+    { rest: true, cap: Infinity, variants: false, reuse: true, bend: (p) => [bends.reuse(p)] },
+  ];
+  for (const pass of passes) {
+    if (covered() >= days) break;
+    for (const p of queue) {
+      if (covered() >= days) break;
+      if (times(p) > 1) continue;
+      if (!pass.reuse && times(p) > 0) continue;
+      if (!pass.rest && isResting(p)) continue;
+      if ((used[p.protein] || 0) >= pass.cap) continue;
+      if (pass.variants && clashWith(chosen.map((e) => e.dish), p)) continue;
+      push(p, pass.bend(p));
+    }
+  }
+  return { chosen, relaxed, used };
+}
+
+/**
+ * One fish dinner a week, counted in dishes and not in evenings. The rule may not empty an
+ * evening or break the cap it is not allowed to bend, so it only replaces a dish whose protein
+ * appears more than once, and it hands over the same number of evenings.
+ */
+function ensureFish({ chosen, queue, used, minFish, isResting }) {
+  if (!(Number(minFish) > 0) || chosen.some((e) => e.dish.protein === "fisk")) return null;
+  const taken = new Set(chosen.map((e) => e.dish.url));
+  const fish = queue.find((p) => p.protein === "fisk" && !taken.has(p.url) && !isResting(p))
+    || queue.find((p) => p.protein === "fisk" && !taken.has(p.url));
+  if (!fish) return { in: null, out: null, because: "the pool holds no fish dish" };
+  const twice = (p) => chosen.filter((e) => e.dish.protein === p.protein).length;
+  const slot = chosen.slice().reverse().find((e) => twice(e.dish) > 1);
+  if (!slot) return { in: null, out: null, because: "every protein in the menu is there once, so a fish dinner would leave an evening without a dinner" };
+  const out = slot.dish;
+  slot.dish = fish;
+  used[out.protein] = Math.max(0, (used[out.protein] || 1) - 1);
+  used.fisk = (used.fisk || 0) + 1;
+  return { in: fish.name, out: out.name, nights: slot.nights, because: `minFishDishes ${minFish} in the profile` };
+}
+
+/**
+ * Pick the dinners for this period: least recently cooked, capped per protein, every evening
+ * covered. What each rule cost is in `relaxed`, and what made the queue is on every menu entry.
+ */
 export function chooseDinners(pool, opts) {
-  const { days, coversDays = 2, lastUsed, wanted = [], maxPerProtein = 2, minFish = 1 } = opts;
+  const { days, coversDays = 2, lastUsed = {}, wanted = [], maxPerProtein = 2, minFish = 1 } = opts;
   const per = Math.max(1, Number(coversDays) || 2);
-  // How many nights a dinner runs for is a property of the dish: how well it keeps.
-  // `singleNight` is the old name list and still works, as a fresh-only override.
   const legacy = (opts.singleNight || []).map((x) => String(x).toLowerCase());
   const nightOpts = {
     preferLeftovers: opts.preferLeftovers !== false,
@@ -161,22 +263,14 @@ export function chooseDinners(pool, opts) {
     table: opts.reheatByFormat || undefined,
   };
   const coversOf = (d) => (legacy.includes(String(d.format || "").toLowerCase()) ? 1 : nightsOf(d, nightOpts));
-  const coveredOf = (list) => list.reduce((n, d) => n + coversOf(d), 0);
   const byUrl = new Map(pool.map((p) => [p.url, p]));
-  // --dinners matches a pool name or url. An id that matches nothing used to vanish in
-  // silence, and the menu came from the rotation anyway - so a person believed the dish
-  // they asked for was in the plan. The names the plan prints under "menu" work here.
   const asked = wanted.map((w) => ({ wanted: String(w), hit: pool.find((p) => p.url === w || fold(p.name) === fold(w)) }));
   const forced = asked.map((a) => a.hit).filter(Boolean);
   const unknownWanted = asked.filter((a) => !a.hit).map((a) => a.wanted);
-  // A refused dish never comes back by itself; --dinners still overrides, because a
-  // human who asks for it today is not the family that refused it last month.
   const taste = opts.taste || {};
   const refused = new Set(taste.refused || []);
   const liked = new Set(taste.liked || []);
   const rest = pool.filter((p) => !forced.includes(p) && !refused.has(p.url));
-  // A dish eaten cooldownTimes or more inside cooldownDays is resting: it stays in the
-  // pool, but it goes to the back of the queue so the table gets variety on its own.
   const ex = opts.exploration || {};
   const coolDays = Number(ex.cooldownDays) || 42;
   const coolTimes = Number(ex.cooldownTimes) || 3;
@@ -186,66 +280,31 @@ export function chooseDinners(pool, opts) {
     const cutoff = new Date(Date.now() - coolDays * 86400000).toISOString().slice(0, 10);
     return c.dates.filter((iso) => iso >= cutoff).length >= coolTimes;
   };
-  // Least recently cooked first; never cooked counts as the oldest of all (9999 days).
-  const rank = (d) => daysSince(lastUsed[d.url]) + (liked.has(d.url) ? 30 : 0);
-  rest.sort((a, b) => rank(b) - rank(a) || (b.score || 0) - (a.score || 0));
-  // Every other dinner is a dish the family has never cooked, so the rotation moves and
-  // the table still keeps its favourites.
-  const fresh = rest.filter((p) => daysSince(lastUsed[p.url]) >= 3650);
-  const known = rest.filter((p) => daysSince(lastUsed[p.url]) < 3650);
-  const interleaved = [];
-  for (let i = 0; i < Math.max(fresh.length, known.length); i++) {
-    if (i % 2 === 0) interleaved.push(...[fresh[i]].filter(Boolean), ...[known[i]].filter(Boolean));
-    else interleaved.push(...[known[i]].filter(Boolean), ...[fresh[i]].filter(Boolean));
-  }
-  rest.length = 0;
-  rest.push(...interleaved.filter(Boolean));
-  const chosen = [];
-  const used = {};
-  for (const f of forced) {
-    if (coveredOf(chosen) >= days) break;
-    chosen.push(f);
-    used[f.protein] = (used[f.protein] || 0) + 1;
-  }
-  // Resting dishes are only used when the period cannot be covered without them.
-  const picked = [];
-  for (const allowResting of [false, true]) {
-    for (const p of rest) {
-      if (coveredOf(chosen) >= days) break;
-      if (chosen.includes(p) || picked.includes(p)) continue;
-      if (!allowResting && isResting(p)) continue;
-      if ((used[p.protein] || 0) >= maxPerProtein) continue;
-      if (clashWith(chosen, p)) continue;
-      used[p.protein] = (used[p.protein] || 0) + 1;
-      chosen.push(p);
-      picked.push(p);
-    }
-  }
-  // The family eats fish about once a week: swap the last pick if the period has none.
-  if (coveredOf(chosen) >= minFish && !chosen.some((c) => c.protein === "fisk") && coveredOf(chosen) >= days) {
-    const fish = rest.find((p) => p.protein === "fisk" && !chosen.includes(p) && !isResting(p))
-      || rest.find((p) => p.protein === "fisk" && !chosen.includes(p));
-    const replaceable = [...chosen].reverse().find((c) => (used[c.protein] || 0) > 1);
-    if (fish && replaceable) {
-      used[replaceable.protein]--;
-      chosen[chosen.indexOf(replaceable)] = fish;
-      used.fisk = (used.fisk || 0) + 1;
-    }
-  }
+  const cookedAgo = (d) => (lastUsed[d.url] ? daysSince(lastUsed[d.url]) : NEVER_COOKED);
+  const rank = (d) => cookedAgo(d) + (liked.has(d.url) ? 30 : 0);
+  const queue = orderQueue(rest, { rank, alternate: opts.alternateNewAndKnown !== false });
+  const fill = fillPeriod({ queue, forced, days, coversOf, maxPerProtein, isResting,
+    noVariants: opts.neverTwoVariantsOfTheSameDinner !== false, coolDays, coolTimes });
+  const fishSwap = ensureFish({ chosen: fill.chosen, queue, used: fill.used, minFish, isResting });
   let start = 1;
   const d0 = (c) => (byUrl.get(c.url) ? { ...byUrl.get(c.url), format: c.format || (byUrl.get(c.url) || {}).format } : c);
-  const menu = chosen.map((c) => {
-    const covers = coversOf(c);
-    const entry = { id: c.url, url: c.url, name: c.name, minutes: c.minutes, protein: c.protein, format: c.format || null,
-      covers, nights: covers, reheat: reheatOf(d0(c), opts.reheatByFormat || undefined),
-      days: start + "-" + Math.min(days, start + covers - 1),
+  const menu = fill.chosen.map(({ dish: c, nights: covers, repeated }) => {
+    const entry = { id: c.url, url: c.url, name: c.name, minutes: c.minutes, protein: c.protein,
+      format: c.format || null, covers, nights: covers, repeated: repeated,
+      keepsFor: coversOf(c), clipped: covers < coversOf(c),
+      reheat: reheatOf(d0(c), opts.reheatByFormat || undefined),
+      days: `${start}-${start + covers - 1}`,
+      cookedAgo: lastUsed[c.url] ? daysSince(lastUsed[c.url]) : "never",
       lastCooked: lastUsed[c.url] || "not in the stored history",
       resting: isResting(c), liked: liked.has(c.url) };
     start += covers;
     return entry;
   });
-  return { chosen: chosen.map((c) => byUrl.get(c.url)), menu, daysPerDinner: per, coveredDays: coveredOf(chosen),
-    uncoveredDays: Math.max(0, days - coveredOf(chosen)), unknownWanted };
+  const coveredDays = menu.reduce((n, m) => n + m.covers, 0);
+  return { chosen: fill.chosen.map((e) => byUrl.get(e.dish.url)), menu, daysPerDinner: per, coveredDays,
+    uncoveredDays: Math.max(0, days - coveredDays), unknownWanted,
+    relaxed: fill.relaxed, fishSwap,
+    refusedAsked: asked.filter((a) => a.hit && refused.has(a.hit.url)).map((a) => a.wanted) };
 }
 
 /** One recipe to shopping intents, with what was left out and why. */
@@ -347,21 +406,18 @@ export function readCookHistory({ linesFile, rotationFile, cookedFile }) {
   return plain;
 }
 
-/** Last cooked day per dish, also counting printed plans so a dry run moves the queue. */
-export function readRotation({ plansDir, linesFile, rotationFile, cookedFile }) {
+/**
+ * Last cooked day per dish, from cook evidence only: applied baskets, the cooked log, and the
+ * recipe cards in the order history. A plan that was only printed is NOT in here, deliberately.
+ * It used to be, "so a dry run moves the queue" - and that made the menu different on every
+ * run of the same command against the same home, because each run wrote a plan file the next
+ * run read as a cooked meal. Fourteen plan files produced six menus. A dry run is not dinner:
+ * the queue moves when the family buys the basket (`apply.mjs` writes both files below) or
+ * tells the planner they ate it (`log-dinner.mjs`). Determinism and rotation both need that.
+ */
+export function readRotation({ linesFile, rotationFile, cookedFile }) {
   const out = {};
-  const seen = (url, iso) => { if (url && iso && (!out[url] || iso > out[url])) out[url] = iso; };
-  const hist = readCookHistory({ linesFile, rotationFile, cookedFile });
-  for (const [url, e] of Object.entries(hist)) seen(url, e.last);
-  try {
-    for (const f of readdirSync(plansDir)) {
-      if (!/^plan-\d{4}-\d{2}-\d{2}/.test(f)) continue;
-      const day = statSync(join(plansDir, f)).mtime.toISOString().slice(0, 10);
-      let plan = null;
-      try { plan = JSON.parse(readFileSync(join(plansDir, f), "utf8")); } catch { continue; }
-      for (const m of plan.dinnerMenu || []) seen(m.url || m.id, day);
-    }
-  } catch { /* no plans yet */ }
+  for (const [url, e] of Object.entries(readCookHistory({ linesFile, rotationFile, cookedFile }))) out[url] = e.last;
   return out;
 }
 

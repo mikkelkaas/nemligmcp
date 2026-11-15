@@ -489,17 +489,25 @@ function saleRules(household) {
   };
 }
 
-/** Which dinner is eaten on which day: each core covers `coversDays` days in order. */
+/** Which dinner is eaten which evening: each core covers `coversDays` evenings in order, and
+ *  the last one only the evenings that are left. An evening nobody cooks for is reported, and
+ *  a dinner cooked for an evening outside the period is money thrown away, so both are clipped.
+ */
 function menuOf(cores, wantedIds, days, coversDays) {
   const per = Math.max(1, Math.min(days, Number(coversDays) || 2));
   const ids = [...new Set(wantedIds)];
-  const menu = ids.map((id, i) => {
+  const menu = [];
+  let start = 1;
+  for (const id of ids) {
+    if (start > days) break;
     const core = cores.find((c) => c.id === id);
-    const from = i * per + 1;
-    return { id, name: core ? core.name : id, minutes: core ? core.minutes : null,
-      days: from + "-" + Math.min(days, from + per - 1) };
-  });
-  const covered = Math.min(days, ids.length * per);
+    const covers = Math.min(per, days - start + 1);
+    menu.push({ id, url: id, name: core ? core.name : id, minutes: core ? core.minutes : null,
+      covers, nights: covers, keepsFor: per, clipped: covers < per, cookedAgo: "unknown (pinned cores)",
+      days: start + "-" + (start + covers - 1) });
+    start += covers;
+  }
+  const covered = menu.reduce((n, m) => n + m.covers, 0);
   return { menu, uncoveredDays: days - covered, daysPerDinner: per };
 }
 
@@ -535,7 +543,8 @@ function markdownHeader(plan, diff) {
     const how = nights === 1 ? "one night only, cooked fresh"
       : `cooked once, eaten ${nights} nights (${Number(((plan.portionsPerNight || 0) * nights).toFixed(1))} portions for ${(plan.members || []).map((x) => `${x.count} ${x.role}${x.count > 1 ? "s" : ""}`).join(" + ") || o.people + " people"})`;
     const keeps = m.reheat === "fresh" ? ", does not keep" : m.reheat === "great" ? ", better the next day" : "";
-    L.push(`- dag ${m.days}: ${m.name}${m.minutes ? " (" + m.minutes + " min)" : ""}${protein} — ${how}${keeps}${link}`);
+    const again = m.repeated ? " — second cooking of this dish, the pool is too small for the period" : "";
+    L.push(`- dag ${m.days}: ${m.name}${m.minutes ? " (" + m.minutes + " min)" : ""}${protein} — ${how}${keeps}${again}${link}`);
   }
   if (plan.uncoveredDays > 0) L.push(`- WARNING: ${plan.uncoveredDays} evening(s) have no dinner - name one with --dinners`);
   L.push("", `${plan.saleItems} of ${plan.items.length} products are on sale.${plan.priceCacheAgeHours ? ` Prices are at most ${plan.priceCacheAgeHours} h old (search cache).` : ""}`, "");
@@ -613,9 +622,32 @@ export function markdownNotes(plan) {
   const L = [];
   if (plan.menuAgainst && plan.menuAgainst.at) {
     L.push("", "## Menu ranked against", "");
-    L.push(`The menu is the least recently cooked draw, and the rotation ranks it against one plan file.`);
-    L.push(`That plan: ${plan.menuAgainst.at}, ${plan.menuAgainst.dinners} dinners, ${plan.menuAgainst.total.toFixed(2)} kr (data/plans/plan-latest.json before this run).`);
-    L.push("Run the same command again and the menu moves, so the basket can differ. This line is what changed.");
+    L.push("The queue is the least recently cooked draw, so this menu comes out the same on every");
+    L.push("run until the family buys a basket or logs a meal.");
+    L.push(`The plan before this one: ${plan.menuAgainst.at}, ${plan.menuAgainst.dinners} dinners, `
+      + `${plan.menuAgainst.total.toFixed(2)} kr (data/plans/plan-latest.json). It is named here, and it does not move the queue:`
+      + " a plan nobody bought is not dinner.");
+    L.push("To move the queue between orders: `node log-dinner.mjs --dish \"<name from the menu>\"`.");
+  }
+  const rules = plan.menuRules || {};
+  const relaxed = rules.relaxed || [];
+  const clipped = (plan.dinnerMenu || []).filter((m) => m.clipped);
+  if (relaxed.length || rules.fishSwap || clipped.length) {
+    L.push("", "## What the rotation decided, and what it bent", "");
+    for (const m of (plan.dinnerMenu || [])) {
+      const when = m.cookedAgo === "never" ? "never cooked"
+        : Number.isFinite(m.cookedAgo) ? `cooked ${m.cookedAgo} d ago` : `last cooked ${m.lastCooked}`;
+      L.push(`- ${m.name}: evenings ${m.days} (${m.nights} night${m.nights === 1 ? "" : "s"}, ${when}${m.resting ? ", back from cooldown" : ""}${m.repeated ? ", cooked again this week" : ""})`);
+    }
+    for (const r of relaxed) L.push(`- rule bent - ${r.rule}: ${r.dish} — ${r.because}`);
+    if (rules.fishSwap && rules.fishSwap.in) {
+      L.push(`- fish rule: ${rules.fishSwap.in} in for ${rules.fishSwap.out} (${rules.fishSwap.nights} night(s)) — ${rules.fishSwap.because}`);
+    } else if (rules.fishSwap) {
+      L.push(`- fish rule: no fish this week — ${rules.fishSwap.because}`);
+    }
+    for (const m of clipped) {
+      L.push(`- cooked short - ${m.name}: keeps for ${m.keepsFor}, bought for ${m.nights}, because the period ends on evening ${String(m.days).split("-")[1]}`);
+    }
   }
   if ((plan.bulkOffers || []).length) {
     L.push("", "## Bulk offers — cheaper only at the stated quantity (not applied)", "");
@@ -702,6 +734,53 @@ function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, h
 }
 
 /**
+ * One entry per cooking, not per dish name. A dish cooked twice appears twice, each time with
+ * its own evenings and its own portions, and the two asks merge on the sku later on. Every
+ * cooking prints the line that says what the rotation chose and how it got there.
+ */
+function cookingIntents(pick, { amounts, meat, exclusions, household, rules, lastUsed }) {
+  let intents = [], leftOut = [];
+  // The base a real ask is divided by is the pot the recipe amounts were already scaled
+  // to: household.cookServings in profiles/amounts.json, measured from this family's own
+  // history. It used to be portionsPerNight x maxNightsPerDinner - the same household
+  // appetite on both sides of the division - so appetite cancelled out: a family of two
+  // teenagers and a family of one adult bought the identical pot. Keep the appetite on one
+  // side only, and the number becomes what a portion costs in food.
+  const cookBase = Number((amounts.household || {}).cookServings) || 5;
+  const portionsPerNight = Number(household.portionsPerNight) || 3;   // nights.mjs fallback
+  const stdPortions = cookBase;
+  const portionNote = `${portionsPerNight.toFixed(1)} portions a night`;
+  for (const [i, r] of pick.chosen.entries()) {
+    // The menu is one entry per cooking, so a dish cooked twice appears twice with its own
+    // evenings. Pairing by position keeps the printed evenings the ones that were bought for.
+    const entry = (pick.menu || [])[i] || {};
+    const portionsForThis = Number((portionsPerNight * (entry.nights || entry.covers || 2)).toFixed(1));
+    const built = recipeIntents(r, { amounts, meat, exclusions, sourcePrefix: "dinner",
+      pieceWeights: ((household || {}).purchasing || {}).pieceWeights || null,
+      portions: portionsForThis, standardPortions: stdPortions, note: `${entry.nights || entry.covers || 2} ${entry.nights === 1 ? "night" : "nights"}, ${portionNote}` });
+    for (const it of built.intents) intents.push({ ...it, preferSale: rules.preferSale, saleTolerancePct: rules.saleTolerancePct });
+    for (const lo of built.leftOut) leftOut.push({ ...lo, recipe: r.name });
+    const when = entry.cookedAgo === "never" ? "never cooked"
+      : Number.isFinite(entry.cookedAgo) ? `cooked ${entry.cookedAgo} d ago`
+      : `last cooked ${lastUsed[r.url] || "not in the stored history"}`;
+    const clipNote = entry.clipped ? `, cut to ${entry.nights} night${entry.nights === 1 ? "" : "s"} by the end of the period` : "";
+    const again = entry.repeated ? ", cooked again this week" : "";
+    console.log(`  dinner ${i + 1}: ${r.name} (${r.minutes} min, ${r.protein}, `
+      + `evenings ${entry.days}, ${when}${clipNote}${again})`);
+  }
+  // A rule the planner bent is a decision the family should see while it is cheap to change.
+  for (const b of pick.relaxed || []) {
+    console.log(`  warn: ${b.rule} bent for "${b.dish}" - ${b.because}`);
+  }
+  if (pick.fishSwap && pick.fishSwap.in) {
+    console.log(`  fish: ${pick.fishSwap.in} swapped in for ${pick.fishSwap.out} (${pick.fishSwap.nights} night(s)) - ${pick.fishSwap.because}`);
+  } else if (pick.fishSwap) {
+    console.log(`  warn: no fish dinner in the menu - ${pick.fishSwap.because}`);
+  }
+  return { intents, leftOut };
+}
+
+/**
  * Dinners from the recipe rotation (profiles/recipe-pool.json). Used unless --cores is
  * given, or the pool file or its profiles are missing - then plan.mjs falls back to the
  * pinned cores in profiles/dinners.json.
@@ -716,7 +795,7 @@ function poolDinnerIntents(options, wanted, rules) {
   const rot = fam.household.rotation || {};
   const COOKED = BASE + "/data/cooked-log.jsonl";
   const cookedTimes = readCookHistory({ linesFile: BASE + "/data/order-lines-raw.jsonl", rotationFile: BASE + "/data/rotation.json", cookedFile: COOKED });
-  const lastUsed = readRotation({ plansDir: BASE + "/data/plans", linesFile: BASE + "/data/order-lines-raw.jsonl", rotationFile: BASE + "/data/rotation.json", cookedFile: COOKED });
+  const lastUsed = readRotation({ linesFile: BASE + "/data/order-lines-raw.jsonl", rotationFile: BASE + "/data/rotation.json", cookedFile: COOKED });
   const coversDays = options.covers;
   const pick = chooseDinners(fam.pool.pool, {
     days: options.days, coversDays, lastUsed, wanted,
@@ -726,6 +805,10 @@ function poolDinnerIntents(options, wanted, rules) {
     nightsOverride: fam.household.nightsOverride,
     maxPerProtein: Number(arg("max-per-protein", String(rot.maxPerProtein ?? 2))) || 2,
     minFish: Number(rot.minFishDishes ?? 1) || 0,
+    // Two rules the profile carries and nothing used to read: a family that set them off
+    // still got the interleaved queue and the variant ban. They are wired now.
+    alternateNewAndKnown: rot.alternateNewAndKnown !== false,
+    neverTwoVariantsOfTheSameDinner: rot.neverTwoVariantsOfTheSameDinner !== false,
     cookedTimes,
     taste: fam.learning.enabled ? fam.taste : { liked: [], refused: [] },
     exploration: fam.learning.exploration,
@@ -735,30 +818,13 @@ function poolDinnerIntents(options, wanted, rules) {
   for (const w of (pick.unknownWanted || [])) {
     console.log(`  warn: --dinners "${w}" is not in the recipe pool - use a name from the menu or the recipe url`);
   }
-  let intents = [], leftOut = [];
-  // The base a real ask is divided by is the pot the recipe amounts were already scaled
-  // to: household.cookServings in profiles/amounts.json, measured from this family's own
-  // history. It used to be portionsPerNight x maxNightsPerDinner - the same household
-  // appetite on both sides of the division - so appetite cancelled out: a family of two
-  // teenagers and a family of one adult bought the identical pot. Keep the appetite on one
-  // side only, and the number becomes what a portion costs in food.
-  const cookBase = Number((amounts.household || {}).cookServings) || 5;
-  const portionsPerNight = Number(fam.household.portionsPerNight) || 3;   // nights.mjs fallback
-  const stdPortions = cookBase;
-  const portionNote = `${portionsPerNight.toFixed(1)} portions a night`;
-  for (const r of pick.chosen) {
-    const entry = (pick.menu || []).find((m) => (m.url || m.id) === r.url) || {};
-    const portionsForThis = Number((portionsPerNight * (entry.nights || entry.covers || 2)).toFixed(1));
-    const built = recipeIntents(r, { amounts, meat, exclusions, sourcePrefix: "dinner",
-      pieceWeights: ((fam.household || {}).purchasing || {}).pieceWeights || null,
-      portions: portionsForThis, standardPortions: stdPortions, note: `${entry.nights || entry.covers || 2} ${entry.nights === 1 ? "night" : "nights"}, ${portionNote}` });
-    for (const it of built.intents) intents.push({ ...it, preferSale: rules.preferSale, saleTolerancePct: rules.saleTolerancePct });
-    for (const lo of built.leftOut) leftOut.push({ ...lo, recipe: r.name });
-    console.log(`  dinner ${pick.chosen.indexOf(r) + 1}: ${r.name} (${r.minutes} min, ${r.protein}, last cooked ${lastUsed[r.url] || "not in the stored history"})`);
-  }
+  // What each cooking needs, and the lines that say what the rotation chose and why.
+  const { intents, leftOut } = cookingIntents(pick, { amounts, meat, exclusions,
+    household: fam.household, rules, lastUsed });
   return {
     usedPool: true, intents, leftOut, dinnerIds: pick.chosen.map((c) => c.url), source: "recipe pool",
-    menu: { menu: pick.menu, uncoveredDays: pick.uncoveredDays, daysPerDinner: pick.daysPerDinner },
+    menu: { menu: pick.menu, uncoveredDays: pick.uncoveredDays, daysPerDinner: pick.daysPerDinner,
+      relaxed: pick.relaxed || [], fishSwap: pick.fishSwap || null },
   };
 }
 
@@ -1017,6 +1083,7 @@ async function main() {
     menuAgainst,
     uncoveredDays: menu.uncoveredDays,
     daysPerDinner: menu.daysPerDinner,
+    menuRules: { relaxed: menu.relaxed || [], fishSwap: menu.fishSwap || null },
     householdNote: famText,
     learning,
     portionsPerNight: fam.household.portionsPerNight || 0,

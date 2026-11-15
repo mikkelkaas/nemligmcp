@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { HOME, envFile, writeJsonAtomic } from "../paths.mjs";
 import { validatePlan } from "../apply.mjs";
 import { mergeItems, markdownNotes } from "../plan.mjs";
+import { chooseDinners } from "../dinners.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const NODE_TIMEOUT_PLAN = 600000;      // a 14-day cold plan measured 10.3 s; 10 min is the guard
@@ -267,6 +268,49 @@ function checkCold(snapshot) {
   return home;
 }
 
+/** The rotation, through the live shop. Two runs on the same state must give the same menu, and
+ *  only a meal the family ate may move it. The planner used to sell the opposite as a feature:
+ *  every run read its own printed plan as a cooked dinner, so the same command produced a
+ *  different basket each time - fourteen plan files produced six menus, and nobody could say
+ *  which one was theirs. */
+function checkRotation(snapshot) {
+  const a = scratchFrom(snapshot), b = scratchFrom(snapshot);
+  const one = checkPlanRun(a, EIGHT_DAYS, "menu run 1");
+  const two = checkPlanRun(b, EIGHT_DAYS, "menu run 2");
+  const urls = (r) => (((r.plan || {}).dinnerMenu) || []).map((x) => x.url).join(",");
+  const first = urls(one), again = urls(two);
+  record("menu:the same state gives the same menu", Boolean(first) && first === again,
+    `${first.split(",").length} dinners, identical on a second run against the same state`);
+  // The queue moves when the family eats: a logged meal, then the same command again.
+  const c = scratchFrom(snapshot);
+  const eaten = ((((one.plan || {}).dinnerMenu) || [])[0] || {});
+  const day = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const logged = nodeRun("log-dinner.mjs", ["--dish", String(eaten.name || ""), "--day", day],
+    { NEMLIG_HOME: c, NEMLIG_ENV: envFile() }, NODE_TIMEOUT_FAST, "log a meal");
+  const three = checkPlanRun(c, EIGHT_DAYS, "menu after logging");
+  const after = urls(three).split(",");
+  record("menu:a meal the family ate moves the queue",
+    logged.code === 0 && after.length > 0 && eaten.url && !after.includes(eaten.url),
+    `"${eaten.name}" logged as eaten ${day} and gone from the next menu (${after.length} dinners)`);
+  return [a, b, c];
+}
+
+/** Seven evenings are bought for seven evenings, not eight. The tail of an odd period is the
+ *  dish that gets cut short, and every portion after it is scaled to what is left - leftovers
+ *  the family never eats are money, and the plan used to buy them happily. */
+function checkEveningCover(snapshot) {
+  const home = scratchFrom(snapshot);
+  const r = checkPlanRun(home, ["--days", "7", "--breakfast", "no", "--lunchbox", "no", "--snacks", "no", "--household", "auto"], "seven evenings");
+  const menu = ((r.plan || {}).dinnerMenu) || [];
+  const covers = menu.reduce((n, m) => n + (Number(m.covers) || 0), 0);
+  const last = menu[menu.length - 1] || {};
+  const tiled = menu.every((m) => Number(String(m.days).split("-")[1]) === Number(String(m.days).split("-")[0]) + Number(m.covers) - 1);
+  record("menu:seven evenings are bought for seven evenings",
+    covers === 7 && (r.plan.uncoveredDays || 0) === 0 && tiled,
+    `${menu.length} dinners cover ${covers} evenings${last.clipped ? `, the last cut to ${last.nights} night by the end of the period` : ""}`);
+  return home;
+}
+
 /** Nothing a credential belongs in: the values from the env file must not appear in any file
  *  this battery wrote. The values are read, never printed. */
 function checkSecrets(dirs) {
@@ -358,15 +402,35 @@ const created = [];
  *  A stamp, not a log: one object, overwritten, always the newest word about this home. */
 function stampPath() { return join(HOME, "data", "quality", "last-check.json"); }
 
-/** The commit the battery just checked, or null. A run with no commit is still a run. */
+/** The commit the battery just checked, or null. A run with no commit is still a run. A dirty
+ *  tree says so: a stamp that names a commit the run did not contain is a stamp to ignore. */
 function gitCommit() {
   const r = spawnSync("git", ["-C", ROOT, "rev-parse", "--short", "HEAD"], { encoding: "utf8", timeout: 5000 });
-  return r.status === 0 ? String(r.stdout || "").trim().slice(0, 12) : null;
+  if (r.status !== 0) return null;
+  const head = String(r.stdout || "").trim().slice(0, 12);
+  const d = spawnSync("git", ["-C", ROOT, "status", "--porcelain", "--", "."], { encoding: "utf8", timeout: 5000 });
+  return head + (d.status === 0 && String(d.stdout || "").trim() ? "-dirty" : "");
+}
+
+/**
+ * The stamp time in the family's own zone, offset written out. `doctor.mjs` parses this with
+ * Date.parse, so it stays machine-readable; a file that says 21:39 while the kitchen clock says
+ * 22:39 is the one thing a log about "when quality last ran" must not be.
+ */
+function stampTime(now = new Date()) {
+  const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Copenhagen", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    .formatToParts(now).reduce((a, x) => (a[x.type] = x.value, a), {});
+  const wall = Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);
+  if (!Number.isFinite(wall)) return now.toISOString();
+  const off = Math.round((wall - now.getTime()) / 60000), sign = off < 0 ? "-" : "+", abs = Math.abs(off);
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`
+    + `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
 }
 
 function writeStamp(failed) {
   const stamp = {
-    at: new Date().toISOString(),
+    at: stampTime(),
     mode: process.argv.includes("--pure") ? "pure" : process.argv.includes("--offline") ? "offline" : "live",
     scenarios: results.length,
     pass: results.length - failed.length,
@@ -386,6 +450,59 @@ function writeStamp(failed) {
   } catch (e) {
     console.log(`warn: the result was not stamped (${e.message}) - doctor will report the battery as never run`);
   }
+}
+
+/** The family's own record of a meal, which is the only thing that moves the queue between
+ *  orders. No shop call, so it runs in every mode: a name from the pool, one line in the cooked
+ *  log, and a name the pool does not hold refused with a shortlist instead of a shrug. */
+function checkLogDinner(dir) {
+  const env = { NEMLIG_HOME: dir, NEMLIG_ENV: envFile() };
+  const log = join(dir, "data", "cooked-log.jsonl");
+  const readPool = () => { try { return JSON.parse(readFileSync(join(dir, "profiles", "recipe-pool.json"), "utf8")).pool || []; } catch { return []; } };
+  if (readPool().length === 0) { record("log meal:a dinner the family ate is recorded", false, "no recipe pool in the scratch home"); return; }
+  const day = new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+  const name = String(readPool()[0].name || "");
+  const r = nodeRun("log-dinner.mjs", ["--dish", name, "--day", day], env, NODE_TIMEOUT_FAST, "log one meal");
+  const written = existsSync(log) ? readFileSync(log, "utf8").split("\n").filter((l) => l.includes(day)).length : 0;
+  const nonsense = nodeRun("log-dinner.mjs", ["--dish", "Qwertyuiop asdfg", "--day", day], env, NODE_TIMEOUT_FAST, "log nonsense");
+  const future = nodeRun("log-dinner.mjs", ["--dish", name, "--day", "2099-01-01"], env, NODE_TIMEOUT_FAST, "log the future");
+  record("log meal:a dinner the family ate is recorded",
+    r.code === 0 && written === 1 && nonsense.code === 1 && /did you mean|no close name/.test(nonsense.out + nonsense.stderr) && future.code === 1,
+    `${name} written for ${day}; a name the pool does not hold refused (exit ${nonsense.code}); a future evening refused (exit ${future.code})`);
+}
+
+/**
+ * Fourteen evenings - the longest period the planner accepts - filled from the family's own
+ * pool. No shop call: the pool and its rotation rules are on disk. An evening without a dinner
+ * is the failure this scenario exists to catch, because the menu is the plan's only promise
+ * about what the family eats, and a hole in it is a hole in the basket.
+ */
+function checkMenuFills(dir) {
+  const MAX_DAYS = 14;
+  const poolFile = join(dir, "profiles", "recipe-pool.json");
+  if (!existsSync(poolFile)) { record("menu:every evening has a dinner in the longest period", false, "no profiles/recipe-pool.json"); return; }
+  const pool = JSON.parse(readFileSync(poolFile, "utf8"));
+  const dishes = Array.isArray(pool.pool) ? pool.pool : [];
+  if (dishes.length === 0) { record("menu:every evening has a dinner in the longest period", false, "the pool file holds no dinners"); return; }
+  const rot = pool.rotation || {};
+  const pick = chooseDinners(dishes, { days: MAX_DAYS, coversDays: 2, lastUsed: {},
+    maxPerProtein: Number(rot.maxPerProtein) || 2, minFish: Number(rot.minFishDishes) || 0,
+    alternateNewAndKnown: rot.alternateNewAndKnown !== false,
+    neverTwoVariantsOfTheSameDinner: rot.neverTwoVariantsOfTheSameDinner !== false });
+  const urls = pick.chosen.map((c) => c.url);
+  const worst = Math.max(...urls.map((u) => urls.filter((x) => x === u).length));
+  let next = 1, tiled = true;
+  for (const m of pick.menu) {
+    const [from, to] = String(m.days).split("-").map(Number);
+    if (from !== next) tiled = false;
+    next = to + 1;
+  }
+  const bent = (pick.relaxed || []).map((r) => r.rule);
+  const fish = pick.menu.some((m) => m.protein === "fisk");
+  record("menu:every evening has a dinner in the longest period",
+    pick.uncoveredDays === 0 && tiled && worst <= 2 && (!Number(rot.minFishDishes) || fish),
+    `${dishes.length} pool dinners fill ${pick.coveredDays}/${MAX_DAYS} evenings with ${pick.menu.length} cookings`
+    + ` (worst dish cooked ${worst}x${bent.length ? ", bent " + bent.join("+") : ", no rule bent"}${fish ? ", fish in the menu" : ", no fish"})`);
 }
 
 /** The scenarios that need nothing but the repository: no home, no mined history, no shop, no
@@ -421,6 +538,8 @@ function main() {
   checkArithmetic(first.dir, "arithmetic:the plan it started from");
   checkNearMiss();
   checkStamp(first.dir);
+  checkLogDinner(first.dir);
+  checkMenuFills(first.dir);
   if (offline) {
     console.log("  skipped: the shop-facing scenarios (run without --offline to include them)");
   } else {
@@ -428,6 +547,7 @@ function main() {
     checkCacheAndMenu(first.dir);
     checkFlagNotes(first.dir);
     created.push(...checkTrimPair(snapshot), ...checkAvoid(snapshot), checkCold(snapshot));
+    created.push(...checkRotation(snapshot), checkEveningCover(snapshot));
   }
   checkSecrets(created);
   const failed = results.filter((r) => !r.ok);

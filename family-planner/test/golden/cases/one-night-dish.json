@@ -1,5 +1,5 @@
 {
-  "comment": "pins: maxNightsPerDinner 1 - nine evenings need more dishes than the pool holds, one evening reported uncovered; and a dish that runs one night buys the pot for one night, which is half the standing ask. That second pin is new: the ask used to be measured against itself, so a one-night dish was bought at the two-night pot.",
+  "comment": "pins: maxNightsPerDinner 1 - nine evenings need more dishes than the eight-dish pool holds, so the rotation cooks one dish twice and names the rule (poolTooSmallForThePeriod) instead of leaving the ninth evening empty; and a dish that runs one night buys the pot for one night, which is half the standing ask. That second pin is new: the ask used to be measured against itself, so a one-night dish was bought at the two-night pot.",
   "argv": [
     "--days",
     "9",

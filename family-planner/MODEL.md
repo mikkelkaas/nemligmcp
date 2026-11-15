@@ -45,6 +45,10 @@ than eight one-night dinners need. `two-teenagers` needs 6,8 portions, and writi
 needed the pot hand-set to 10 servings before a bigger basket appeared at all. Both cases now
 scale through `members` alone, and `one-adult` shrank 70,20 kr by itself.
 
+The ask is per cooking, not per dish name. When the pool holds too few dinners for the period,
+`chooseDinners` cooks one of them twice; each cooking asks for its own evenings, and the two
+asks merge on the sku in `mergeItems` (`plan.mjs`), so the basket carries food for both.
+
 ## 2. Dinners: nights, decided per dish
 
 A dinner is cooked once and eaten for as many nights as it keeps. Keeping quality is a
