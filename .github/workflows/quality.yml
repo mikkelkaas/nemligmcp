@@ -1,0 +1,63 @@
+name: Quality
+
+# The weekly drift check for the family planner, on GitHub's clock instead of a machine's.
+# It runs what needs no shop and no credentials: the syntax of every file, the offline test
+# suite, and the golden shelves - ten fixture shelves whose lines must not move more than 5 %.
+# That last step is the drift detector: if a matcher or a price rule starts choosing
+# differently, the weighted score drops and this job goes red.
+#
+# The scenario battery itself (tools/scenario-check.mjs) is NOT here. Half of it plans against
+# the live shop and the rest reads the mined history, and neither is in this repository:
+# data/ is gitignored. It runs on the machine that has that home, once a week:
+#   node tools/scenario-check.mjs
+# and doctor.mjs reports how long ago that was.
+#
+# The schedule is the only trigger that can catch drift nobody touched: the shop's names,
+# prices and stock move on their own.
+
+on:
+  schedule:
+    - cron: "37 3 * * 1" # Mondays 03:37 UTC, roughly 04:37 in Copenhagen. Off the top of the hour.
+  push:
+    branches: [master]
+    paths:
+      - "family-planner/**"
+      - ".github/workflows/quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # the version the planner is developed and run on; engines floor is 22
+
+      - name: Every file parses
+        working-directory: family-planner
+        run: |
+          set -e
+          n=0
+          for f in *.mjs test/*.mjs tools/*.mjs; do
+            node --check "$f"
+            n=$((n + 1))
+          done
+          echo "$n file(s) checked with node --check"
+
+      - name: Offline suite
+        working-directory: family-planner
+        run: node --test test/*.test.mjs
+
+      - name: Golden shelves must not move
+        working-directory: family-planner
+        run: node tools/golden-run.mjs --compare
+
+      - name: The pure half of the battery
+        working-directory: family-planner
+        run: node tools/scenario-check.mjs --pure

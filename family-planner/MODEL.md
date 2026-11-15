@@ -447,6 +447,24 @@ as a taste on 2026-11-13.
   is not the 0 planned items, which add up to 0`. Name the field you measured, not the one you
   guessed.
 
+An unresolved line used to be a dead end. The shelf had held something close, the resolver had
+scored it, and the score was thrown away. The plan now keeps up to two of those names per
+unresolved intent, filtered by the never-list and the unit-price ceiling, and prints each with
+its pack, its price, its sku and the one `--extra` flag that takes it. `NEAR_MISS_BAND` is 0,15
+*below that family's own bar*, not below the 0,7 default, so a family that raised
+`purchasing.minNameScore` gets a narrower offer, not a wider one. The bar still refuses the
+purchase - that is the point of having one. What changed is who decides: the family, with the
+price in front of them, instead of a resolver guessing on their behalf.
+
+A check nobody schedules quietly stops happening, so the battery stamps what it found into
+`data/quality/last-check.json`: the time, the mode, the counts, the failing names, the commit.
+`doctor.mjs` reads that stamp and grades it the way it grades a plan - one failed scenario is a
+STOP, a stamp older than 7 days is a warn, no stamp is a warn, so a machine that was never
+checked says so instead of looking clean. `--pure` is the half that needs nothing but the
+repository: no home, no mined history, no shop call. The scheduled `Quality` job runs that half
+with the golden shelves, which is where a matcher drifting away from the measured fixtures shows
+up first. The shop-facing half stays on the machine that owns `data/`, once a week, by cron.
+
 One loose end, and it is a family's to cut: their profile still maps `piskefløde` onto
 "Fløde" in `queryAliases`, and the 4 % rule answers that line first, so the alias is dead
 weight until they say what whipping cream means to them. Two lines that blocked the basket

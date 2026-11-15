@@ -116,6 +116,42 @@ function checkData(out) {
   }
 }
 
+/** How long the last battery result stays trustworthy, in hours: a week. Past it the shop,
+ *  the prices and the profile have all had time to move. */
+const QUALITY_MAX_AGE_H = 168;
+
+/** The last scenario battery run on this home. A pass two months old is not a pass, and a
+ *  battery that recorded a failure is a real one: it already caught a regression. A missing
+ *  stamp is a warning, never a block - a machine set up today has run nothing yet. */
+function checkQuality(out) {
+  const file = DATA + "/quality/last-check.json";
+  if (!existsSync(file)) {
+    out.push(finding("quality", WARN, "the scenario battery has never run on this home", "node tools/scenario-check.mjs"));
+    return;
+  }
+  let s = null;
+  try { s = JSON.parse(readFileSync(file, "utf8")); } catch { s = null; }
+  const at = Date.parse(String((s || {}).at || ""));
+  if (!s || !Number.isFinite(at)) {
+    out.push(finding("quality", WARN, "the battery stamp is there but cannot be read", "node tools/scenario-check.mjs"));
+    return;
+  }
+  const hours = Math.max(0, (Date.now() - at) / 3600000);
+  const ran = `${Math.round(hours / 24) > 0 ? Math.round(hours / 24) + " d" : Math.round(hours) + " h"} ago`;
+  if (Number(s.fail) > 0) {
+    const names = (Array.isArray(s.failedNames) ? s.failedNames : []).slice(0, 3).join("; ");
+    out.push(finding("quality", BLOCK, `the last battery run (${ran}, ${s.mode}) had ${s.fail} failed scenario(s): ${names || "unnamed"}`,
+      "fix the scenario, then run: node tools/scenario-check.mjs"));
+    return;
+  }
+  if (hours > QUALITY_MAX_AGE_H) {
+    out.push(finding("quality", WARN, `the battery last ran ${ran} (${s.mode}, ${s.pass}/${s.scenarios} pass) - older than ${Math.round(QUALITY_MAX_AGE_H / 24)} d`,
+      "node tools/scenario-check.mjs"));
+    return;
+  }
+  out.push(finding("quality", OK, `scenario battery ran ${ran} (${s.mode}, ${s.pass}/${s.scenarios} pass, commit ${s.commit || "unknown"})`));
+}
+
 function envKeys(path) {
   const keys = {};
   for (const line of readFileSync(path, "utf8").split("\n")) {
@@ -216,6 +252,7 @@ async function main() {
   checkProfile(out);
   checkData(out);
   checkPantry(out);   // the file only a person writes: a clone has none, and a plan notices
+  checkQuality(out);  // when the scenario battery last vouched for this home
   checkWritable(out);
   checkDocker(out);
   if (process.argv.includes("--online")) await checkEndpoint(out);

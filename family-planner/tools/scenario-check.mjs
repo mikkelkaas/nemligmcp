@@ -8,6 +8,7 @@
 //
 //   node tools/scenario-check.mjs              about a minute, needs the shop reachable
 //   node tools/scenario-check.mjs --offline    the guards and the arithmetic only, no calls
+//   node tools/scenario-check.mjs --pure         only what needs no home: a scheduled job on a bare checkout
 //   node tools/scenario-check.mjs --keep       leave the scratch home for inspection
 //
 // Exit 0: every scenario behaved. Exit 1: one regressed, and its own line says which.
@@ -18,8 +19,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { HOME, envFile } from "../paths.mjs";
+import { HOME, envFile, writeJsonAtomic } from "../paths.mjs";
 import { validatePlan } from "../apply.mjs";
+import { mergeItems, markdownNotes } from "../plan.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const NODE_TIMEOUT_PLAN = 600000;      // a 14-day cold plan measured 10.3 s; 10 min is the guard
@@ -159,6 +161,33 @@ function checkFlagNotes(dir) {
   }
 }
 
+/** What doctor says about a battery stamp that is missing, old, broken or carrying a failure.
+ *  A silent check is worse than none: the stamp is the only thing that tells this home whether
+ *  its guards were ever run, so each of these four states has to reach a different level. */
+function checkStamp(dir) {
+  const stamp = join(dir, "data", "quality", "last-check.json");
+  const env = { NEMLIG_HOME: dir, NEMLIG_ENV: envFile() };
+  const dayMs = 24 * 3600 * 1000;
+  const write = (body) => writeFileSync(stamp, typeof body === "string" ? body : JSON.stringify(body));
+  const run = (label) => {
+    const r = nodeRun("doctor.mjs", [], env, NODE_TIMEOUT_FAST, label);
+    const line = r.out.split("\n").find((l) => /quality/.test(l)) || `(no quality line, exit ${r.code}: ${r.out.slice(0, 120)})`;
+    return line.trim();
+  };
+  const cases = [
+    { name: "stamp:never run", prepare: () => rmSync(stamp, { force: true }), want: /warn .* has never run/ },
+    { name: "stamp:two weeks old", prepare: () => write({ at: new Date(Date.now() - 12 * dayMs).toISOString(), mode: "live", scenarios: 21, pass: 21, fail: 0, failedNames: [], commit: "scenario" }), want: /warn .* 12 d ago/ },
+    { name: "stamp:one scenario failed", prepare: () => write({ at: new Date().toISOString(), mode: "live", scenarios: 21, pass: 20, fail: 1, failedNames: ["example:one failing scenario"], commit: "scenario" }), want: /STOP .*had 1 failed scenario\(s\): example:one failing scenario/ },
+    { name: "stamp:unreadable", prepare: () => write("{ not json"), want: /warn .* cannot be read/ },
+    { name: "stamp:fresh and clean", prepare: () => write({ at: new Date().toISOString(), mode: "live", scenarios: 21, pass: 21, fail: 0, failedNames: [], commit: "scenario" }), want: /ok .*scenario battery ran/ },
+  ];
+  for (const c of cases) {
+    c.prepare();
+    const line = run(c.name);
+    record(c.name, c.want.test(line), line);
+  }
+}
+
 /** --trim on and --trim off, started from the same state, on a shelf that cannot fit. */
 function checkTrimPair(snapshot) {
   const a = scratchFrom(snapshot), b = scratchFrom(snapshot);
@@ -238,9 +267,92 @@ function checkPlanRun(dir, argv, label) {
   return { ...r, plan: planOf(dir) };
 }
 
+/** The uncertain-matcher band, checked without a shop: a name that came within 0,15 of the
+ *  family's own bar must reach the plan as a priced choice with the flag that takes it. Pure
+ *  functions, so it costs no call and runs on every battery, offline included. */
+function checkNearMiss() {
+  const label = "near miss: a close name is printed as a decision, not bought or dropped";
+  try {
+    const merged = mergeItems([{
+      ok: false, query: "Ost revet danbo fast", source: "dinner:test",
+      why: "no name reached 0.8 (best: Revet Ost Danbo (score 0.75))",
+      nearNeed: "400 g",
+      nearMiss: [{ sku: "9000002", name: "Revet Ost Danbo", brand: "Arla", price: 24, unitPrice: 60, pack: { raw: "400 g", qty: 400, unit: "g" }, score: 0.75 }],
+    }], false);
+    const md = markdownNotes({
+      skipped: [], items: [], unresolved: merged.unresolved, recipeGaps: [],
+      substitutions: [], substitutedAway: [], nearMisses: merged.nearMisses,
+    }).join("\n");
+    const text = md.replace(/\\n/g, "\n");
+    const line = (merged.nearMisses[0] || {}).candidates[0] || {};
+    const flags = [
+      [merged.nearMisses.length === 1, "the near miss survives the merge"],
+      [line.sku === "9000002" && line.score === 0.75, "the sku and the score it reached travel with it"],
+      [/Close but under your bar/.test(text), "the plan prints a section for it"],
+      [/Revet Ost Danbo.*400 g for 24,00 kr/.test(text), "with the pack and the price, in Danish decimal"],
+      [/`--extra "Revet Ost Danbo:400 g"`/.test(text), "and the exact flag that takes it"],
+      [/sku 9000002/.test(text), "and the sku, so the line can be checked before buying"],
+      [merged.unresolved.length === 1, "the line is still listed as not found: nothing was bought"],
+    ];
+    const bad = flags.filter((f) => !f[0]).map((f) => f[1]);
+    record(label, bad.length === 0, bad.length ? "missing: " + bad.join("; ") : "1 near miss, priced, with its --extra flag");
+  } catch (e) {
+    record(label, false, "threw: " + e.message);
+  }
+}
+
 const created = [];
 
+/** Where a run's result is recorded, so `doctor.mjs` can say when quality was last checked.
+ *  A stamp, not a log: one object, overwritten, always the newest word about this home. */
+function stampPath() { return join(HOME, "data", "quality", "last-check.json"); }
+
+/** The commit the battery just checked, or null. A run with no commit is still a run. */
+function gitCommit() {
+  const r = spawnSync("git", ["-C", ROOT, "rev-parse", "--short", "HEAD"], { encoding: "utf8", timeout: 5000 });
+  return r.status === 0 ? String(r.stdout || "").trim().slice(0, 12) : null;
+}
+
+function writeStamp(failed) {
+  const stamp = {
+    at: new Date().toISOString(),
+    mode: process.argv.includes("--pure") ? "pure" : process.argv.includes("--offline") ? "offline" : "live",
+    scenarios: results.length,
+    pass: results.length - failed.length,
+    fail: failed.length,
+    failedNames: failed.map((f) => f.name),
+    commit: gitCommit(),
+    node: process.versions.node,
+  };
+  try {
+    writeJsonAtomic(stampPath(), stamp);
+    console.log(`stamp: ${stampPath()}  (${stamp.at}, ${stamp.mode}, ${stamp.pass}/${stamp.scenarios} pass, ${stamp.commit || "no commit"})`);
+  } catch (e) {
+    console.log(`warn: the result was not stamped (${e.message}) - doctor will report the battery as never run`);
+  }
+}
+
+/** The scenarios that need nothing but the repository: no home, no mined history, no shop, no
+ *  credentials. This is what a scheduled job on another machine can honestly run; the rest of
+ *  the battery needs a data/ folder that is deliberately not committed. */
+function checkPure() {
+  console.log("scenario-check: pure run - only the repository, no home, no shop call");
+  const fixture = join(ROOT, "test", "golden", "home", "over-cap-trim");
+  if (existsSync(join(fixture, "data", "plans", "plan-latest.json"))) {
+    checkArithmetic(fixture, "arithmetic:the committed fixture plan");
+  } else {
+    record("arithmetic:the committed fixture plan", false, "no plan file under test/golden/home/over-cap-trim/data/plans");
+  }
+  checkNearMiss();
+  console.log("  skipped: the guard probes and every shop scenario - they need the home under data/, which is not committed");
+  const failed = results.filter((r) => !r.ok);
+  console.log(`${results.length} scenarios, ${results.length - failed.length} pass, ${failed.length} fail`);
+  writeStamp(failed);
+  process.exitCode = failed.length ? 1 : 0;
+}
+
 function main() {
+  if (process.argv.includes("--pure")) { checkPure(); return; }
   const offline = process.argv.includes("--offline");
   const first = scratchHome();
   created.push(first.dir);
@@ -251,6 +363,8 @@ function main() {
   console.log(`  plan file used for the guard probes: ${join(first.dir, "data", "plans", "plan-latest.json")}`);
   checkGuards(first.dir);
   checkArithmetic(first.dir, "arithmetic:the plan it started from");
+  checkNearMiss();
+  checkStamp(first.dir);
   if (offline) {
     console.log("  skipped: the shop-facing scenarios (run without --offline to include them)");
   } else {
@@ -262,6 +376,8 @@ function main() {
   checkSecrets(created);
   const failed = results.filter((r) => !r.ok);
   console.log(`${results.length} scenarios, ${results.length - failed.length} pass, ${failed.length} fail`);
+  // The stamp is written before the scratch is cleaned: the result outlives the homes it ran in.
+  writeStamp(failed);
   if (!process.argv.includes("--keep")) for (const dir of created) rmSync(dir, { recursive: true, force: true });
   else console.log(`scratch homes kept under ${tmpdir()}`);
   process.exitCode = failed.length ? 1 : 0;

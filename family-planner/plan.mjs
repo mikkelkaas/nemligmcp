@@ -398,8 +398,12 @@ export function mergeItems(resolved, purchase) {
   const substitutions = unresolved.filter((u) => u.substitution)
     .map((u) => ({ wanted: u.query, source: u.source, why: u.why, ...u.substitution }));
   const flat = unresolved.map((u) => ({ query: u.query, source: u.source, why: u.why }));
+  // A near miss is not a blocker and not a purchase: it is the shelf saying "almost" within
+  // 0,15 of the family's own bar. Listed with its price so the answer is one flag, typed.
+  const nearMisses = unresolved.filter((u) => Array.isArray(u.nearMiss) && u.nearMiss.length)
+    .map((u) => ({ query: u.query, source: u.source, need: u.nearNeed || null, candidates: u.nearMiss }));
   const flatGaps = gaps.map((u) => ({ query: u.query, source: u.source, why: u.why, sourceLabel: u.sourceLabel || null }));
-  return { items, unresolved: flat, recipeGaps: flatGaps, substitutions, substitutedAway };
+  return { items, unresolved: flat, recipeGaps: flatGaps, substitutions, substitutedAway, nearMisses };
 }
 
 /**
@@ -596,7 +600,7 @@ function markdownSwaps(plan) {
   return L;
 }
 
-function markdownNotes(plan) {
+export function markdownNotes(plan) {
   const L = [];
   if (plan.menuAgainst && plan.menuAgainst.at) {
     L.push("", "## Menu ranked against", "");
@@ -626,6 +630,21 @@ function markdownNotes(plan) {
   if (plan.unresolved.length) {
     L.push("", "## NOT FOUND — check these", "");
     for (const u of plan.unresolved) L.push(`- ${u.query} (${u.source}) — ${u.why}`);
+  }
+  // Almost-good answers, kept out only by the family's own bar. Nothing is bought from here:
+  // the line gives the flag that takes one, so a person decides with a price in front of them.
+  if ((plan.nearMisses || []).length) {
+    L.push("", "## Close but under your bar — one flag takes it", "");
+    for (const n of plan.nearMisses) {
+      for (const c of n.candidates) {
+        const price = Number(c.price).toFixed(2).replace(".", ",");
+        const flag = `--extra "${c.name}${n.need ? ":" + n.need : ""}"`;
+        L.push(`- ${n.query} (${n.source}) — "${c.name}"${c.brand ? " (" + c.brand + ")" : ""} reached `
+          + `${String(c.score).replace(".", ",")} against your bar, `
+          + `${(c.pack && c.pack.raw) ? c.pack.raw + " for " : ""}${price} kr: `
+          + `take it with \`${flag}\` (sku ${c.sku})`);
+      }
+    }
   }
   return L;
 }
@@ -836,6 +855,11 @@ function printSummary(plan, diff, options, planTotal, jsonPath, mdPath) {
       : `Ceiling ${plan.capKr} kr: ${planTotal.toFixed(2)} kr, ${(plan.capKr - planTotal).toFixed(2)} kr spare${plan.trim.length ? `, after ${plan.trim.length} trim move(s)` : ""}.`);
   }
   if (plan.unresolved.length) console.log(`WARNING: ${plan.unresolved.length} intent(s) found no product — fix them before applying.`);
+  // The way out of that WARNING, when there is one: the count and where to read it.
+  if ((plan.nearMisses || []).length) {
+    const n = plan.nearMisses.reduce((a, x) => a + x.candidates.length, 0);
+    console.log(`NOTE: ${plan.nearMisses.length} of them have a close answer under your own bar - ${n} name(s) with prices and the flag to take one, under "Close but under your bar".`);
+  }
   if ((plan.timing || {}).stale) console.log(`WARNING: ${plan.timing.stale} line(s) were decided on a shelf the shop could not answer - the price cache from the run before was used, check those lines.`);
   if ((plan.recipeGaps || []).length) console.log(`NOTE: ${plan.recipeGaps.length} recipe line(s) name something Namlig has no product for (an "add yourself" line, a link) — listed under Left out, they do not block applying.`);
   if (plan.skipped.length) console.log(`Stock cycle skipped ${plan.skipped.length} item(s).`);
@@ -953,7 +977,7 @@ async function main() {
   });
   if (trimmed.actions.length) printTrim(trimmed, capKr);
   const items = trimmed.items;
-  const { unresolved, recipeGaps, substitutions, substitutedAway } = merged;
+  const { unresolved, recipeGaps, substitutions, substitutedAway, nearMisses } = merged;
   // How often a tilbud beat this family's own habit today. Worth one line per run:
   // it is the only place the planner overrides a favourite on price.
   const saleSwaps = resolved.filter((r) => r && r.ok && r.compare === "sale-vs-usual").length;
@@ -992,6 +1016,7 @@ async function main() {
     recipeGaps,
     substitutions,
     substitutedAway,
+    nearMisses,
     bulkOffers: bulkOffersOf(resolved),
     stalePins: stalePinsOf(resolved),
     saleItems: items.filter((i) => i.onSale).length,

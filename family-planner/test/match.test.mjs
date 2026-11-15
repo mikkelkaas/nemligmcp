@@ -999,3 +999,24 @@ test("a favourite pinned on a refused brand is not bought, and the plan says why
   assert.match(empty.why, /your own never-list refused them \(brand Lavpris\)/, "and it is named as a refusal, not as an empty shelf");
   assert.ok(!empty.substitution || String(empty.substitution.brand || "") !== "Lavpris", "a proposal never carries the refused brand either");
 });
+
+test("a close answer under the family's own bar becomes a printed decision, never a purchase", async () => {
+  const CAN = { IsDeliveryAvailable: true, IsAvailableInStock: true };
+  const CLOSE = {
+    Id: "9000002", Name: "Revet Ost Danbo", Brand: "Arla", Price: 24,
+    UnitPriceCalc: 60, UnitPriceLabel: "kr/kg", Description: "400 g", Availability: CAN,
+  };
+  const mcp = { async call() { return { isError: false, text: "", json: { Products: { Products: [CLOSE] } } }; } };
+  const intent = { query: "Ost revet danbo fast", need: "400 g", purchasing: { minNameScore: 0.8 } };
+  const r = await resolveIntent(mcp, intent, {});
+  assert.equal(r.ok, false, "the family's bar still holds - a near miss is never bought on its own");
+  assert.equal(r.nearMiss.length, 1, "the close name is carried to the plan, not dropped");
+  assert.equal(r.nearMiss[0].sku, "9000002", "with the sku, so the line can be checked");
+  assert.equal(r.nearMiss[0].score, 0.75, "with the score it reached, measured against the 0,8 bar");
+  assert.equal(r.nearMiss[0].price, 24, "and the price it would cost");
+  const refused = await resolveIntent(mcp, { ...intent, avoidBrands: ["Arla"] }, {});
+  assert.deepEqual(refused.nearMiss, [], "a brand the family never buys is not offered back as a near miss");
+  const taken = await resolveIntent(mcp, { ...intent, query: r.nearMiss[0].name, mode: "cheapest" }, {});
+  assert.equal(taken.ok, true, "the flag the plan prints really lands on that product");
+  assert.equal(String(taken.pick.sku), "9000002", "the same product, not another one with a similar name");
+});

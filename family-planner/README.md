@@ -369,6 +369,11 @@ lines instead: no one cooks a fish salad for dinner.
   gate, 1,6 s when the 24 h price cache answers 46 of 52 intents.
 - If a name has no in-stock match, the intent lands in `unresolved` and `apply.mjs`
   refuses until it is fixed or passed with `--ignore-unresolved`.
+- If the shelf held something close, the plan adds a `## Close but under your bar — one flag
+  takes it` section: the name, the brand, the score it reached, the pack, the price, the sku and
+  the one `--extra` flag that takes it. Nothing there is bought - a near miss is a decision to
+  read, not a purchase. "Close" means within `NEAR_MISS_BAND` (0,15) below *your* bar, so a
+  family that raised `purchasing.minNameScore` gets fewer of these lines, not more.
 - Verified: an 8-day dry run finished with 0 unresolved lines and the basket untouched.
   Not verified on your account: a real `apply.mjs` run writes the basket.
 
@@ -379,9 +384,18 @@ node mine-history.mjs            # after 5+ new orders
 node pin-skus.mjs --write        # re-pin favourite SKUs
 node --test test/*.test.mjs      # the suite, incl. a stubbed search (no network)
 node tools/scenario-check.mjs    # the battery: guards, arithmetic, notes, shop scenarios
+node tools/scenario-check.mjs --pure   # the half that needs no data/ - this is what CI runs
 rm -f data/product-cache.json    # if prices or ranges look stale
 node doctor.mjs                  # one line per check, and the command that answers it
 ```
+
+The battery writes its result into `data/quality/last-check.json` (when it ran, offline or live,
+how many scenarios passed, the failing names, the commit). `doctor.mjs` reads that stamp:
+one scenario failed is a STOP, a stamp older than 7 days is a warn, no stamp at all is a warn.
+So a machine that was never checked says so out loud. A weekly line in `crontab -l` keeps it
+honest, or the `Quality` job in `.github/workflows/quality.yml` runs the pure half plus the
+golden shelves on GitHub's clock - the shop-facing half cannot run there, because `data/` is
+gitignored on purpose.
 
 ## One profile to tweak
 

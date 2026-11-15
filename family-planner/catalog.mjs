@@ -177,6 +177,7 @@ export async function resolveIntent(mcp, intent, { cache = null } = {}) {
   const tries = [primary, ...(intent.alt || [])].map((q) => String(q || "").trim()).filter(Boolean);
   const notes = [];
   let substitution = null;
+  let nearMiss = null;
   let candidates = 0;
   for (const query of tries) {
     const r = await attempt(mcp, query, intent, cache);
@@ -189,10 +190,14 @@ export async function resolveIntent(mcp, intent, { cache = null } = {}) {
     }
     notes.push(`${query} -> ${r.why}`);
     if (!substitution && r.substitution) substitution = r.substitution;
+    if (!nearMiss && Array.isArray(r.nearMiss) && r.nearMiss.length) nearMiss = r.nearMiss;
     candidates = Math.max(candidates, Number(r.candidates) || 0);
   }
   // The proposal survives to the plan file: the person accepts it with the printed --extra flag.
-  return { ok: false, query: primary, why: notes.join(" | "), candidates, attempts: tries.length, substitution };
+  return {
+    ok: false, query: primary, why: notes.join(" | "), candidates, attempts: tries.length, substitution,
+    nearMiss: nearMiss || [], nearNeed: typeof intent.need === "string" ? intent.need : null,
+  };
 }
 
 /** The name threshold for this intent: the family's own, or MIN_NAME_SCORE, kept
@@ -210,6 +215,28 @@ function qualifierWords(intent) {
   return Array.isArray(list) ? list.slice(0, 40) : [];
 }
 
+/** How far below the family's own bar the shop's answer still counts as the right product
+ *  with the wrong wording. Further down the answer is a different product, not a name. */
+export const NEAR_MISS_BAND = 0.15;
+
+/** The buyable products that came within NEAR_MISS_BAND of the bar, best score first, at most
+ *  two. Never bought: a near miss is printed with the one flag that takes it, so an
+ *  unresolved line ends as a decision to read instead of a dead end. The never-list and the
+ *  price ceiling apply here too - a near miss on a refused brand helps nobody. */
+function nearMissOf(query, products, threshold, intent) {
+  const split = eligibleOf(products, {
+    avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
+  });
+  const words = qualifierWords(intent);
+  return split.eligible
+    .map((p) => ({ p, score: nameScore(query, p.name, words, shelfContext(p)) }))
+    .filter((s) => s.score < threshold && s.score >= threshold - NEAR_MISS_BAND)
+    .sort((a, b) => b.score - a.score
+      || (Number(a.p.unitPrice) || Number.MAX_VALUE) - (Number(b.p.unitPrice) || Number.MAX_VALUE))
+    .slice(0, 2)
+    .map((s) => ({ ...altOf(s.p), score: Number(s.score.toFixed(2)) }));
+}
+
 /** One search, one selection. Returns ok:false with a reason instead of throwing. */
 async function attempt(mcp, query, intent, cache) {
   const mode = intent.mode || "cheapest";
@@ -219,8 +246,15 @@ async function attempt(mcp, query, intent, cache) {
   if (matching.length === 0) {
     // The three names the shop answered with, each with the score it reached, so a
     // blocked line is a decision a person can read rather than a magic number.
+    const threshold = minNameScore(intent);
     const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name, qualifierWords(intent), shelfContext(p))})`).join(", ");
-    return { ok: false, query, why: `no name reached ${minNameScore(intent)} (best: ${top})`, candidates: products.length, cached, ageMs };
+    return {
+      ok: false, query, why: `no name reached ${threshold} (best: ${top})`,
+      candidates: products.length, cached, ageMs,
+      // Two names that came close, if the shelf holds any, each with what it costs. The plan
+      // prints them with the flag that takes one, so the line is not a dead end.
+      nearMiss: nearMissOf(query, products, threshold, intent),
+    };
   }
   const need = intent.need ? (typeof intent.need === "string" ? parseNeed(intent.need) : intent.need) : null;
   const pinned = mode === "history" && intent.sku ? matching.find((p) => String(p.id) === String(intent.sku)) : null;
