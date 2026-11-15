@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { DEFAULT_HEADERS } from "../config.js";
 import { CookieJar } from "./cookieJar.js";
-import { NemligHttpError, NemligNetworkError } from "./errors.js";
+import { NemligError, NemligHttpError, NemligNetworkError } from "./errors.js";
+import { apiUrl } from "./urls.js";
 
 export interface RequestOptions {
   method?: string;
@@ -38,7 +39,7 @@ function buildUrl(base: string, query?: RequestOptions["query"]): string {
  * only on transport failures.
  */
 export async function rawRequest(url: string, opts: RequestOptions = {}): Promise<RawResponse> {
-  const finalUrl = buildUrl(url, opts.query);
+  const finalUrl = buildUrl(apiUrl(url, !!opts.jar).href, opts.query);
   const headers: Record<string, string> = {
     ...DEFAULT_HEADERS,
     "X-Correlation-Id": randomUUID(),
@@ -57,36 +58,30 @@ export async function rawRequest(url: string, opts: RequestOptions = {}): Promis
   }
 
   const method = opts.method ?? "GET";
-  const MAX_REDIRECTS = 5;
-  let currentUrl = finalUrl;
-
-  for (let hop = 0; ; hop++) {
-    let response: Response;
-    try {
-      response = await fetch(currentUrl, {
-        method,
-        headers,
-        body,
-        // Follow redirects manually so we can absorb Set-Cookie on every hop
-        // (fetch's automatic following only exposes the final response headers).
-        redirect: "manual",
-      });
-    } catch (err) {
-      throw new NemligNetworkError(`Network error requesting ${currentUrl}`, err);
-    }
-
-    if (opts.jar) opts.jar.storeFromResponse(response.headers);
-
-    const isRedirect = response.status >= 300 && response.status < 400;
-    const location = response.headers.get("location");
-    if (isRedirect && location && method === "GET" && hop < MAX_REDIRECTS) {
-      currentUrl = new URL(location, currentUrl).toString();
-      continue;
-    }
-
-    const text = await response.text();
-    return { status: response.status, headers: response.headers, text };
+  let response: Response;
+  try {
+    response = await fetch(finalUrl, {
+      method,
+      headers,
+      body,
+      // Never forward authentication or cookies to redirect destinations.
+      redirect: "manual",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch (err) {
+    throw new NemligNetworkError("Nemlig API request failed", err);
   }
+
+  if (opts.jar) opts.jar.storeFromResponse(response.headers);
+
+  const isRedirect = response.status >= 300 && response.status < 400;
+  if (isRedirect) {
+    await response.body?.cancel();
+    throw new NemligError("Nemlig API redirects are not allowed");
+  }
+
+  const text = await response.text();
+  return { status: response.status, headers: response.headers, text };
 }
 
 /** Parse a RawResponse as JSON, throwing NemligHttpError on non-2xx or invalid JSON. */

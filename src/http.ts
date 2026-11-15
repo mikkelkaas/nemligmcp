@@ -140,7 +140,7 @@ export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions)
   const basePath = opts.path ?? "/mcp";
   const secretBytes = opts.secret === undefined ? undefined : Buffer.from(opts.secret);
   const idleTimeoutMs = opts.idleTimeoutMs ?? 24 * 60 * 60 * 1000;
-  const maxBodyBytes = opts.maxBodyBytes ?? 4 * 1024 * 1024;
+  const maxBodyBytes = opts.maxBodyBytes ?? 64 * 1024;
   const log = opts.log ?? ((msg: string) => console.error(msg));
   const sessions = new Map<string, Session>();
   let validateHost = true;
@@ -176,6 +176,7 @@ export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions)
 
   const handlePost = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const body = await readJson(req, maxBodyBytes);
+    if (Array.isArray(body)) return sendError(res, 400, "JSON-RPC batches are not supported");
     const sessionId = req.headers["mcp-session-id"];
     const existing = sessionFor(sessionId);
     if (existing) {
@@ -183,7 +184,7 @@ export async function serveHttp(buildServer: () => McpServer, opts: HttpOptions)
       return await existing.transport.handleRequest(req, res, body);
     }
     if (sessionId !== undefined) return sendError(res, 404, "Session not found");
-    const isInit = Array.isArray(body) ? body.some(isInitializeRequest) : isInitializeRequest(body);
+    const isInit = isInitializeRequest(body);
     if (!isInit) return sendError(res, 400, "Bad Request: no valid session ID provided");
     if (closing) return sendError(res, 503, "Server is shutting down");
 

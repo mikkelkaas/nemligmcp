@@ -216,6 +216,13 @@ describe("loopback bind", () => {
     assert.equal(JSON.parse(r.body).error.code, -32700);
   });
 
+  it("rejects JSON-RPC batches before creating or looking up a session", async () => {
+    const r = await post({ Host: hostOf(server) }, `[${INIT}]`);
+    assert.equal(r.status, 400);
+    assert.equal(r.headers["mcp-session-id"], undefined);
+    assert.match(r.body, /batches are not supported/);
+  });
+
   it("returns 413 while an oversized chunked upload is still streaming", async () => {
     const p = open(server, "POST", { ...MCP_HEADERS, Host: hostOf(server) });
     try {
@@ -246,6 +253,24 @@ describe("loopback bind", () => {
 });
 
 describe("sessions", () => {
+  it("rejects oversized tool arguments before running the tool", async () => {
+    const server = (await start("127.0.0.1", () => createServer({} as ApiClient)))!;
+    try {
+      const init = await send(server, "POST", { ...MCP_HEADERS, Host: hostOf(server) }, INIT);
+      const headers = { ...MCP_HEADERS, Host: hostOf(server),
+        "mcp-session-id": init.headers["mcp-session-id"] as string,
+        "mcp-protocol-version": "2025-03-26" };
+      await send(server, "POST", headers, JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));
+      const reply = await send(server, "POST", headers, JSON.stringify({
+        jsonrpc: "2.0", id: 3, method: "tools/call",
+        params: { name: "quick_search", arguments: { query: "milk", extra: Array(200).fill(0) } },
+      }));
+      assert.match(JSON.stringify(rpcMessages(reply)), /maximum of 100 elements/);
+    } finally {
+      await stop(server);
+    }
+  });
+
   it("serves tools/list to two concurrent sessions", async () => {
     const server = (await start("127.0.0.1", () => createServer({} as ApiClient)))!;
     try {

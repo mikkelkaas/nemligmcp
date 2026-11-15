@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { BASE_URL, GATEWAY_URL } from "../config.js";
+import { GATEWAY_URL } from "../config.js";
 import type { ApiClient } from "./client.js";
 import type { SearchResponse } from "../types/nemlig.js";
+import { productPageUrl } from "./urls.js";
 
 export interface SearchParams {
   query: string;
@@ -44,9 +45,7 @@ export async function quickSearch(client: ApiClient, query: string): Promise<unk
  * result (e.g. "/12345/some-product" or a full nemlig.com URL).
  */
 export async function getProductDetails(client: ApiClient, productUrl: string): Promise<unknown> {
-  const path = productUrl.startsWith("http")
-    ? productUrl
-    : `${BASE_URL}/${productUrl.replace(/^\/+/, "")}`;
+  const path = productPageUrl(productUrl);
   const ctx = await client.getSearchContext();
   return client.call<unknown>(path, {
     query: { GetAsJson: 1, t: ctx.timeslotUtc || undefined, d: 1 },
