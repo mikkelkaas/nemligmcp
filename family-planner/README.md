@@ -129,7 +129,8 @@ and it refuses to run without `--approve I-APPROVE-THIS-BASKET`.
 | `plan.mjs` | builds the plan, resolves every intent, diffs the live basket | `data/plans/plan-<stamp>.{json,md}` |
 | `slots.mjs` | ranks bookable timeslots by price, window and weekday; drops slots whose order deadline passed | nothing |
 | `apply.mjs` | writes an approved plan, re-reads and verifies the basket | `data/plans/applied-<stamp>.json` |
-| `tools/scenario-check.mjs` | the evaluation battery: the guards, the arithmetic, the flag notes and the shop scenarios, against a scratch copy of the home | only its own scratch folders in `/tmp` |
+| `tools/scenario-check.mjs` | the evaluation battery: the guards, the arithmetic, the flag notes, the stamp states and the shop scenarios, against a scratch copy of the home; `--pure` runs only what a bare checkout can run | `data/quality/last-check.json`, plus its own scratch folders in `/tmp` |
+| `doctor.mjs` | one line per health check, each with the command that answers it, including how long ago the battery last ran | nothing |
 
 ## A budget that decides
 

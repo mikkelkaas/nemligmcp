@@ -127,9 +127,20 @@ function checkArithmetic(dir, label) {
 function checkEightDay(dir) {
   const r = checkPlanRun(dir, EIGHT_DAYS, "eight day");
   const lines = (r.plan && r.plan.items.length) || 0;
-  const unresolved = (r.plan && r.plan.unresolved.length) || 0;
-  record("plan:8 days", r.code === 0 && /^PLAN /m.test(r.out) && unresolved === 0,
-    `exit ${r.code}, ${lines} purchases, ${unresolved} not found`);
+  const unres = (r.plan && r.plan.unresolved) || [];
+  const near = (r.plan && r.plan.nearMisses) || [];
+  // A line the shelf cannot fill stays a failure: apply.mjs blocks the basket until a person
+  // decides, whatever the reason is. What the text adds is which line it is and what the plan
+  // carried for it, so a stock-out reads as a family fact with a next step instead of looking
+  // like the planner broke.
+  const nearBy = new Map(near.map((n) => [n.query, n.candidates.length]));
+  // plan.unresolved keeps only the query, the source and the reason; the alternative it carried
+  // for that same line sits in plan.substitutions, keyed by the wanted query.
+  const subbed = new Set(((r.plan && r.plan.substitutions) || []).map((s) => s.wanted));
+  const detail = unres.map((u) => `${u.query} [${u.source}]`
+    + `${subbed.has(u.query) ? " alternative named" : ""}${nearBy.get(u.query) ? ` ${nearBy.get(u.query)} near miss(es) printed` : ""}`).join("; ");
+  record("plan:8 days", r.code === 0 && /^PLAN /m.test(r.out) && unres.length === 0,
+    `exit ${r.code}, ${lines} purchases, ${unres.length} not found${detail ? `: ${detail}` : ""}`);
   checkArithmetic(dir, "plan:8 days adds up");
   return r;
 }
