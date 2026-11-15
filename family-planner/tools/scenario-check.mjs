@@ -31,8 +31,11 @@ const FOURTEEN_DAYS = ["--days", "14", "--breakfast", "yes", "--lunchbox", "yes"
 const CLOSED = "http://127.0.0.1:9";   // nothing listens here; a closed port is the safety device
 
 const results = [];
-function record(name, ok, detail) {
-  results.push({ name, ok });
+/** kind: "code" (the planner did something wrong) or "family" (the shop or the family made this
+ *  true today, and the plan already named the line and carried something for it). doctor grades
+ *  the two differently, so the kind travels with the failure. */
+function record(name, ok, detail, kind = "code") {
+  results.push({ name, ok, detail: String(detail || ""), kind });
   console.log(`${ok ? "PASS" : "FAIL"}  ${name}  ${detail}`);
 }
 
@@ -139,8 +142,14 @@ function checkEightDay(dir) {
   const subbed = new Set(((r.plan && r.plan.substitutions) || []).map((s) => s.wanted));
   const detail = unres.map((u) => `${u.query} [${u.source}]`
     + `${subbed.has(u.query) ? " alternative named" : ""}${nearBy.get(u.query) ? ` ${nearBy.get(u.query)} near miss(es) printed` : ""}`).join("; ");
+  const answered = (u) => subbed.has(u.query) || Number(nearBy.get(u.query) || 0) > 0;
+  // The kind is what doctor grades on. "family" only when every blocked line already carries
+  // its answer in the plan: then the shop, not the code, is the reason, and a person has a
+  // choice to read. One line with nothing carried for it is treated as the code's own problem,
+  // because that is the case where the planner should have found an alternative and did not.
+  const kind = unres.length && unres.every(answered) ? "family" : "code";
   record("plan:8 days", r.code === 0 && /^PLAN /m.test(r.out) && unres.length === 0,
-    `exit ${r.code}, ${lines} purchases, ${unres.length} not found${detail ? `: ${detail}` : ""}`);
+    `exit ${r.code}, ${lines} purchases, ${unres.length} not found${detail ? `: ${detail}` : ""}`, kind);
   checkArithmetic(dir, "plan:8 days adds up");
   return r;
 }
@@ -174,7 +183,9 @@ function checkFlagNotes(dir) {
 
 /** What doctor says about a battery stamp that is missing, old, broken or carrying a failure.
  *  A silent check is worse than none: the stamp is the only thing that tells this home whether
- *  its guards were ever run, so each of these four states has to reach a different level. */
+ *  its guards were ever run. A failure the planner caused and a failure the shop caused must
+ *  reach different levels, or a sold-out loaf hides the one line that matters behind a stop
+ *  sign - so each state here has to land where the plan model says it should. */
 function checkStamp(dir) {
   const stamp = join(dir, "data", "quality", "last-check.json");
   const env = { NEMLIG_HOME: dir, NEMLIG_ENV: envFile() };
@@ -185,12 +196,27 @@ function checkStamp(dir) {
     const line = r.out.split("\n").find((l) => /quality/.test(l)) || `(no quality line, exit ${r.code}: ${r.out.slice(0, 120)})`;
     return line.trim();
   };
+  const at = new Date().toISOString();
   const cases = [
     { name: "stamp:never run", prepare: () => rmSync(stamp, { force: true }), want: /warn .* has never run/ },
     { name: "stamp:two weeks old", prepare: () => write({ at: new Date(Date.now() - 12 * dayMs).toISOString(), mode: "live", scenarios: 21, pass: 21, fail: 0, failedNames: [], commit: "scenario" }), want: /warn .* 12 d ago/ },
-    { name: "stamp:one scenario failed", prepare: () => write({ at: new Date().toISOString(), mode: "live", scenarios: 21, pass: 20, fail: 1, failedNames: ["example:one failing scenario"], commit: "scenario" }), want: /STOP .*had 1 failed scenario\(s\): example:one failing scenario/ },
+    {
+      name: "stamp:a failure the planner caused",
+      prepare: () => write({ at, mode: "live", scenarios: 21, pass: 20, fail: 1, failedNames: ["guard:stale"], failed: [{ name: "guard:stale", kind: "code", detail: "exit 0, expected 5" }], commit: "scenario" }),
+      want: /STOP .*the planner caused: guard:stale/,
+    },
+    {
+      name: "stamp:a failure the shop caused",
+      prepare: () => write({ at, mode: "live", scenarios: 21, pass: 20, fail: 1, failedNames: ["plan:8 days"], failed: [{ name: "plan:8 days", kind: "family", detail: "Solsikkerugbrød øko skiver [lunchbox:rugbraod-skiver] alternative named" }], commit: "scenario" }),
+      want: /warn .*shop could not fill.*Solsikkerugbrød øko skiver .*alternative named/,
+    },
+    {
+      name: "stamp:a failure of an unknown kind",
+      prepare: () => write({ at, mode: "live", scenarios: 21, pass: 20, fail: 1, failedNames: ["plan:8 days"], commit: "scenario" }),
+      want: /STOP .*the planner caused: plan:8 days/,
+    },
     { name: "stamp:unreadable", prepare: () => write("{ not json"), want: /warn .* cannot be read/ },
-    { name: "stamp:fresh and clean", prepare: () => write({ at: new Date().toISOString(), mode: "live", scenarios: 21, pass: 21, fail: 0, failedNames: [], commit: "scenario" }), want: /ok .*scenario battery ran/ },
+    { name: "stamp:fresh and clean", prepare: () => write({ at, mode: "live", scenarios: 21, pass: 21, fail: 0, failedNames: [], commit: "scenario" }), want: /ok .*scenario battery ran/ },
   ];
   for (const c of cases) {
     c.prepare();
@@ -280,15 +306,26 @@ function checkPlanRun(dir, argv, label) {
 
 /** The uncertain-matcher band, checked without a shop: a name that came within 0,15 of the
  *  family's own bar must reach the plan as a priced choice with the flag that takes it. Pure
- *  functions, so it costs no call and runs on every battery, offline included. */
+ *  functions, so it costs no call and runs on every battery, offline included. The second line
+ *  carries names with quotes in them, because a printed flag is only useful if pasting it buys
+ *  that product and not the word after it. */
 function checkNearMiss() {
   const label = "near miss: a close name is printed as a decision, not bought or dropped";
+  const DOUBLE = String.fromCharCode(34);
   try {
     const merged = mergeItems([{
       ok: false, query: "Ost revet danbo fast", source: "dinner:test",
       why: "no name reached 0.8 (best: Revet Ost Danbo (score 0.75))",
       nearNeed: "400 g",
       nearMiss: [{ sku: "9000002", name: "Revet Ost Danbo", brand: "Arla", price: 24, unitPrice: 60, pack: { raw: "400 g", qty: 400, unit: "g" }, score: 0.75 }],
+    }, {
+      ok: false, query: "Blandet grønt", source: "dinner:probe",
+      why: "no name reached 0.7 (best: two near names)",
+      nearNeed: "300 g",
+      nearMiss: [
+        { sku: "9000003", name: `Grønt ${DOUBLE}Blandet${DOUBLE} 300 g`, brand: "Nature", price: 12, unitPrice: 40, pack: { raw: "300 g", qty: 300, unit: "g" }, score: 0.62 },
+        { sku: "9000004", name: `Blandet ${DOUBLE}Bland${DOUBLE}ed' 300 g`, brand: "Nature", price: 15, unitPrice: 50, pack: { raw: "300 g", qty: 300, unit: "g" }, score: 0.6 },
+      ],
     }], false);
     const md = markdownNotes({
       skipped: [], items: [], unresolved: merged.unresolved, recipeGaps: [],
@@ -297,16 +334,19 @@ function checkNearMiss() {
     const text = md.replace(/\\n/g, "\n");
     const line = (merged.nearMisses[0] || {}).candidates[0] || {};
     const flags = [
-      [merged.nearMisses.length === 1, "the near miss survives the merge"],
+      [merged.nearMisses.length === 2, "the near misses survive the merge"],
       [line.sku === "9000002" && line.score === 0.75, "the sku and the score it reached travel with it"],
       [/Close but under your bar/.test(text), "the plan prints a section for it"],
       [/Revet Ost Danbo.*400 g for 24,00 kr/.test(text), "with the pack and the price, in Danish decimal"],
       [/`--extra "Revet Ost Danbo:400 g"`/.test(text), "and the exact flag that takes it"],
+      [/— `Revet Ost Danbo`/.test(text), "the name sits in its own code span, so a quote cannot move its end"],
+      [/`--extra 'Grønt "Blandet" 300 g:300 g'`/.test(text), "a name holding a double quote is flagged between single quotes"],
+      [/no flag is safe to paste/.test(text) && /`--extra-file` \(sku 9000004\)/.test(text), "a name holding both quote kinds is given no flag to paste"],
       [/sku 9000002/.test(text), "and the sku, so the line can be checked before buying"],
-      [merged.unresolved.length === 1, "the line is still listed as not found: nothing was bought"],
+      [merged.unresolved.length === 2, "both lines are still listed as not found: nothing was bought"],
     ];
     const bad = flags.filter((f) => !f[0]).map((f) => f[1]);
-    record(label, bad.length === 0, bad.length ? "missing: " + bad.join("; ") : "1 near miss, priced, with its --extra flag");
+    record(label, bad.length === 0, bad.length ? "missing: " + bad.join("; ") : "2 near misses priced with a paste-safe flag each, quote-bearing names included");
   } catch (e) {
     record(label, false, "threw: " + e.message);
   }
@@ -332,6 +372,11 @@ function writeStamp(failed) {
     pass: results.length - failed.length,
     fail: failed.length,
     failedNames: failed.map((f) => f.name),
+    // The kind and the sentence travel, because doctor reads this file long after this process
+    // is gone and has to tell "the shelf is out of rye bread" from "the planner is broken".
+    // failedNames stays: a doctor from before the split reads that and treats every failure as
+    // the dangerous kind, which is the safe way to read a stamp it does not understand.
+    failed: failed.slice(0, 10).map((f) => ({ name: f.name, kind: f.kind, detail: f.detail.slice(0, 200) })),
     commit: gitCommit(),
     node: process.versions.node,
   };

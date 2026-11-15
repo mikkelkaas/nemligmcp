@@ -454,13 +454,25 @@ its pack, its price, its sku and the one `--extra` flag that takes it. `NEAR_MIS
 *below that family's own bar*, not below the 0,7 default, so a family that raised
 `purchasing.minNameScore` gets a narrower offer, not a wider one. The bar still refuses the
 purchase - that is the point of having one. What changed is who decides: the family, with the
-price in front of them, instead of a resolver guessing on their behalf.
+price in front of them, instead of a resolver guessing on their behalf. A printed flag is only
+useful if pasting it buys the thing named. A name holding a double quote is therefore flagged
+between single quotes, and a name holding both quote kinds is given no flag at all: the line says
+so, gives the sku, and points at `--extra-file`. That choice was measured against the shelf, not
+invented: 280 of 899 cached names have a realistic spelling variant inside the band, and the
+commonest one by far is a Danish letter typed as `oe`, `aa` or `ae` (score 0,667 against a 0,7
+bar), while dropping one word from a name stays above the bar. So the band catches spelling, and
+a quote-hostile name is the rare case that must never be guessed at.
 
 A check nobody schedules quietly stops happening, so the battery stamps what it found into
-`data/quality/last-check.json`: the time, the mode, the counts, the failing names, the commit.
-`doctor.mjs` reads that stamp and grades it the way it grades a plan - one failed scenario is a
-STOP, a stamp older than 7 days is a warn, no stamp is a warn, so a machine that was never
-checked says so instead of looking clean. `--pure` is the half that needs nothing but the
+`data/quality/last-check.json`: the time, the mode, the counts, the failing names with the
+sentence each one printed, and the commit. `doctor.mjs` reads that stamp and grades a failure by
+who caused it. A failure the planner caused is a STOP: the guards and the arithmetic are the
+thing a plan is trusted for, and a home that just failed one of them has not earned the pass. A
+failure the shop caused is a warn, because the shelf was out and the plan already named the line
+and carried something for it - on the measured day that was one rye bread, with a substitute
+proposed. Blocking there would put the one readable line behind a stop sign, and a sold-out loaf
+is not a broken planner. A failure whose kind the stamp does not name is read as the dangerous
+one: an unknown shape is never taken as a pass. `--pure` is the half that needs nothing but the
 repository: no home, no mined history, no shop call. The scheduled `Quality` job runs that half
 with the golden shelves, which is where a matcher drifting away from the measured fixtures shows
 up first. The shop-facing half stays on the machine that owns `data/`, once a week, by cron.

@@ -17,7 +17,7 @@
 //   data/plans/plan-<timestamp>.json + .md, and copies named plan-latest.{json,md}
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { connect, loadEnv, Limiter, mapPool, readConcurrency, reportFailure, unknownFlags, warnUnknownFlags } from "./lib.mjs";
-import { resolveIntent, parseNeed, loadCache, saveCache } from "./catalog.mjs";
+import { resolveIntent, parseNeed, loadCache, saveCache, extraFlag } from "./catalog.mjs";
 import { toBaseMeasure, choosePack, pieceWeightOf } from "./units.mjs";
 import { chooseDinners, recipeIntents, readRotation, readCookHistory } from "./dinners.mjs";
 import { biasIntent, addIntentsOf, productWord } from "./learn.mjs";
@@ -600,6 +600,15 @@ function markdownSwaps(plan) {
   return L;
 }
 
+const BACKTICK = String.fromCharCode(96);
+
+/** The name where a person reads it, as a markdown code span: a quote inside the name cannot
+ *  then look like the end of the name. A name carrying a backtick cannot be a code span,
+ *  and there the sku on the same line is what identifies it. */
+export function nameSpan(name) {
+  return String(name).includes(BACKTICK) ? String(name) : BACKTICK + String(name) + BACKTICK;
+}
+
 export function markdownNotes(plan) {
   const L = [];
   if (plan.menuAgainst && plan.menuAgainst.at) {
@@ -638,11 +647,13 @@ export function markdownNotes(plan) {
     for (const n of plan.nearMisses) {
       for (const c of n.candidates) {
         const price = Number(c.price).toFixed(2).replace(".", ",");
-        const flag = `--extra "${c.name}${n.need ? ":" + n.need : ""}"`;
-        L.push(`- ${n.query} (${n.source}) — "${c.name}"${c.brand ? " (" + c.brand + ")" : ""} reached `
+        const flag = extraFlag(c.name, n.need);
+        L.push(`- ${n.query} (${n.source}) — ${nameSpan(c.name)}${c.brand ? " (" + c.brand + ")" : ""} reached `
           + `${String(c.score).replace(".", ",")} against your bar, `
           + `${(c.pack && c.pack.raw) ? c.pack.raw + " for " : ""}${price} kr: `
-          + `take it with \`${flag}\` (sku ${c.sku})`);
+          + (flag ? `take it with \`${flag}\` (sku ${c.sku})`
+            : `its name holds both quote kinds, so no flag is safe to paste - take it with `
+              + `\`--extra-file\` (sku ${c.sku})`));
       }
     }
   }

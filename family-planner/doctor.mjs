@@ -120,9 +120,27 @@ function checkData(out) {
  *  the prices and the profile have all had time to move. */
 const QUALITY_MAX_AGE_H = 168;
 
-/** The last scenario battery run on this home. A pass two months old is not a pass, and a
- *  battery that recorded a failure is a real one: it already caught a regression. A missing
- *  stamp is a warning, never a block - a machine set up today has run nothing yet. */
+/** What the battery said about each of its own failures. "family" means the shop or the family
+ *  made it true today - the shelf had nothing and the plan already carried an alternative or
+ *  printed a near miss - so a person has a decision to read, not a bug to chase. "code" means
+ *  the planner itself did something wrong. A stamp written before this split existed carries
+ *  names only, and an unknown kind is taken as the dangerous one. */
+function failedOf(s) {
+  const list = Array.isArray(s.failed) && s.failed.length ? s.failed
+    : (Array.isArray(s.failedNames) ? s.failedNames.map((n) => ({ name: n })) : []);
+  return list.map((f) => ({
+    name: String((f || {}).name || "unnamed"),
+    kind: (f || {}).kind === "family" ? "family" : "code",
+    detail: String((f || {}).detail || "").slice(0, 160),
+  }));
+}
+
+/** The last scenario battery run on this home. A pass two months old is not a pass. A failure
+ *  the planner caused blocks: the guards or the arithmetic cannot be trusted, so nothing should
+ *  be ordered on the strength of this home. A failure the shop caused is a warn, because the
+ *  plan already named the line, the reason and what it carried for it - blocking there would
+ *  hide the one useful line behind a stop sign, and a sold-out rye bread is not a broken planner.
+ *  A missing stamp is a warning, never a block: a machine set up today has run nothing yet. */
 function checkQuality(out) {
   const file = DATA + "/quality/last-check.json";
   if (!existsSync(file)) {
@@ -139,8 +157,22 @@ function checkQuality(out) {
   const hours = Math.max(0, (Date.now() - at) / 3600000);
   const ran = `${Math.round(hours / 24) > 0 ? Math.round(hours / 24) + " d" : Math.round(hours) + " h"} ago`;
   if (Number(s.fail) > 0) {
-    const names = (Array.isArray(s.failedNames) ? s.failedNames : []).slice(0, 3).join("; ");
-    out.push(finding("quality", BLOCK, `the last battery run (${ran}, ${s.mode}) had ${s.fail} failed scenario(s): ${names || "unnamed"}`,
+    const failed = failedOf(s);
+    const code = failed.filter((f) => f.kind === "code");
+    const family = failed.filter((f) => f.kind === "family");
+    if (code.length) {
+      const what = code.slice(0, 3).map((f) => (f.detail ? `${f.name} (${f.detail})` : f.name)).join("; ");
+      out.push(finding("quality", BLOCK, `the last battery run (${ran}, ${s.mode}) had ${code.length} failed scenario(s) the planner caused: ${what || "unnamed"}`,
+        "fix the scenario, then run: node tools/scenario-check.mjs"));
+      return;
+    }
+    if (family.length) {
+      const what = family.slice(0, 3).map((f) => (f.detail ? `${f.name} (${f.detail})` : f.name)).join("; ");
+      out.push(finding("quality", WARN, `the last battery run (${ran}, ${s.mode}) found ${family.length} line(s) the shop could not fill, named with what the plan carried: ${what}`,
+        "read the NOT FOUND lines in the plan, then run: node tools/scenario-check.mjs"));
+      return;
+    }
+    out.push(finding("quality", BLOCK, `the last battery run (${ran}, ${s.mode}) had ${s.fail} failed scenario(s) it did not name`,
       "fix the scenario, then run: node tools/scenario-check.mjs"));
     return;
   }

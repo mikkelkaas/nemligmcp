@@ -375,6 +375,12 @@ lines instead: no one cooks a fish salad for dinner.
   the one `--extra` flag that takes it. Nothing there is bought - a near miss is a decision to
   read, not a purchase. "Close" means within `NEAR_MISS_BAND` (0,15) below *your* bar, so a
   family that raised `purchasing.minNameScore` gets fewer of these lines, not more.
+- A printed flag must survive being pasted. A product name holding a double quote is flagged
+  between single quotes (`--extra 'Grønt "Blandet":300 g'`), because a quote inside the name
+  would otherwise end the quoted region and the shell would join the rest to the next argument.
+  A name holding both quote kinds gets no flag at all: the line says so and gives the sku, and
+  `--extra-file` is how to take it. The same rule covers the `accept with:` line of a
+  substitution. No name is ever passed to a shell by this code - the text is read by a person.
 - Verified: an 8-day dry run finished with 0 unresolved lines and the basket untouched.
   Not verified on your account: a real `apply.mjs` run writes the basket.
 
@@ -390,13 +396,17 @@ rm -f data/product-cache.json    # if prices or ranges look stale
 node doctor.mjs                  # one line per check, and the command that answers it
 ```
 
-The battery writes its result into `data/quality/last-check.json` (when it ran, offline or live,
-how many scenarios passed, the failing names, the commit). `doctor.mjs` reads that stamp:
-one scenario failed is a STOP, a stamp older than 7 days is a warn, no stamp at all is a warn.
-So a machine that was never checked says so out loud. A weekly line in `crontab -l` keeps it
-honest, or the `Quality` job in `.github/workflows/quality.yml` runs the pure half plus the
-golden shelves on GitHub's clock - the shop-facing half cannot run there, because `data/` is
-gitignored on purpose.
+The battery writes its result into `data/quality/last-check.json`: when it ran, offline or live,
+how many scenarios passed, the failing names with the sentence each one printed, and the commit.
+`doctor.mjs` reads that stamp and grades a failure by who caused it. A failure the planner caused
+is a STOP. The guards and the arithmetic cannot be trusted on that home until it is fixed. A
+failure the shop caused is a warn: the shelf was out, and the plan already carried an alternative
+or printed a near miss for that line. A failure whose kind the stamp does not name is treated as
+one the planner caused, which is the safe reading of a stamp doctor does not understand. A stamp
+older than 7 days is a warn, and no stamp at all is a warn: a machine that was never checked says
+so out loud. A weekly line in `crontab -l` keeps it honest, or the `Quality` job in
+`.github/workflows/quality.yml` runs the pure half plus the golden shelves on GitHub's clock - the
+shop-facing half cannot run there, because `data/` is gitignored on purpose.
 
 ## One profile to tweak
 

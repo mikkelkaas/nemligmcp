@@ -237,6 +237,19 @@ function nearMissOf(query, products, threshold, intent) {
     .map((s) => ({ ...altOf(s.p), score: Number(s.score.toFixed(2)) }));
 }
 
+/** The flag that takes this product, written so pasting it buys this product and nothing else.
+ *  A name holding a double quote cannot sit between double quotes: the shell ends the word at
+ *  the inner quote and joins the rest to the next argument. So such a name goes between single
+ *  quotes instead - Danish shelf names use the double kind. A name holding both kinds gets no
+ *  flag at all: the caller prints the sku, and `--extra-file` is the way to take it. Nothing
+ *  here is ever passed to a shell by this code; the text is read by a person and typed once. */
+export function extraFlag(name, need) {
+  const value = `${name}${need ? ":" + need : ""}`;
+  if (!String(name).includes(`"`)) return `--extra "${value}"`;
+  if (!String(name).includes("'")) return `--extra '${value}'`;
+  return null;
+}
+
 /** One search, one selection. Returns ok:false with a reason instead of throwing. */
 async function attempt(mcp, query, intent, cache) {
   const mode = intent.mode || "cheapest";
@@ -393,7 +406,7 @@ async function proposeSubstitute(mcp, query, intent, cache) {
       query: q, sku: res.pick.id, name: res.pick.name, brand: res.pick.brand, price: res.pick.price,
       unitPrice: res.pick.unitPrice, unitLabel: res.pick.unitLabel, onSale: !!res.pick.onSale,
       packs: need ? packsFor(need, res.pick.pack) : 1,
-      accept: `--extra "${res.pick.name}:${intent.need || "1 stk"}"`,
+      accept: extraFlag(res.pick.name, intent.need || "1 stk") || `--extra-file (sku ${res.pick.id}: the name holds both quote kinds)`,
     };
   }
   return null;

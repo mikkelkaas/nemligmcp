@@ -7,7 +7,8 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { boolWord, clampInt, capOf, flagNotes, maxRunMinutes, previousPlanOf } from "../plan.mjs";
+import { boolWord, clampInt, capOf, flagNotes, maxRunMinutes, previousPlanOf, nameSpan } from "../plan.mjs";
+import { extraFlag } from "../catalog.mjs";
 
 const notes = (argv) => flagNotes(["node", "plan.mjs", ...argv]);
 
@@ -75,4 +76,21 @@ test("the menu names the plan it was ranked against, or says it cannot", (t) => 
   assert.match(prev.at, /Europe\/Copenhagen/, "the stamp the person reads, not a UTC instant");
   writeFileSync(join(dir, "plan-latest.json"), "{ half a file");
   assert.equal(previousPlanOf(dir).broken, true, "an unreadable plan is reported as unreadable");
+});
+
+test("a printed --extra flag is safe to paste, whatever the shelf called the product", () => {
+  // The plan prints this text for a person to copy. It is never handed to a shell by the code,
+  // so the only risk is the paste: a quote inside the name must not end the quoted region early,
+  // because then the shell joins the rest of the name to the next argument and buys something else.
+  assert.equal(extraFlag("Revet Ost Danbo", "400 g"), `--extra "Revet Ost Danbo:400 g"`, "the usual case, unchanged");
+  assert.equal(extraFlag("Grønt", null), `--extra "Grønt"`, "a need is optional");
+  assert.equal(extraFlag('Grønt "Blandet"', "300 g"), `--extra 'Grønt "Blandet":300 g'`, "a double quote inside moves the flag between single quotes");
+  const single = extraFlag('Grønt "Blandet"', "300 g");
+  assert.ok(!single.slice(9, -1).includes("'"), "and the value holds no single quote, so the quotes around it cannot be escaped by the name");
+  assert.equal(extraFlag(`Blandet "Bland"ed'`, "300 g"), null, "a name holding both quote kinds gets no flag at all");
+});
+
+test("a name is fenced where it is read, so a quote cannot move its end", () => {
+  assert.equal(nameSpan("Revet Ost Danbo"), "`Revet Ost Danbo`", "the name is a code span in the plan");
+  assert.equal(nameSpan("Ost `Danbo`"), "Ost `Danbo`", "a name holding a backtick is left plain, and the sku identifies it");
 });
