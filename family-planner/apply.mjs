@@ -36,7 +36,10 @@ const TOKEN = "I-APPROVE-THIS-BASKET";
 const CALL_TIMEOUT = 60000;
 // A write is never retried automatically: a lost answer to add_to_basket must not become
 // two of the same product. The gate only paces the writes and ends a stuck run.
-const WRITE_GATE = { concurrency: 1, minIntervalMs: 350, attempts: 1, deadlineAtMs: 10 * 60 * 1000 };
+// The deadline is a clock time, not a duration: the limiter compares it with Date.now().
+function writeGate() {
+  return { concurrency: 1, minIntervalMs: 350, attempts: 1, deadlineAtMs: Date.now() + 10 * 60 * 1000 };
+}
 // Recipe cards go through the shop's own web API with its own session, so the gate above
 // does not reach them. They keep their own fixed spacing.
 const WEB_STEP_DELAY_MS = 350;
@@ -232,7 +235,7 @@ async function main() {
 
 /** Everything that touches the live basket, in one bounded sequence. */
 async function writeBasket({ plan, planPath, slotId, keepGoing, wantCards, household, fam }) {
-  const { mcp } = await connect(loadEnv(), { limiter: new Limiter(WRITE_GATE) });
+  const { mcp } = await connect(loadEnv(), { limiter: new Limiter(writeGate()) });
   const before = await basketMap(mcp);
   const beforeSkus = new Set(before.map.keys());
   console.log(`Basket before: ${before.map.size} line(s), ${before.json.TotalProductsPrice ?? 0} kr products.`);

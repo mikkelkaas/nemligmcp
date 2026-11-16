@@ -270,7 +270,15 @@ export class Limiter {
     // scrape: stop asking the shop. Half of a 14-day plan is 40 calls, so 400 is generous.
     this.maxCalls = clampInt(o.maxCalls, 400, 1, 10000);
     this.cooldownMs = clampInt(o.halfOpenCooldownMs, 15000, 1000, 600000);
-    this.deadlineAt = Number(o.deadlineAtMs) > 0 ? Number(o.deadlineAtMs) : 0;
+    // deadlineAtMs is an ABSOLUTE clock time. A duration here is a bug: the deadline lands in
+    // 1970 and the run dies before its first shop call, which is what one caller did to every
+    // basket write. Say so at construction, where the mistake was made.
+    const deadline = Number(o.deadlineAtMs) > 0 ? Number(o.deadlineAtMs) : 0;
+    if (deadline > 0 && deadline < 1e11) {
+      throw new Error(`deadlineAtMs must be an absolute clock time (Date.now() + minutes * 60000), got ${deadline}`);
+    }
+    this.deadlineAt = deadline;
+    this.deadlineMinutes = deadline > 0 ? Math.max(1, Math.round((deadline - Date.now()) / 60000)) : 0;
     this.inFlight = 0;
     this.lastStart = 0;
     this.waiters = [];
@@ -353,7 +361,7 @@ export class Limiter {
 
   _checkDeadline() {
     if (this.deadlineAt && Date.now() > this.deadlineAt) {
-      throw new Error(`run deadline of ${Math.round(this.deadlineAt / 60000)} min of wall clock passed after ${this.stats.calls} call(s) — raise NEMLIG_MAX_MINUTES or lower --days`);
+      throw new Error(`run deadline of ${this.deadlineMinutes} min of wall clock passed after ${this.stats.calls} call(s) — raise NEMLIG_MAX_MINUTES or lower --days`);
     }
   }
 

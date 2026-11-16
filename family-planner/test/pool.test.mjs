@@ -244,3 +244,10 @@ test("a count ask is not bargained away by a summed measure", () => {
   assert.equal(merged[0].total, 21, "2 x 10,50 kr");
   assert.ok(String(merged[0].why).includes("count stands"), "the plan says why the count won");
 });
+
+test("a limiter wants a clock time for its deadline, not a duration", () => {
+  assert.throws(() => new Limiter({ deadlineAtMs: 10 * 60 * 1000 }), /absolute clock time/,
+    "one caller passed 10 minutes here: the deadline landed in 1970 and every basket write died before its first shop call");
+  const gate = new Limiter({ deadlineAtMs: Date.now() + 10 * 60 * 1000 });
+  assert.equal(gate.deadlineMinutes, 10, "the message quotes the minutes the run was given, never the raw clock");
+});
