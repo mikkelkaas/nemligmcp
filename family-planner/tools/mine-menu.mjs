@@ -12,6 +12,7 @@ import { recipeIngredients } from "../recipes.mjs";
 import { mainProtein, dishFormat } from "../similarity.mjs";
 
 const POOL = `${BASE}/profiles/recipe-pool.json`;
+const CANDIDATES = `${BASE}/data/recipe-candidates.json`;
 const TASTE = `${BASE}/profiles/taste.json`;
 const CALL_TIMEOUT = 60000;
 
@@ -85,6 +86,8 @@ async function main() {
   const plan = JSON.parse(readFileSync(planFile, "utf8"));
   const basket = JSON.parse(readFileSync(snapFile, "utf8"));
   const pool = JSON.parse(readFileSync(POOL, "utf8"));
+  const cand = existsSync(CANDIDATES) ? JSON.parse(readFileSync(CANDIDATES, "utf8")) : { schemaVersion: 1, recipes: [] };
+  cand.recipes = Array.isArray(cand.recipes) ? cand.recipes : [];
   const taste = existsSync(TASTE) ? JSON.parse(readFileSync(TASTE, "utf8")) : { liked: [], refused: [] };
   const liked = new Set(taste.liked || []);
   const byName = new Map((pool.pool || []).map((r) => [fold(r.name), r]));
@@ -98,7 +101,19 @@ async function main() {
     const title = String(card.Title || "").trim();
     if (!title) continue;
     const existing = byName.get(fold(title));
-    if (existing) { liked.add(existing.url); console.log(`liked: ${existing.name}`); continue; }
+    if (existing) {
+      liked.add(existing.url);
+      if (!cand.recipes.some((r) => String(r.url) === String(existing.url))) {
+        cand.recipes.push({
+          url: existing.url, name: existing.name, author: "nemlig", totalTime: existing.totalTime,
+          minutes: existing.minutes, tags: existing.tags, servings: existing.servings, scalable: true,
+          queries: [], orders: Number(existing.historyOrders) || 0, ingredients: existing.ingredients,
+        });
+        console.log(`added to candidates: ${existing.name}`);
+      }
+      console.log(`liked: ${existing.name}`);
+      continue;
+    }
     const search = await mcp.call("search_products", { query: title, recipeCount: 5 }, { timeoutMs: CALL_TIMEOUT });
     const recipes = (search.json?.Recipes || []).filter((r) => r && r.Id && r.Url);
     const hit = recipes.find((r) => fold(r.Name) === fold(title)) || recipes[0];
@@ -109,15 +124,38 @@ async function main() {
     pool.pool.push(entry);
     byName.set(fold(entry.name), entry);
     liked.add(entry.url);
+    // A later pick-recipe-pool rebuilds from this file, not from the pool. A new recipe
+    // that lives only in the pool is dropped by the next rebuild.
+    if (!cand.recipes.some((r) => String(r.url) === String(entry.url))) {
+      cand.recipes.push({
+        url: entry.url, name: entry.name, author: "nemlig", totalTime: entry.totalTime,
+        minutes: entry.minutes, tags: entry.tags, servings: entry.servings, scalable: true,
+        queries: [], orders: 0, ingredients: entry.ingredients,
+      });
+      console.log(`added to candidates: ${entry.name}`);
+    }
     console.log(`added to pool: ${entry.name} (${entry.protein}, ${entry.format})`);
   }
 
+  // Keep the library at its stated size. A liked dish is kept before an unliked one; the
+  // rest is the picker's score. This also means a new card cannot grow the pool to 23.
+  const cap = Number(pool.limits && pool.limits.poolSize) || 21;
+  if (pool.pool.length > cap) {
+    pool.pool.sort((a, b) => (liked.has(b.url) ? 1 : 0) - (liked.has(a.url) ? 1 : 0)
+      || (Number(b.score) || 0) - (Number(a.score) || 0));
+    const dropped = pool.pool.slice(cap).map((r) => r.name);
+    pool.pool = pool.pool.slice(0, cap);
+    console.log(`pool capped at ${cap}; dropped ${dropped.join(", ")}`);
+  }
   pool.at = new Date().toISOString();
   pool.poolSize = pool.pool.length;
+  cand.at = new Date().toISOString();
+  cand.maxMinutes = Math.max(Number(cand.maxMinutes) || 0, 30);
   taste.liked = [...liked];
   taste.refused = taste.refused || [];
   taste.updated = new Date().toLocaleString("da-DK", { timeZone: "Europe/Copenhagen", hour12: false });
   writeFileSync(POOL, JSON.stringify(pool, null, 1) + "\n");
+  writeFileSync(CANDIDATES, JSON.stringify(cand, null, 1) + "\n");
   writeFileSync(TASTE, JSON.stringify(taste, null, 1) + "\n");
   console.log(`pool ${pool.poolSize}, liked ${taste.liked.length}`);
   console.log("The basket was only read. Nothing was added, removed or reserved.");

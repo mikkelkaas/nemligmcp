@@ -23,14 +23,18 @@ import { toBaseMeasure, choosePack, pieceWeightOf } from "./units.mjs";
 import { chooseDinners, recipeIntents, readRotation, readCookHistory } from "./dinners.mjs";
 import { biasIntent, addIntentsOf, productWord } from "./learn.mjs";
 import { trimItems } from "./trim.mjs";
-import { loadFamily } from "./family.mjs";
+import { loadFamily, blockPeopleOf } from "./family.mjs";
 
 import { HOME as BASE, writeJsonAtomic } from "./paths.mjs";
 const CALL_TIMEOUT = 60000;
 
 function arg(name, dflt) {
   const i = process.argv.indexOf("--" + name);
-  return i > -1 ? process.argv[i + 1] : dflt;
+  if (i < 0) return dflt;
+  const value = process.argv[i + 1];
+  // The next flag is not this flag's value. `--dinners --cores` used to search for a
+  // dinner called "--cores" and skip the cores the person asked for.
+  return value === undefined || value.startsWith("--") ? dflt : value;
 }
 /** The household block is on unless the value clearly says off. Anything else is a
  *  warning, not a silent default: --household auto is not the same as --household no. */
@@ -253,7 +257,15 @@ export function blockIntents(items, blockName, days, cycleDays, staplesByName, s
 export function extraIntents(argvExtra, extraFile, rules) {
   const lines = [];
   for (const e of argvExtra) if (e) lines.push(e);
-  if (extraFile && existsSync(extraFile)) lines.push(...readFileSync(extraFile, "utf8").split("\n"));
+  if (extraFile && !existsSync(extraFile)) {
+    console.log(`  warn  --extra-file "${extraFile}" does not exist`);
+  } else if (extraFile) {
+    try {
+      lines.push(...readFileSync(extraFile, "utf8").split("\n"));
+    } catch (e) {
+      console.log(`  warn  --extra-file "${extraFile}" could not be read: ${e.message}`);
+    }
+  }
   const out = [];
   for (const line of lines) {
     const t = String(line || "").trim();
@@ -714,13 +726,13 @@ function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, h
   // the person reading the basket should be told that rather than count the lines.
   const pantryBlocksPresent = Boolean(pantry && pantry.blocks && Object.keys(pantry.blocks).length);
   const wanted = (arg("dinners", "") || "").split(",").map((s) => s.trim()).filter(Boolean);
-  const wantedIds = wanted.length ? wanted : dinners.cores.slice(0, Math.ceil(options.days / dinners.coversDays)).map((c) => c.id);
+  const wantedIds = wanted.length ? wanted : dinners.cores.slice(0, Math.ceil(options.days / options.covers)).map((c) => c.id);
   const rules = saleRules(household);
   // The pack-choice limits travel with the profile so every resolver call and the merged
   // re-decision below use the same numbers. swapNeverWords rides along although it lives
   // under `budget`, because the resolver and the trim must refuse the same words.
   options.purchasing = { ...(household.purchasing || {}), swapNeverWords: household.swapNeverWords || [] };
-  const poolState = poolDinnerIntents(options, wanted, rules);
+  const poolState = poolDinnerIntents(options, wanted, rules, household);
   let intents = poolState.intents;
   if (!poolState.usedPool) intents = intents.concat(dinnerIntents(dinners.cores, wantedIds, rules));
   const blocks = [["breakfast", options.breakfast, "breakfast"], ["kidLunchbox", options.lunchbox, "lunchbox"],
@@ -731,7 +743,7 @@ function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, h
   }
   for (const [block, enabled, label] of blocks) {
     if (!enabled) continue;
-    const lines = pantry.blocks ? pantry.blocks[block] : null;
+    const lines = pantry.blocks && Array.isArray(pantry.blocks[block]) ? pantry.blocks[block] : null;
     const people = (options.blockPeople || {}).people || {};
     const heads = Number(people[block]);
     const built = blockIntents(lines, label, options.days, pantry.cycleDays, staplesByName, staplesBySku, rules,
@@ -743,7 +755,11 @@ function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, h
     }
     intents = intents.concat(built);
   }
-  const extra = process.argv.flatMap((a, i2) => (a === "--extra" ? [process.argv[i2 + 1]] : []));
+  const extra = process.argv.flatMap((a, i2) => {
+    if (a !== "--extra") return [];
+    const value = process.argv[i2 + 1];
+    return value && !value.startsWith("--") ? [value] : [];
+  });
   const dinnerIds = poolState.usedPool ? poolState.dinnerIds : wantedIds;
   return { intents: intents.concat(extraIntents(extra, arg("extra-file", null), rules)), wantedIds: dinnerIds,
     menu: poolState.menu, leftOut: poolState.leftOut, dinnerSource: poolState.source };
@@ -801,31 +817,31 @@ function cookingIntents(pick, { amounts, meat, exclusions, household, rules, las
  * given, or the pool file or its profiles are missing - then plan.mjs falls back to the
  * pinned cores in profiles/dinners.json.
  */
-function poolDinnerIntents(options, wanted, rules) {
+function poolDinnerIntents(options, wanted, rules, household) {
   const fam = options.family;
   if (process.argv.includes("--cores") || !fam.pool.pool.length) {
     if (!fam.pool.pool.length) console.log("  cores: no recipe pool - run node pick-recipe-pool.mjs first");
     return { usedPool: false, intents: [], menu: null, leftOut: [], dinnerIds: null, source: "cores" };
   }
   const { amounts, meat, exclusions } = fam;
-  const rot = fam.household.rotation || {};
+  const rot = household.rotation || {};
   const COOKED = BASE + "/data/cooked-log.jsonl";
   const cookedTimes = readCookHistory({ linesFile: BASE + "/data/order-lines-raw.jsonl", rotationFile: BASE + "/data/rotation.json", cookedFile: COOKED });
   const lastUsed = readRotation({ linesFile: BASE + "/data/order-lines-raw.jsonl", rotationFile: BASE + "/data/rotation.json", cookedFile: COOKED });
   const coversDays = options.covers;
   const pick = chooseDinners(fam.pool.pool, {
     days: options.days, coversDays, lastUsed, wanted,
-    preferLeftovers: fam.household.preferLeftovers,
+    preferLeftovers: household.preferLeftovers,
     // `--covers` is the one knob for how long a dinner is eaten. It used to reach only the
     // pinned-cores fallback, so the README promised a steering wheel while the rotation drove
     // past it on `dinners.maxNightsPerDinner` whatever the person typed.
-    maxNights: process.argv.includes("--covers") ? coversDays : fam.household.maxNightsPerDinner,
-    reheatByFormat: fam.household.reheatByFormat,
-    nightsOverride: fam.household.nightsOverride,
+    maxNights: coversDays,
+    reheatByFormat: household.reheatByFormat,
+    nightsOverride: household.nightsOverride,
     maxPerProtein: Number(arg("max-per-protein", String(rot.maxPerProtein ?? 2))) || 2,
     minFish: Number(rot.minFishDishes ?? 1) || 0,
-    noVegetarian: fam.household.noVegetarian,
-    excludeWords: rot.excludeWords,
+    noVegetarian: household.noVegetarian,
+    excludeWords: [...(rot.excludeWords || []), ...(options.avoid || [])],
     maxNewPerPlan: rot.maxNewPerPlan,
     newMaxMinutes: rot.newMaxMinutes,
     // Two rules the profile carries and nothing used to read: a family that set them off
@@ -843,7 +859,7 @@ function poolDinnerIntents(options, wanted, rules) {
   }
   // What each cooking needs, and the lines that say what the rotation chose and why.
   const { intents, leftOut } = cookingIntents(pick, { amounts, meat, exclusions,
-    household: fam.household, rules, lastUsed });
+    household, rules, lastUsed });
   return {
     usedPool: true, intents, leftOut, dinnerIds: pick.chosen.map((c) => c.url), source: "recipe pool",
     menu: { menu: pick.menu, uncoveredDays: pick.uncoveredDays, daysPerDinner: pick.daysPerDinner,
@@ -863,7 +879,11 @@ export function searchIntentOf(it, options = {}) {
   const cap = Number(it.maxUnitPrice);
   return {
     query: it.query, need: it.need, mode: it.mode, sku: it.sku, alt: it.alt || [],
-    avoidBrands: options.avoid, avoidWords: (it.avoidWords || []).slice(0, 40),
+    avoidBrands: options.avoid,
+    // --avoid is one list for the person typing it: a brand ("First Price") and a word
+    // ("kylling") are both refused in the same place. A brand-only check silently kept
+    // every chicken product when the word was a product, not a maker.
+    avoidWords: [...new Set([...(it.avoidWords || []), ...(options.avoid || [])])].slice(0, 40),
     maxUnitPrice: Number.isFinite(cap) && cap > 0 ? cap : undefined,
     minPackGrams: Number.isFinite(floor) && floor > 0 ? floor : undefined,
     force: options.fresh,
@@ -976,8 +996,8 @@ function readOptions() {
     // Every bound here is the bound flagNotes quotes, through clampInt. Two places that
     // clamp the same flag differently is how a note ended up lying about the run.
     days: clampInt(a("days", "8"), 1, 14, 8),
-    people: clampInt(a("people", "5"), 1, 99, 5),
-    covers: clampInt(a("covers", "2"), 1, 14, 2),
+    people: a("people", null),
+    covers: process.argv.includes("--covers") ? clampInt(a("covers", "2"), 1, 14, 2) : null,
     breakfast: yesNo(a("breakfast", null), true),
     lunchbox: yesNo(a("lunchbox", null), true),
     snacks: yesNo(a("snacks", null), false),
@@ -1006,7 +1026,7 @@ export function maxRunMinutes(value) {
 const USAGE = [
   "usage: node plan.mjs [options]  (dry run: nothing is written to the basket)",
   "  --days 8                1-14 evenings        --breakfast|--lunchbox|--snacks yes|no|on|off|ja|nej",
-  "  --household auto|off    --people N           --soft-cap <kr>  (default: the profile's budget.softCapKr)",
+  "  --household auto|off    --people N           --soft-cap <kr>  (default: the profile's budget.softCapKr; --people sets dinner portions, block head-counts still follow the profile members)",
   "  --max-kr <kr>           --trim on|off        (default: the profile's budget.maxKrPerPlan; a ceiling is met by swapping the brand first, then putting lines back)",
   "  --family <name>         --covers 2           --dinners <name>    (a menu name)",
   "  --cores                 --max-per-protein N  --avoid \"brand,word\"",
@@ -1041,14 +1061,27 @@ async function main() {
   const fam = loadFamily({ name: arg("family", null) });
   // How many people each pantry block is bought for, set once here: collectIntents sees the
   // derived household, not the profile object the headcounts are derived from.
-  options.blockPeople = fam.blockPeople || { people: {}, fromOverride: [] };
   options.family = fam;
-  const household = fam.household;
+  const household = { ...fam.household };
+  // --people overrides the dinner portions, not the profile's members: the breakfast and
+  // lunch-box headcounts still come from who lives here. It used to be parsed and dropped.
+  if (options.people !== null) {
+    const people = clampInt(options.people, 1, 99, household.people);
+    household.people = people;
+    household.portionsPerNight = people;
+    options.people = people;
+    options.blockPeople = blockPeopleOf(fam.profile, household);
+    console.log(`  note  --people ${people}: ${fam.household.people} portions per dinner and ${Number(fam.household.portionsPerNight || 0).toFixed(1)} portions a night in the profile are overridden for this plan`);
+  } else {
+    options.blockPeople = fam.blockPeople;
+    options.people = household.people;
+  }
+  options.covers = options.covers === null ? household.maxNightsPerDinner : options.covers;
   const pantry = fam.pantry;
   const dinners = fam.dinners;
   console.log(`Profile: ${fam.name} (${fam.file}) - ${household.people} portions per dinner, soft cap ${household.softCapKr === null ? "none set - budget.softCapKr decides" : household.softCapKr + " " + household.currency}.`);
   const staples = readJson(BASE + "/data/staples.json");
-  const famText = `${(fam.household.members || []).map((x) => `${x.count} ${x.role}${x.count > 1 ? "s" : ""}`).join(" + ") || fam.household.people + " people"} = ${(fam.household.portionsPerNight || 0).toFixed(1)} portions a night`;
+  const famText = `${(Array.isArray(household.members) ? household.members : []).map((x) => `${x.count} ${x.role}${x.count > 1 ? "s" : ""}`).join(" + ") || household.people + " people"} = ${(household.portionsPerNight || 0).toFixed(1)} portions a night`;
   console.log(`Household: ${famText}.`);
   const staplesByName = new Map();
   const staplesBySku = new Map();
@@ -1093,7 +1126,7 @@ async function main() {
   }
   const diff = basketDiff(items, bJson.Lines || []);
   const planTotal = Number(diff.adds.reduce((sum, i) => sum + i.total, 0).toFixed(2));
-  const menu = poolMenu || menuOf(dinners.cores, wantedIds, options.days, dinners.coversDays);
+  const menu = poolMenu || menuOf(dinners.cores, wantedIds, options.days, options.covers);
   // One number for the whole run. Until now the flag carried a budget copied from one
   // family, so the profile's own budget.softCapKr was printed on the profile line and
   // never applied to the warning. Writing it back means the plan file, the report and the
@@ -1116,7 +1149,7 @@ async function main() {
     menuRules: { relaxed: menu.relaxed || [], fishSwap: menu.fishSwap || null },
     householdNote: famText,
     learning,
-    portionsPerNight: fam.household.portionsPerNight || 0,
+    portionsPerNight: household.portionsPerNight || 0,
     members: fam.household.members || [],
     items,
     skipped,

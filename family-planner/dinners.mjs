@@ -134,6 +134,16 @@ function meatRuleFor(text, rules) {
 }
 
 /** Amount text for Namlig: grams, litres or pieces, rounded to something buyable. */
+/** A recipe amount as a number: Danish "1,5", a fraction "1/2", or "ca. 2". */
+function amountOf(value) {
+  const raw = String(value == null ? "" : value).trim();
+  const fraction = /^(\d+)\s*\/\s*(\d+)$/.exec(raw);
+  if (fraction) return Number(fraction[1]) / Number(fraction[2]);
+  const decimal = /(\d+(?:[.,]\d+)?)/.exec(raw);
+  const n = decimal ? Number(decimal[1].replace(",", ".")) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 function needTextOf(ing, factor, pieceWeights) {
   const grams = Number(ing.grams) || 0;
   const litres = Number(ing.litres) || 0;
@@ -142,7 +152,7 @@ function needTextOf(ing, factor, pieceWeights) {
   // kitchen measure, and keep the family's own `pieceWeights` override if it has one.
   const small = smallUnitGrams(ing.unit, pieceWeights);
   if (small) {
-    const amount = Number(ing.amount) || 1;
+    const amount = amountOf(ing.amount);
     if (litres > 0) {
       const ml = amount * small * factor;
       const rounded = Math.max(5, Math.ceil(ml / 5) * 5);
@@ -162,7 +172,7 @@ function needTextOf(ing, factor, pieceWeights) {
     const rounded = l >= 1 ? Math.ceil(l * 4) / 4 : Math.ceil(l * 10) / 10;
     return { need: `${rounded} l`, unit: "l", litres: rounded };
   }
-  const pieces = Number(ing.amount) || 1;
+  const pieces = amountOf(ing.amount);
   const rounded = Math.max(1, Math.ceil(pieces * factor));
   // "6 fed hvidløg" is six cloves off one head, not six packets, and the shelf sells a
   // head by the piece and a net bag by the kilo. Weighed here, at 5 g a clove, the need
@@ -298,6 +308,9 @@ function ensureFish({ chosen, queue, used, minFish, isResting }) {
  * covered. What each rule cost is in `relaxed`, and what made the queue is on every menu entry.
  */
 export function chooseDinners(pool, opts) {
+  // A corrupt pool file is an empty pool, not a TypeError: the plan then says it has no
+  // dinner, which a person can fix, instead of a stack trace.
+  pool = Array.isArray(pool) ? pool : [];
   const { days, coversDays = 2, lastUsed = {}, wanted = [], maxPerProtein = 2, minFish = 1 } = opts;
   const per = Math.max(1, Number(coversDays) || 2);
   const legacy = (opts.singleNight || []).map((x) => String(x).toLowerCase());
@@ -320,7 +333,11 @@ export function chooseDinners(pool, opts) {
   const noVeg = opts.noVegetarian === true;
   const isVeg = (p) => ["vegetar", "vegan", "vegetarisk", "ostaeq", "aeg"].includes(String(p.protein || "").toLowerCase());
   const excludedWords = (opts.excludeWords || []).map((w) => String(w).toLowerCase().trim()).filter(Boolean);
-  const nameExcluded = (p) => excludedWords.some((w) => String(p.name || "").toLowerCase().includes(w));
+  // The recipe's own name is not the only place its main word lives: the URL and tags
+  // say "kylling" when the title says "Salatpizza med kebab". Check all three.
+  const dishText = (p) => `${p.name || ""} ${p.url || ""} ${(p.tags || []).join(" ")} `
+    + `${(p.ingredients || []).map((i) => i.text || "").join(" ")}`.toLowerCase();
+  const nameExcluded = (p) => excludedWords.some((w) => dishText(p).includes(w));
   const rest = pool.filter((p) => !forced.includes(p) && !refused.has(p.url)
     && !(noVeg && isVeg(p)) && !nameExcluded(p));
   const ex = opts.exploration || {};

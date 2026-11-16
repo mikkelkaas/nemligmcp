@@ -6,6 +6,9 @@ import assert from "node:assert/strict";
 import { Limiter, reportFailure, pickEndpoint } from "../lib.mjs";
 import { search } from "../catalog.mjs";
 import { householdMode, unknownFlags, extraIntents } from "../plan.mjs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const hour = 3600 * 1000;
 const shelf = [{ id: "1", name: "Mælk", price: 12, pack: { qty: 1, unit: "l", raw: "1 l" } }];
@@ -70,6 +73,17 @@ test("an extra line without a product name is skipped and said so", () => {
   const out = extraIntents(["Mælk:1l", ":1", "Æg", "  "], null, rules);
   assert.deepEqual(out.map((i) => i.query), ["Mælk", "Æg"]);
   assert.equal(out[0].need, "1l");
+});
+
+test("an extra file that is missing or a directory is a warning, not a crash", () => {
+  const rules = { preferSale: true, saleTolerancePct: 10 };
+  const dir = mkdtempSync(join(tmpdir(), "extra-file-"));
+  try {
+    assert.deepEqual(extraIntents([], join(dir, "nope.txt"), rules), []);
+    assert.deepEqual(extraIntents([], dir, rules), [], "a directory is not an extra list");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a failure is printed as one line, and the stack stays behind --debug", () => {

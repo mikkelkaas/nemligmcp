@@ -28,7 +28,8 @@ function readJson(path, fallback) {
  * family where the grown-ups take one too.
  */
 export function blockPeopleOf(profile, household) {
-  const members = ((profile || {}).dinners || {}).members || [];
+  const rawMembers = ((profile || {}).dinners || {}).members;
+  const members = Array.isArray(rawMembers) ? rawMembers : [];
   const heads = (list) => list.reduce((n, m) => n + (Number(m.count) || 0), 0);
   const isChild = (m) => /child|teen|ung|barn|baby/i.test(String((m || {}).role || ""));
   const children = heads(members.filter(isChild));
@@ -62,16 +63,53 @@ export function findProfileFile(dir = PROFILES, name = process.env.NEMLIG_FAMILY
 }
 
 /** Household in the shape plan.mjs, apply.mjs and slots.mjs already read. */
+/** A hand-edited or truncated data file must not crash a plan: keep the shape, drop the
+ *  lines that cannot be read, and let the plan say what it has. */
+function normalizePantry(pantry) {
+  const base = pantry && typeof pantry === "object" ? pantry : {};
+  const blocks = base.blocks && typeof base.blocks === "object" && !Array.isArray(base.blocks) ? base.blocks : {};
+  return { ...base, blocks, cycleDays: Number(base.cycleDays) || 30 };
+}
+
+function normalizePool(pool) {
+  const base = pool && typeof pool === "object" ? pool : {};
+  return { ...base, pool: Array.isArray(base.pool) ? base.pool : [] };
+}
+
+/** Rotation numbers a hand-edited profile can get wrong. No cap is the default: only a
+ *  family that asks for one gets trials. A bad number falls back, never to "all". */
+function rotationOf(p) {
+  const raw = p.rotation && typeof p.rotation === "object" && !Array.isArray(p.rotation) ? p.rotation : {};
+  const int = (v, dflt, lo, hi) => {
+    if (v === undefined || v === null || v === "") return dflt;
+    const n = Number(v);
+    return Number.isFinite(n) ? Math.max(lo, Math.min(hi, Math.round(n))) : dflt;
+  };
+  const words = Array.isArray(raw.excludeWords)
+    ? raw.excludeWords.slice(0, 40).map((w) => String(w).toLowerCase().trim()).filter(Boolean) : [];
+  const caps = {};
+  if (raw.proteinCaps && typeof raw.proteinCaps === "object" && !Array.isArray(raw.proteinCaps)) {
+    for (const [k, v] of Object.entries(raw.proteinCaps)) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 0) caps[k] = Math.round(n);
+    }
+  }
+  return { ...raw, excludeWords: words, proteinCaps: caps,
+    maxNewPerPlan: int(raw.maxNewPerPlan, undefined, 0, 14),
+    newMaxMinutes: int(raw.newMaxMinutes, undefined, 5, 180) };
+}
+
 function householdOf(p) {
   const h = p.household || {};
+  const members = Array.isArray((p.dinners || {}).members) ? p.dinners.members : [];
   return {
     schemaVersion: p.schemaVersion || 1,
     // extraPortions is how much more one cooking covers: 2 means the pot is eaten twice.
     people: Number(h.peopleToShopFor || ((h.adults || 2) + (h.children || 0) + (Number.isFinite(Number(h.extraPortions)) ? Number(h.extraPortions) : 2))),
     adults: Number(h.adults || 2),
-    kids: (h.childAges || []).map((ageYears) => ({ ageYears })),
+    kids: Array.isArray(h.childAges) ? h.childAges.map((ageYears) => ({ ageYears })) : [],
     dinnersForPeople: Number((p.dinners || {}).servingsPerDinner || 5),
-    portionsPerNight: ((p.dinners || {}).members || []).reduce((n, m) => n + (Number(m.count) || 0) * (Number(m.appetite) || 1), 0)
+    portionsPerNight: members.reduce((n, m) => n + (Number(m.count) || 0) * (Number(m.appetite) || 1), 0)
       || Number((p.dinners || {}).servingsPerDinner || 5) / Math.max(1, Number((p.dinners || {}).daysPerDinner || 2)),
     daysCoveredByOneDinner: Number((p.dinners || {}).daysPerDinner || 2),
     currency: (p.budget || {}).currency || "DKK",
@@ -111,8 +149,8 @@ function householdOf(p) {
     },
     deliveryPreference: p.delivery || {},
     purchasing: purchasingOf(p),
-    rotation: p.rotation || {},
-    members: (p.dinners || {}).members || [],
+    rotation: rotationOf(p),
+    members,
     preferLeftovers: (p.dinners || {}).preferLeftovers !== false,
     maxNightsPerDinner: Number((p.dinners || {}).maxNightsPerDinner || 2),
     reheatByFormat: (p.dinners || {}).reheatByFormat || null,
@@ -316,11 +354,11 @@ export function loadFamily({ dir = PROFILES, name = null } = {}) {
     meat: meatOf(profile, readJson(`${dir}/meat.json`, { rules: [] })),
     exclusions: exclusionsOf(profile, readJson(`${dir}/exclusions.json`, {})),
     amounts: readJson(`${dir}/amounts.json`, {}),
-    pool: readJson(`${dir}/recipe-pool.json`, { pool: [] }),
+    pool: normalizePool(readJson(`${dir}/recipe-pool.json`, { pool: [] })),
     dinners: readJson(`${dir}/dinners.json`, { dinners: [] }),
     // A missing pantry.json means no breakfast and no lunch-box lines, not a crash:
     // nothing in this repository writes that file, so a fresh clone has none.
-    pantry: readJson(`${dir}/pantry.json`, { blocks: {}, cycleDays: 30 }),
+    pantry: normalizePantry(readJson(`${dir}/pantry.json`, { blocks: {}, cycleDays: 30 })),
     pantryExists: existsSync(`${dir}/pantry.json`),
     blockPeople: blockPeopleOf(profile, householdOf(profile)),
   };

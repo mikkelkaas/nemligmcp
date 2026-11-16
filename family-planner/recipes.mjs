@@ -92,6 +92,13 @@ export function recipeLines(basketBody) {
   })));
 }
 
+/** A numeric field from the page: a dot or a Danish comma, or null when it is not a number. */
+function numOf(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(String(value).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
+
 /** The ingredients a recipe page offers for its product picker. A recipe with no selection
  *  id cannot be filled by the API, so that ingredient is not returned. */
 export function recipeIngredients(page) {
@@ -106,8 +113,8 @@ export function recipeIngredients(page) {
         text: String(ing.Text || "").trim(),
         amount: String(ing.Amount || "").trim(),
         unit: String(ing.Unit || "").trim(),
-        grams: ing.MesaureWeightInGram == null ? null : Number(ing.MesaureWeightInGram),
-        litres: ing.MeasureMassInLiter == null ? null : Number(ing.MeasureMassInLiter),
+        grams: numOf(ing.MesaureWeightInGram),
+        litres: numOf(ing.MeasureMassInLiter),
       });
     }
   }

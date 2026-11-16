@@ -19,6 +19,8 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mainProtein, dishFormat, clashWith } from "./similarity.mjs";
 import { findProfileFile } from "./family.mjs";
+import { tasteFile } from "./learn.mjs";
+import { dirname } from "node:path";
 import { localStamp } from "./lib.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
@@ -45,17 +47,40 @@ export function poolLimits(profile = {}) {
     maxHistoryMinutes: num(rot.maxHistoryMinutes, 45, 10, 180) };
 }
 
-/** The limits of the profile on this home, or the defaults with the reason said out loud. */
-function profileLimits() {
-  try { return poolLimits(JSON.parse(readFileSync(findProfileFile(), "utf8"))); }
+/** The profile on this home, or the defaults with the reason said out loud. */
+function profileOnDisk() {
+  try { return { profile: JSON.parse(readFileSync(findProfileFile(), "utf8")), file: findProfileFile() }; }
   catch (e) {
     console.log(`  note: the pool is built from the defaults, not from a profile - ${String(e.message).split("\n")[0].slice(0, 90)}`);
-    return poolLimits({});
+    return { profile: {}, file: null };
   }
 }
-const L = profileLimits();
+const PROFILE_ON_DISK = profileOnDisk();
+const PROFILE = PROFILE_ON_DISK.profile;
+const TASTE = PROFILE_ON_DISK.file ? tasteFile(dirname(PROFILE_ON_DISK.file) + "/taste.json") : { liked: [], refused: [] };
+const LIKED = new Set(TASTE.liked || []);
+const REFUSED = new Set(TASTE.refused || []);
+const NO_VEG = PROFILE.dinners && PROFILE.dinners.noVegetarian === true;
+const rawExclude = (PROFILE.rotation || {}).excludeWords;
+const EXCLUDE_WORDS = (Array.isArray(rawExclude) ? rawExclude : [])
+  .map((w) => String(w).toLowerCase()).filter(Boolean);
+const L = poolLimits(PROFILE);
 
+// A family's own ceiling per protein, read from rotation.proteinCaps. The defaults are the
+// ones this file has always used; a meat-only family raises the meat caps so the library can
+// still reach rotation.poolSize after the vegetarian dishes are filtered out.
 const PROTEIN_CAPS = { oksekod: 6, kylling: 5, svinepolse: 4, fisk: 4, vegetar: 3, ostaeq: 2 };
+const CAPS_FOR_PROFILE = (profile) => {
+  const caps = { ...PROTEIN_CAPS };
+  const raw = (profile.rotation || {}).proteinCaps;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [k, v] of Object.entries(raw)) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n >= 0) caps[k] = Math.round(n);
+    }
+  }
+  return caps;
+};
 const FRESH_MIN_BUYABLE = 70;
 
 // Pantry things every recipe asks for and nobody buys for a single dinner.
@@ -133,12 +158,12 @@ function scoreRecipe(r, analysisBy, vocab) {
 }
 
 /** Take the best dishes under the protein caps, at most `provenLimit` of them proven. */
-export function takeUnderCaps(list, pool, used, provenLimit, provenInPool, roundLimit, lim = L) {
+export function takeUnderCaps(list, pool, used, provenLimit, provenInPool, roundLimit, lim = L, caps = PROTEIN_CAPS) {
   const skipped = [];
   for (const s of list) {
     if (pool.length >= Math.min(lim.poolSize, roundLimit)) break;
     const p = s.protein || (s.protein = proteinOf(s));
-    if ((used[p] || 0) >= (PROTEIN_CAPS[p] ?? 3)) { skipped.push(s); continue; }
+    if ((used[p] || 0) >= (caps[p] ?? 3)) { skipped.push(s); continue; }
     // Same format and same protein is the same dinner in another wrapper: keep one.
     const clash = clashWith(pool, s);
     if (clash) { skipped.push(s); console.log(`  same dinner  drop "${String(s.name).trim()}" - "${String(clash.name).trim()}" is the same dish`); continue; }
@@ -152,7 +177,7 @@ export function takeUnderCaps(list, pool, used, provenLimit, provenInPool, round
 }
 
 /** Build the pool: fresh dishes first up to `lim.minFresh`, then the proven favourites. */
-export function selectPool(scored, lim = L) {
+export function selectPool(scored, lim = L, caps = PROTEIN_CAPS) {
   for (const s of scored) { s.protein = proteinOf(s); s.format = dishFormat(s); }
   const fresh = scored.filter((s) => !s.historyOrders && s.coverageBuyablePct >= FRESH_MIN_BUYABLE && (s.minutes || 99) <= lim.maxRecipeMinutes && s.oddAsks.length === 0);
   const proven = scored.filter((s) => s.historyOrders > 0);
@@ -160,12 +185,12 @@ export function selectPool(scored, lim = L) {
   const pool = [], used = {};
   const provenInPool = { count: 0 };
   const freshQuota = Math.max(lim.minFresh, lim.poolSize - lim.maxProven);
-  takeUnderCaps(fresh, pool, used, lim.maxProven, provenInPool, freshQuota, lim);
+  takeUnderCaps(fresh, pool, used, lim.maxProven, provenInPool, freshQuota, lim, caps);
   const freshCount = pool.length;
-  takeUnderCaps(proven, pool, used, lim.maxProven, provenInPool, lim.poolSize, lim);
-  takeUnderCaps(fresh, pool, used, lim.maxProven, provenInPool, lim.poolSize, lim);
-  takeUnderCaps(rest, pool, used, lim.poolSize, provenInPool, lim.poolSize, lim);
-  takeUnderCaps([...proven, ...fresh, ...rest].sort((a, b) => b.score - a.score), pool, used, lim.poolSize, provenInPool, lim.poolSize, lim);
+  takeUnderCaps(proven, pool, used, lim.maxProven, provenInPool, lim.poolSize, lim, caps);
+  takeUnderCaps(fresh, pool, used, lim.maxProven, provenInPool, lim.poolSize, lim, caps);
+  takeUnderCaps(rest, pool, used, lim.poolSize, provenInPool, lim.poolSize, lim, caps);
+  takeUnderCaps([...proven, ...fresh, ...rest].sort((a, b) => b.score - a.score), pool, used, lim.poolSize, provenInPool, lim.poolSize, lim, caps);
   console.log(`Fresh dishes in the pool: ${freshCount} of ${fresh.length} accepted candidates (min ${lim.minFresh}).`);
   return pool;
 }
@@ -204,7 +229,24 @@ function main() {
   if (capped && L.maxRecipeMinutes > capped) {
     console.log(`  note: the profile asks for ${L.maxRecipeMinutes} min, but data/recipe-candidates.json holds at most ${capped} min - run node mine-recipe-pool.mjs to widen it`);
   }
-  const pool = selectPool(scored);
+  // A family's own rules are not a suggestion: a vegetarian dinner, a word it refused,
+  // or a recipe it rated bad never enters the library. A rated-good dish is kept with a
+  // bonus, because the score alone would drop a liked new recipe at the quota line.
+  const dishText = (s) => `${s.name || ""} ${s.url || ""} ${(s.tags || []).join(" ")} `
+    + `${(s.ingredients || []).map((i) => i.text || "").join(" ")}`.toLowerCase();
+  const excluded = (s) => {
+    if (REFUSED.has(s.url)) return true;
+    const protein = s.protein || proteinOf(s);
+    if (NO_VEG && ["vegetar", "ostaeq", "aeg"].includes(protein)) return true;
+    return EXCLUDE_WORDS.some((w) => dishText(s).includes(w));
+  };
+  const allowed = scored.filter((s) => {
+    if (LIKED.has(s.url)) s.score = Number((s.score + 100).toFixed(2));
+    return !excluded(s);
+  });
+  allowed.sort((a, b) => b.score - a.score || a.minutes - b.minutes || a.name.localeCompare(b.name, "da"));
+  const profilesCaps = CAPS_FOR_PROFILE(PROFILE);
+  const pool = selectPool(allowed, L, profilesCaps);
   const mix = pool.reduce((m, p) => (m[p.protein] = (m[p.protein] || 0) + 1, m), {});
   writeFileSync(OUT, JSON.stringify({
     schemaVersion: 1,
@@ -214,12 +256,12 @@ function main() {
     note: "Dinner rotation. One recipe is cooked once and eaten twice, so quantities are scaled to the servings a night this household eats, not to the recipe's own pot.",
     poolSize: pool.length,
     mix,
-    proteinCaps: PROTEIN_CAPS,
+    proteinCaps: profilesCaps,
     freshHerbsLeftOut: HERB_WORDS,
     oddAsksLeftOut: ODD_WORDS,
     pool,
     lunchboxBakes: bakes,
-    rejectedSample: scored.slice(L.poolSize, L.poolSize + 10).map((s) => ({ name: s.name, score: s.score, reasons: s.reasons.slice(-2) })),
+    rejectedSample: allowed.slice(L.poolSize, L.poolSize + 10).map((s) => ({ name: s.name, score: s.score, reasons: s.reasons.slice(-2) })),
   }, null, 1));
   console.log(`Wrote ${OUT}: ${pool.length} dinners, mix ${JSON.stringify(mix)}, lunchbox bakes ${bakes.length}.`);
   for (const p of pool) console.log(`  ${String(p.protein).padEnd(10)} ${String(p.minutes).padStart(3)} min  ${p.name.slice(0, 44).padEnd(46)} hist=${p.historyOrders} buyable=${p.coverageBuyablePct}% score=${p.score}`);

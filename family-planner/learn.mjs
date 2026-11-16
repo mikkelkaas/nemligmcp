@@ -234,7 +234,10 @@ export function tasteFile(file = `${PROFILES}/taste.json`) {
   if (!existsSync(file)) return { liked: [], refused: [] };
   try {
     const t = JSON.parse(readFileSync(file, "utf8"));
-    return { liked: t.liked || [], refused: t.refused || [] };
+    return {
+      liked: Array.isArray(t.liked) ? t.liked.filter((u) => typeof u === "string") : [],
+      refused: Array.isArray(t.refused) ? t.refused.filter((u) => typeof u === "string") : [],
+    };
   } catch {
     return { liked: [], refused: [] };
   }

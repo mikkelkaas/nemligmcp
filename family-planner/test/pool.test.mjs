@@ -143,6 +143,25 @@ test("a plan that holds up is accepted", () => {
   assert.deepEqual(validatePlan(goodPlan()), []);
 });
 
+test("a hand-edited plan with a malformed list is refused, not crashed", () => {
+  const cases = [
+    { unresolved: "x" },
+    { unresolved: [null] },
+    { adds: "x" },
+    { adds: [null] },
+    { dinnerMenu: "x" },
+    { dinnerMenu: [null] },
+    { dinnerMenu: [{ name: "Dinner" }] },
+    { items: [null] },
+    { options: "x" },
+    { options: { people: 0 } },
+  ];
+  for (const bad of cases) {
+    const problems = validatePlan({ ...goodPlan(), ...bad });
+    assert.ok(problems.length > 0, "not refused: " + JSON.stringify(bad));
+  }
+});
+
 test("planTotal is checked against what the run adds, not the whole plan", () => {
   // The basket already held the maelk, so keep-and-top-up left it out of the adds. The plan
   // is right and the old check refused it: planTotal is the adds sum, items is every product.

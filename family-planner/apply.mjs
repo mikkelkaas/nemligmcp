@@ -55,9 +55,14 @@ function round2(n) {
 }
 
 
+/** A flag that takes a value refuses a missing one. Silently falling back to the default
+ *  plan path after `--plan` with no value is how a typo writes the wrong basket. */
 function arg(name, dflt) {
   const i = process.argv.indexOf("--" + name);
-  return i > -1 ? process.argv[i + 1] : dflt;
+  if (i < 0) return dflt;
+  const value = process.argv[i + 1];
+  if (value === undefined || value.startsWith("--")) throw new Error(`--${name} needs a value`);
+  return value;
 }
 
 /** One product a recipe card brought, in the shape the card path uses. The field names
@@ -253,14 +258,14 @@ async function topUpCardProducts(mcp, topUps, keepGoing) {
  * what the shop added. A product already in the basket, or on an earlier card, is skipped,
  * so a card never buys a second time.
  */
-async function addRecipeCards(mcp, plan, before, aliases = {}) {
+async function addRecipeCards(mcp, plan, before, aliases = {}, fallbackPeople = 5) {
   const all = await resolvePlanRecipes(mcp, plan);
   for (const miss of all.filter((d) => !d.guid)) {
     console.log(`  miss  recipe card "${miss.name}": ${miss.why}`);
   }
   const dishes = all.filter((d) => d.guid);
   if (dishes.length === 0) return { cards: [], lines: [], cardMoneyKr: 0, skipped: [] };
-  const people = Number(plan.options?.people || 5);
+  const people = Number(plan.options?.people || fallbackPeople || 5);
   const held = new Map([...before.map].map(([sku, e]) => [sku, e.qty]));
   const used = new Set();
   const cache = readCardCache();
@@ -367,6 +372,11 @@ async function main() {
   const planPath = arg("plan", BASE + "/data/plans/plan-latest.json");
   const approve = arg("approve", "");
   const slotId = arg("slot", null);
+  if (slotId !== null && (!/^\d+$/.test(String(slotId)) || Number(slotId) <= 0)) {
+    console.error(`REFUSED: --slot "${slotId}" is not a numeric timeslot id. Run node slots.mjs --days 8 and use its Id.`);
+    process.exitCode = 3;
+    return;
+  }
   const keepGoing = process.argv.includes("--keep-going");
   if (!existsSync(planPath)) throw new Error("no plan file at " + planPath + " — run plan.mjs first");
   let plan;
@@ -434,7 +444,7 @@ async function writeBasket({ plan, planPath, slotId, keepGoing, wantCards, house
 
   // 1. Recipe cards first: their chosen products land in the basket, then one decision each.
   const cards = wantCards
-    ? await addRecipeCards(mcp, plan, before, fam.exclusions?.queryAliases?.words || {})
+    ? await addRecipeCards(mcp, plan, before, fam.exclusions?.queryAliases?.words || {}, household.people)
     : { cards: [], lines: [], cardMoneyKr: 0, skipped: [] };
   if (!wantCards) console.log("  skip  recipe cards (--recipes no)");
 
@@ -493,7 +503,7 @@ async function finishBasket({ mcp, plan, planPath, slotId, before, cards, topUps
   };
   const written = saveReport(report);
   printResult({ adds, failed, after, report, missing, written, cards, dropped, topUps });
-  if (failed.length || topUps.failed.length) process.exitCode = 1;
+  if (failed.length || topUps.failed.length || (slot && slot.isError)) process.exitCode = 1;
 }
 
 /** Refuse to write when the plan is not applicable. Returns null when all is well.
@@ -551,14 +561,33 @@ function copenhagenWallClock(date = new Date()) {
 }
 
 /** Book the timeslot the person approved, only after something was actually added. */
+/** What the shop said about a timeslot. A 200 with IsReserved false is still a refusal:
+ *  the delivery time did not change, and the basket must not be reported as booked. */
+export function slotOutcomeOf(response, slotId) {
+  const body = response.json || {};
+  const reserved = body.IsReserved;
+  return {
+    id: Number(slotId),
+    isError: Boolean(response.isError) || reserved === false,
+    reserved: reserved === true,
+    text: String(response.text || "").slice(0, 300),
+  };
+}
+
 async function pickSlot(mcp, slotId, adds) {
   if (!slotId) return null;
   if (adds.length === 0) {
     console.log("  slot  skipped: nothing was added, so the timeslot was not touched");
     return null;
   }
-  const s = await mcp.call("select_timeslot", { timeslotId: Number(slotId) }, { timeoutMs: CALL_TIMEOUT });
-  const slot = { id: Number(slotId), isError: s.isError, text: s.text.slice(0, 300) };
+  const id = Number(slotId);
+  if (!Number.isInteger(id) || id <= 0) {
+    const slot = { id: null, isError: true, reserved: false, text: `not a numeric slot id: ${slotId}` };
+    console.log(`  slot  FAILED ${slot.text}`);
+    return slot;
+  }
+  const s = await mcp.call("select_timeslot", { timeslotId: id }, { timeoutMs: CALL_TIMEOUT });
+  const slot = slotOutcomeOf(s, id);
   console.log(`  slot  ${slot.isError ? "FAILED (the change would alter the basket - re-plan, then retry, or pass --force in the app) " + slot.text : "selected id " + slot.id}`);
   return slot;
 }
@@ -620,6 +649,33 @@ export function validatePlan(plan) {
   if (plan.kind !== "nemlig-plan") problems.push(`kind is "${plan.kind}", expected "nemlig-plan"`);
   if (Number(plan.schemaVersion) !== 1) problems.push(`schemaVersion ${plan.schemaVersion} is not 1`);
   if (!Array.isArray(plan.items)) return problems.concat(["items is not a list"]);
+  // A plan file is hand-editable. A list that holds null, a string where a list belongs,
+  // or a dinner with no name used to crash the card path or the trim sum. Refuse it here,
+  // before a single shop call.
+  const listProblems = [];
+  if (plan.unresolved !== undefined && !Array.isArray(plan.unresolved)) listProblems.push("unresolved is not a list");
+  else if (Array.isArray(plan.unresolved) && plan.unresolved.some((u) => !u || typeof u !== "object")) {
+    listProblems.push("unresolved holds a line that is not an object");
+  }
+  if (plan.adds !== undefined && !Array.isArray(plan.adds)) listProblems.push("adds is not a list");
+  else if (Array.isArray(plan.adds) && plan.adds.some((a) => !a || typeof a !== "object")) {
+    listProblems.push("adds holds a line that is not an object");
+  }
+  if (plan.dinnerMenu !== undefined && !Array.isArray(plan.dinnerMenu)) listProblems.push("dinnerMenu is not a list");
+  else if (Array.isArray(plan.dinnerMenu)) {
+    for (const [i, m] of plan.dinnerMenu.entries()) {
+      if (!m || typeof m !== "object") { listProblems.push(`dinner ${i + 1} is not an object`); continue; }
+      if (!String(m.name || "").trim()) listProblems.push(`dinner ${i + 1}: no name`);
+      if (!String(m.url || m.id || "").trim()) listProblems.push(`dinner ${i + 1}: no url or id`);
+    }
+  }
+  if (plan.items.some((it) => !it || typeof it !== "object")) listProblems.push("items holds a line that is not an object");
+  if (plan.options !== undefined && (plan.options === null || typeof plan.options !== "object")) {
+    listProblems.push("options is not an object");
+  } else if (plan.options && plan.options.people !== undefined && !(Number(plan.options.people) >= 1)) {
+    listProblems.push(`options.people "${plan.options.people}" is not a positive number`);
+  }
+  if (listProblems.length) return problems.concat(listProblems);
   if (plan.items.length === 0) problems.push("the plan has no products");
   if (plan.items.length > 400) problems.push(`${plan.items.length} products is more than one basket should hold`);
   const skus = new Map();

@@ -321,7 +321,7 @@ test("chooseDinners alternates a new dish with one the family knows", async () =
 });
 
 // --- apply.mjs: recipe card first, plan quantity second, rejects third -------------
-import { wantQtyOf, cardDecisions, cardLineOf } from "../apply.mjs";
+import { wantQtyOf, cardDecisions, cardLineOf, slotOutcomeOf } from "../apply.mjs";
 import { recipeIngredients, cardSelections, planItemForIngredient, cardPayload } from "../recipes.mjs";
 import { basketDelta } from "../tools/mine-basket.mjs";
 import { keptDinners } from "../tools/mine-menu.mjs";
@@ -424,6 +424,14 @@ test("a card product that leaves a gap is topped up to the plan total, never the
   assert.deepEqual(out.topUp.map((d) => [d.setTo, d.held]), [[2, 1]], "the card target is 3 - 1, not 3");
 });
 
+test("a recipe page number with a Danish comma is read as a number", () => {
+  const page = { content: [{ Header: "Test ret", NumberOfPersons: 4, IngredientGroups: [{ Ingredients: [
+    { ProductSelectionId: "11111111-1111-1111-1111-111111111111", Text: "Sauce", Amount: "0,5", Unit: "l", MesaureWeightInGram: null, MeasureMassInLiter: "0,1" },
+  ] }] }] };
+  assert.equal(recipeIngredients(page).ingredients[0].litres, 0.1);
+  assert.equal(recipeIngredients(page).ingredients[0].grams, null);
+});
+
 test("a recipe page gives the selection ids the card API needs", () => {
   const page = { content: [{ Header: "Test ret", NumberOfPersons: 4, IngredientGroups: [{ Ingredients: [
     { ProductSelectionId: "11111111-1111-1111-1111-111111111111", Text: "Spaghetti", Amount: "500", Unit: "g", MesaureWeightInGram: "500", MeasureMassInLiter: null },
@@ -491,6 +499,11 @@ test("a teaspoon is a kitchen measure, not the page's gram figure", () => {
   const out = recipeIntents(recipe, { amounts: { household: { cookServings: 4 } }, meat: { rules: [] }, exclusions, portions: 4, standardPortions: 4 });
   assert.equal(out.intents.find((i) => i.query === "Chiliflager").need, "10 g", "2 tsk is 10 g, not the 50 g the page states");
   assert.equal(out.intents.find((i) => i.query === "Østerssauce").need, "15 ml", "1 spsk is 15 ml, not 0.1 l");
+  for (const [amount, want] of [["1,5", "10 g"], ["1/2", "5 g"]]) {
+    const one = { name: "T", servings: 4, ingredients: [{ text: "Chiliflager", amount, unit: "tsk", grams: 50 }] };
+    const out2 = recipeIntents(one, { amounts: { household: { cookServings: 4 } }, meat: { rules: [] }, exclusions, portions: 4, standardPortions: 4 });
+    assert.equal(out2.intents[0].need, want, `${amount} tsk is ${want}, not read as 1 tsk`);
+  }
 });
 
 test("a tiny pack is refused before it becomes ten packs", () => {
@@ -530,6 +543,17 @@ test("at most two new dinners, and a new one must be quick", () => {
   const fresh = r.menu.filter((m) => m.cookedAgo === "never");
   assert.ok(fresh.length <= 2, "fresh: " + fresh.map((m) => m.name).join(", "));
   assert.ok(fresh.every((m) => m.minutes <= 30), "a new dinner must be quick: " + fresh.map((m) => `${m.name} ${m.minutes}`).join(", "));
+});
+
+test("an avoided word is found in the recipe URL too", () => {
+  const pool = [
+    { url: "/opskrifter/salatpizza-kyllingekebab-1", name: "Salatpizza med kebab", protein: "oksekod", format: "pizza", score: 9 },
+    { url: "/butter", name: "Butter chicken", protein: "oksekod", format: "gryde", score: 9, ingredients: [{ text: "Kyllingebrystfilet" }] },
+    { url: "/b", name: "Okse B", protein: "oksekod", format: "gryde", score: 8 },
+    { url: "/c", name: "Fisk C", protein: "fisk", format: "gryde", score: 7 },
+  ];
+  const r = chooseDinners(pool, { days: 4, coversDays: 2, maxPerProtein: 3, minFish: 0, excludeWords: ["kylling"], lastUsed: {}, wanted: [] });
+  assert.ok(!r.chosen.some((d) => d.url.includes("kylling") || d.name.includes("chicken")), "the avoided word in the URL or an ingredient excludes the dish");
 });
 
 test("a family that wants meat never gets a vegetarian dinner from the rotation", () => {
@@ -577,6 +601,13 @@ test("a corrected basket reports what was removed, reduced, increased and added"
   assert.deepEqual(d.increased.map((x) => x.sku), ["2"]);
   assert.deepEqual(d.removed.map((x) => x.sku), ["3"]);
   assert.deepEqual(d.added.map((x) => x.sku), ["4"]);
+});
+
+test("a refused timeslot is a failure even when the HTTP call succeeded", () => {
+  assert.equal(slotOutcomeOf({ isError: false, text: "", json: { IsReserved: true } }, 5).isError, false);
+  assert.equal(slotOutcomeOf({ isError: false, text: "", json: { IsReserved: false, ProductLineDiffs: [1] } }, 5).isError, true);
+  assert.equal(slotOutcomeOf({ isError: false, text: "" }, 5).isError, false, "no flag is not a refusal");
+  assert.equal(slotOutcomeOf({ isError: true, text: "boom" }, 5).isError, true);
 });
 
 test("the card body sends selected products and no default product list", () => {
@@ -1192,7 +1223,7 @@ test("what the plan loop asks the shop for keeps the rule's refusals", () => {
     avoidWords: ["19-23%"], maxUnitPrice: 100, minPackGrams: 500,
   };
   const sent = searchIntentOf(it, { avoid: ["Grøn Fjer"], purchasing: { tieBreakKr: 3 }, fresh: false });
-  assert.deepEqual(sent.avoidWords, ["19-23%"], "the words this family refuses must reach the buy");
+  assert.deepEqual(sent.avoidWords, ["19-23%", "Grøn Fjer"], "the rule's words and the CLI avoid list both reach the buy");
   assert.equal(sent.maxUnitPrice, 100, "and so must the ceiling they set per unit");
   assert.equal(sent.minPackGrams, 500, "and the smallest pack they buy of it");
   assert.deepEqual(sent.alt, ["Grødris"], "the alt chain travels too");
@@ -1288,4 +1319,31 @@ test("a close answer under the family's own bar becomes a printed decision, neve
   const taken = await resolveIntent(mcp, { ...intent, query: r.nearMiss[0].name, mode: "cheapest" }, {});
   assert.equal(taken.ok, true, "the flag the plan prints really lands on that product");
   assert.equal(String(taken.pick.sku), "9000002", "the same product, not another one with a similar name");
+});
+
+test("a malformed members list is an empty household, not a crash", () => {
+  const b = blockPeopleOf({ dinners: { members: {} }, household: { blockPeople: {} } }, {});
+  assert.equal(b.people.breakfast, 1, "with nobody readable, one person is the floor");
+  assert.equal(b.people.kidLunchbox, 0);
+});
+
+test("a corrupt pool is an empty pool, not a crash", () => {
+  const r = chooseDinners("not a list", { days: 1, coversDays: 1, lastUsed: {}, wanted: [] });
+  assert.deepEqual(r.menu, []);
+});
+
+test("a malformed profile and missing data files do not crash the loader", () => {
+  const dir = mkdtempSync(join(tmpdir(), "fam-bad-"));
+  try {
+    writeFileSync(join(dir, "family-bad.json"), JSON.stringify({
+      name: "bad", schemaVersion: 1, dinners: { members: {} }, household: {},
+    }));
+    const fam = loadFamily({ dir, name: "bad" });
+    assert.deepEqual(fam.household.members, [], "a members object is not a list");
+    assert.deepEqual(fam.pool.pool, [], "a missing pool is an empty pool");
+    assert.deepEqual(fam.pantry.blocks, {}, "a missing pantry has no blocks");
+    assert.ok(fam.blockPeople.people.breakfast >= 1, "the block head-count is still usable");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
