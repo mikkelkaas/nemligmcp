@@ -5,7 +5,8 @@
   "at": "2026-11-11",
   "edited": "you, 2026-11-11",
   "household": {
-    "_note": "timezone is where the planner counts days; who eats and how much is under dinners.members.",
+    "_note": "timezone is where the planner counts days; who eats and how much is under dinners.members. extraPortions is what one cooking covers beyond one eating: 2 means a pot is cooked once and eaten twice, 0 means every dinner is cooked fresh. Set peopleToShopFor to leave the arithmetic out.",
+    "extraPortions": 2,
     "timezone": "Europe/Copenhagen"
   },
   "dinners": {

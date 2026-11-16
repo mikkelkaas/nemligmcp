@@ -6,20 +6,38 @@
 //      orders that contain the product family, plus the gap between orders, so the
 //      number can be read as a rate per week.
 //   2. How much protein and sides per dinner? Answered with the recipe amounts in
-//      profiles/recipe-pool.json, scaled from Namlig's 4 persons to the 5 servings
-//      this family cooks: the members in the profile, one pot, eaten two evenings.
+//      profiles/recipe-pool.json, scaled from the servings a recipe names to the
+//      servings YOUR profile cooks for: the members you set, one pot, eaten the
+//      number of evenings your profile says.
 //
 // Output: profiles/amounts.json, with the evidence next to every number.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { parsePack } from "./units.mjs";
+import { loadFamily } from "./family.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
 const LINES = BASE + "/data/order-lines-raw.jsonl";
 const POOL = BASE + "/profiles/recipe-pool.json";
 const OUT = BASE + "/profiles/amounts.json";
 
-const HOUSEHOLD = { adults: 2, children: 1, people: 3, dinnersPerRecipe: 2, cookServings: 5 };
+/**
+ * The household these amounts are mined for: your own profile when one is set up, the
+ * shipped numbers when nothing is set up yet. A first run before `init-family.mjs` is
+ * legal and says so, because `init-family.mjs` reads this file afterwards.
+ */
+function householdForMining() {
+  try {
+    const h = loadFamily({}).household;
+    return { adults: Number(h.adults) || 0, children: (h.kids || []).length, people: Number(h.people) || 0,
+      dinnersPerRecipe: Number(h.daysCoveredByOneDinner) || 2, cookServings: Number(h.dinnersForPeople) || 0,
+      from: "your profile" };
+  } catch {
+    return { adults: 2, children: 1, people: 3, dinnersPerRecipe: 2, cookServings: 5,
+      from: "the shipped default: re-run this after init-family.mjs" };
+  }
+}
+const HOUSEHOLD = householdForMining();
 
 // Product families, folded so the Danish letters do not matter. First match wins.
 const FAMILIES_RAW = [
@@ -150,13 +168,14 @@ function main() {
     schemaVersion: 1,
     at: new Date().toISOString(),
     ordersRead: orders.length,
-    household: { ...HOUSEHOLD, note: "one recipe is cooked once and eaten twice; quantities are scaled to 5 servings so nothing is cooked two evenings in a row" },
+    household: { ...HOUSEHOLD, note: `one recipe is cooked once and eaten ${HOUSEHOLD.dinnersPerRecipe} times; quantities are scaled to ${HOUSEHOLD.cookServings} servings so nothing is cooked two evenings in a row` },
     staples: familyTotals(orders),
     perDinner: perDinner(POOL),
     rounding: { rule: "round up to the smallest pack Namlig sells that covers the need", maxExtraPacks: 1, note: "a larger pack is bought when it is cheaper per kg and the item keeps (see pantry.json)" },
   };
   writeFileSync(OUT, JSON.stringify(data, null, 1));
   console.log(`Wrote ${OUT} from ${orders.length} orders.`);
+  console.log(`household mined for: ${HOUSEHOLD.people} people, ${HOUSEHOLD.cookServings} servings a cooking, ${HOUSEHOLD.dinnersPerRecipe} evenings a dinner - ${HOUSEHOLD.from}`);
   console.log("family".padEnd(20), "orders", "median packs", "median g/l", "per week");
   for (const [k, v] of Object.entries(data.staples)) {
     const amount = v.medianGrams ? `${v.medianGrams} g` : v.medianLitres ? `${v.medianLitres} l` : v.medianPieces ? `${v.medianPieces} stk` : "-";
@@ -164,7 +183,7 @@ function main() {
     console.log(k.padEnd(20), String(v.ordersContaining).padStart(6), String(v.medianPacks).padStart(13), String(amount).padStart(12), perWeek.padStart(10));
   }
   console.log("\nper dinner (Namlig median per person):");
-  for (const [k, v] of Object.entries(data.perDinner)) console.log(`  ${k.padEnd(8)} ${v.gramsPerServingNamlig} g/person -> ${v.gramsForHouseholdDinner} g for 3, ${v.gramsWhenCookingOnceForTwoDinners} g cooked for 2 dinners (${v.fromRecipes} recipes)`);
+  for (const [k, v] of Object.entries(data.perDinner)) console.log(`  ${k.padEnd(8)} ${v.gramsPerServingNamlig} g/person -> ${v.gramsForHouseholdDinner} g for ${HOUSEHOLD.people}, ${v.gramsWhenCookingOnceForTwoDinners} g cooked for ${HOUSEHOLD.dinnersPerRecipe} dinners (${v.fromRecipes} recipes)`);
 }
 
 main();

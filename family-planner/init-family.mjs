@@ -114,6 +114,9 @@ function main() {
   }
   const adults = Number(arg("adults", "2")), children = Number(arg("children", "1"));
   const days = Number(arg("days", "8"));
+  // One cooking may cover more eatings than one: 2 is one pot eaten twice, 0 is cooked fresh every night.
+  const extraRaw = arg("extra-portions", "2"), extra = Number(extraRaw);
+  if (!(extra >= 0 && extra <= 6)) throw new Error(`--extra-portions must be 0-6, got "${extraRaw}"`);
   if (!(adults > 0 && children >= 0 && days > 0)) throw new Error("adults must be > 0, children >= 0, days > 0");
   const out = `${BASE}/profiles/family-${slug}.json`;
   if (existsSync(out) && !process.argv.includes("--force")) {
@@ -151,12 +154,15 @@ function main() {
       adults,
       children,
       childAges: [],
-      peopleToShopFor: adults + children + 2,
+      extraPortions: extra,
+      peopleToShopFor: adults + children + extra,
       timezone: arg("timezone", "Europe/Copenhagen"),
-      _note: "peopleToShopFor is adults + children + 2: one pot is cooked once and eaten twice.",
+      _note: extra === 0
+        ? "peopleToShopFor is the family as it is: every dinner is cooked fresh, nothing is eaten twice."
+        : `peopleToShopFor is adults + children + ${extra}: one pot is cooked once and eaten ${extra} times.`,
     },
     dinners: {
-      servingsPerDinner: adults + children + 2,
+      servingsPerDinner: adults + children + extra,
       daysPerDinner: 2,
       cookOnceEatTwice: true,
       maxRecipeMinutes: Number(arg("max-minutes", "30")),
@@ -208,7 +214,8 @@ function main() {
 
   writeFileSync(out, JSON.stringify(profile, null, 1));
   console.log(`Wrote ${out}`);
-  console.log(`  portions per dinner : ${profile.household.peopleToShopFor} (${adults} adults + ${children} children + 2, cooked once eaten twice)`);
+  const extraNote = extra === 0 ? "every dinner cooked fresh, nothing kept over" : `cooked once eaten ${extra}`;
+  console.log(`  portions per dinner : ${profile.household.peopleToShopFor} (${adults} adults + ${children} children + ${extra} extra portions, ${extraNote})`);
   console.log(`  soft cap for ${days} days  : ${softCap} kr  (median order ${medianTotal} kr every ${gapDays} days)`);
   console.log(`  meat from your cart : ${Object.values(profile.meat.perProtein).filter((k) => k.buy).length} of ${PROTEIN_KEYS.length} proteins filled in`);
   console.log(`  never bought        : ${neverBought.length} recipe words your family has never bought`);

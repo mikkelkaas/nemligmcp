@@ -13,7 +13,7 @@
 
 import { existsSync, readdirSync, mkdirSync, accessSync, readFileSync, statSync, constants } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { HOME, PROFILES, DATA, PLANS, envFile, ENV_CANDIDATES } from "./paths.mjs";
+import { HOME, PROFILES, DATA, PLANS, envFile } from "./paths.mjs";
 
 const NODE_MIN = 20;                       // upstream engines say >=20; the planner uses node:test
 const ENV_KEYS = ["NEMLIG_USER", "NEMLIG_PASS", "MCP_SECRET"];
@@ -236,12 +236,9 @@ function checkEnv(out) {
     return;
   }
   out.push(finding(env, OK, "credential file found"));
-  // The last candidate is a folder written into the code. It works, and it should not be a
-  // surprise: an explicit NEMLIG_ENV says which file belongs to this install.
-  if (env === ENV_CANDIDATES[ENV_CANDIDATES.length - 1] && ENV_CANDIDATES.length > 1) {
-    out.push(finding(env, WARN, "found by the last candidate, a path built into paths.mjs",
-      "set NEMLIG_ENV to the file this install owns, and the lookup stops guessing"));
-  }
+  // Every place paths.mjs looks is legitimate: NEMLIG_ENV, the planner folder, the
+  // repository root. Nothing is written for one machine any more, so finding the file
+  // by search needs no warning. A file that does not exist is blocked above.
   let keys;
   try {
     keys = envKeys(env);

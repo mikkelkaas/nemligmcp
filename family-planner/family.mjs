@@ -66,7 +66,8 @@ function householdOf(p) {
   const h = p.household || {};
   return {
     schemaVersion: p.schemaVersion || 1,
-    people: Number(h.peopleToShopFor || ((h.adults || 2) + (h.children || 0) + 2)),
+    // extraPortions is how much more one cooking covers: 2 means the pot is eaten twice.
+    people: Number(h.peopleToShopFor || ((h.adults || 2) + (h.children || 0) + (Number.isFinite(Number(h.extraPortions)) ? Number(h.extraPortions) : 2))),
     adults: Number(h.adults || 2),
     kids: (h.childAges || []).map((ageYears) => ({ ageYears })),
     dinnersForPeople: Number((p.dinners || {}).servingsPerDinner || 5),

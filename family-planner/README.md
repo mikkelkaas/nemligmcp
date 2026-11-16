@@ -446,7 +446,10 @@ node plan.mjs --family <your-name> --days 8   # dry run
 
 `init-family.mjs` reads only what those four miners write, so it fails until they have run.
 Its flags are `--name` (needed), `--adults`, `--children`, `--days`, `--timezone`,
-`--max-minutes` and `--force`; `--force` rewrites a profile that already exists.
+`--extra-portions`, `--max-minutes` and `--force`; `--force` rewrites a profile that already exists.
+`--extra-portions N` (0-6, default 2) is how much more one cooking covers: 2 writes a profile
+whose pot is eaten twice, 0 writes one where every dinner is cooked fresh. It lands in
+`household.extraPortions`, which is what raises `peopleToShopFor` above the family as it is.
 
 `init-family.mjs` fills the profile from the numbers it can measure - portions, the soft cap
 from the median order and the gap between orders, the fat percentage and the 75th-percentile

@@ -25,17 +25,16 @@ export const PLANS = join(DATA, "plans");
 export const CACHE_PATH = join(DATA, "product-cache.json");
 
 /**
- * The .env holding NEMLIG_USER and NEMLIG_PASS, first of these that exists:
- * NEMLIG_ENV, the planner folder, the repository root above it, and the folder
- * this project grew up in. A missing file is reported by the caller, which says
- * what it looked for.
+ * The .env holding NEMLIG_USER and NEMLIG_PASS, first of these that exists: NEMLIG_ENV,
+ * the planner folder, then the repository root above it (where .env.example is copied).
+ * No path here belongs to one machine: an install that keeps its credentials elsewhere
+ * sets NEMLIG_ENV. A missing file is reported by the caller, which says what it looked for.
  */
-/** The places envFile() looks, in order. Exported so doctor.mjs can say which one won. */
+/** The places envFile() looks, in order. Exported so a caller can name them. */
 export const ENV_CANDIDATES = [
   process.env.NEMLIG_ENV,
   join(HOME, ".env"),
   join(dirname(HOME), ".env"),
-  "/opt/docker/.env",      // the folder this planner grew up in; a stranger never has it
 ].filter(Boolean);
 
 export function envFile() {
