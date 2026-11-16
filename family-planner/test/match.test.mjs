@@ -311,6 +311,7 @@ test("chooseDinners alternates a new dish with one the family knows", async () =
 
 // --- apply.mjs: recipe card first, plan quantity second, rejects third -------------
 import { wantQtyOf, cardDecisions, cardLineOf } from "../apply.mjs";
+import { recipeIngredients, cardSelections, planItemForIngredient, cardPayload } from "../recipes.mjs";
 
 test("a plan quantity overwrites the amount a recipe card put in, down as well as up", () => {
   assert.equal(wantQtyOf({ packs: 2 }, 5, true), 2);
@@ -379,6 +380,97 @@ test("a card line reads the field names recipeLines returns", () => {
   const line = cardLineOf({ recipe: "A", productId: 5001, name: "Spaghetti", quantity: "2" });
   assert.deepEqual(line, { sku: "5001", name: "Spaghetti", qty: 2 });
   assert.equal(cardLineOf({ sku: "9", productNumber: "9", quantity: 1 }).sku, "", "the old wrong field is not read");
+});
+
+test("a card product that finishes a line already in the basket is kept, not topped up", () => {
+  const cards = [{ sku: "5001", name: "Spaghetti", qty: 1 }];
+  const plan = [{ sku: "5001", name: "Spaghetti", packs: 3 }];
+  const out = cardDecisions(cards, plan, new Map([["5001", 2]]));
+  assert.equal(out.keep.length, 1, "1 on the card plus 2 in the basket is the 3 the plan wants");
+  assert.equal(out.topUp.length, 0);
+  assert.equal(out.covered.has("5001"), true);
+});
+
+test("a card product that leaves a gap is topped up to the plan total, never the full count", () => {
+  const cards = [{ sku: "5002", name: "Ris", qty: 1 }];
+  const plan = [{ sku: "5002", name: "Ris", packs: 3 }];
+  const out = cardDecisions(cards, plan, new Map([["5002", 1]]));
+  assert.deepEqual(out.topUp.map((d) => [d.setTo, d.held]), [[2, 1]], "the card target is 3 - 1, not 3");
+});
+
+test("a recipe page gives the selection ids the card API needs", () => {
+  const page = { content: [{ Header: "Test ret", NumberOfPersons: 4, IngredientGroups: [{ Ingredients: [
+    { ProductSelectionId: "11111111-1111-1111-1111-111111111111", Text: "Spaghetti", Amount: "500", Unit: "g", MesaureWeightInGram: "500", MeasureMassInLiter: null },
+    { Text: "Salt" },
+  ] }] }] };
+  assert.deepEqual(recipeIngredients(page), {
+    name: "Test ret",
+    servings: 4,
+    ingredients: [{ selectionId: "11111111-1111-1111-1111-111111111111", text: "Spaghetti", amount: "500", unit: "g", grams: 500, litres: null }],
+  });
+});
+
+test("the plan's own pick fills the card, in the quantity the plan still needs", () => {
+  const recipe = {
+    url: "/opskrifter/test-98000001",
+    ingredients: [
+      { selectionId: "11111111-1111-1111-1111-111111111111", text: "Spaghetti" },
+      { selectionId: "22222222-2222-2222-2222-222222222222", text: "Dild" },
+      { selectionId: "33333333-3333-3333-3333-333333333333", text: "Spaghetti" },
+    ],
+  };
+  const plan = [{ sku: "7001", name: "Spaghetti øko.", packs: 2, sources: ["dinner:/opskrifter/test-98000001"], why: "cheapest" }];
+  const out = cardSelections(recipe, plan, new Map([["7001", 1]]));
+  assert.deepEqual(out.selected, [{
+    ProductSelectionId: "11111111-1111-1111-1111-111111111111",
+    ProductSelectionName: "Spaghetti øko.",
+    ProductId: "7001",
+    Quantity: 1,
+    name: "Spaghetti øko.",
+    ingredient: "Spaghetti",
+    why: "cheapest",
+  }], "one pack, because the basket already holds one");
+  assert.equal(out.skipped.length, 2, "no plan line for dill, and the second spaghetti is the same product");
+  assert.match(out.skipped[1].why, /already on another card/);
+});
+
+test("a product the basket already holds at the plan quantity is not put on a card", () => {
+  const recipe = { url: "/opskrifter/test-98000002", ingredients: [
+    { selectionId: "44444444-4444-4444-4444-444444444444", text: "Ris" },
+  ] };
+  const plan = [{ sku: "7002", name: "Ris", packs: 2, sources: ["dinner:/opskrifter/test-98000002"] }];
+  const out = cardSelections(recipe, plan, new Map([["7002", 2]]));
+  assert.equal(out.selected.length, 0);
+  assert.match(out.skipped[0].why, /already in the basket/);
+});
+
+test("a recipe word finds the plan's pack: a chicken cut is chicken", () => {
+  assert.equal(planItemForIngredient("Kylling i wok strimler", [{ sku: "1", name: "Kyllingebrystfilet" }]).sku, "1");
+  assert.equal(planItemForIngredient("Sojasauce - evt. glutenfri", [{ sku: "2", name: "Sojasauce" }]).sku, "2");
+  assert.equal(planItemForIngredient("Dild", [{ sku: "3", name: "Spaghetti" }]), null);
+});
+
+test("the card body sends selected products and no default product list", () => {
+  const payload = cardPayload({ guid: "recipe-guid" }, 5, [{
+    ProductSelectionId: "11111111-1111-1111-1111-111111111111",
+    ProductSelectionName: "Spaghetti",
+    ProductId: "7001",
+    Quantity: 2,
+  }]);
+  assert.deepEqual(payload, {
+    RecipeId: "recipe-guid",
+    NumberOfPeople: 5,
+    Sorting: "priceasc",
+    SelectedProducts: [{
+      ProductSelectionId: "11111111-1111-1111-1111-111111111111",
+      ProductSelectionName: "Spaghetti",
+      ProductId: "7001",
+      Quantity: 2,
+    }],
+    SoldOutProducts: [],
+    SupplementProducts: [],
+    IsNem3: false,
+  });
 });
 
 // --- similarity.mjs: the same dinner in another wrapper ---------------------------

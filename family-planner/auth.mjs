@@ -157,5 +157,7 @@ export async function login(env = loadEnv()) {
     get: (path) => request(`${BASE_URL}${path}`, { jar, auth }),
     /** POST a JSON body to a /webapi/ path. */
     post: (path, json) => request(`${BASE_URL}${path}`, { method: "POST", jar, auth, json }),
+    /** GET an absolute URL on the shop's API gateway, with the same session and token. */
+    getUrl: (url) => request(url, { jar, auth }),
   };
 }

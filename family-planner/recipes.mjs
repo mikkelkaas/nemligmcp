@@ -1,30 +1,31 @@
-// recipes.mjs — put the dinner recipe card itself into the basket.
+// recipes.mjs — choose what a dinner recipe card carries, and read card products back.
 //
 //   POST https://www.nemlig.com/webapi/basket/AddRecipeToBasket
-//        { RecipeId: "<guid>", NumberOfPeople: 5 }
+//        { RecipeId: "<guid>", NumberOfPeople: 5, SelectedProducts: [...] }
 //
-// Verified on this account on 2026-11-11: the response is the full basket, and
-// GetBasket then carries `Recipes[]` with `RecipeLineItems` (Namlig's own product
-// pick for that recipe, scaled to NumberOfPeople). The recipe GUID is not in the
-// recipe page — only its Umbraco number is. It comes from the search API, which the
-// MCP wraps: search_products returns a `Recipes` array whose entries carry `Id`.
+// The recipe page carries one ProductSelectionId per ingredient. The card API matches on
+// that id, so the planner can name the product it wants instead of taking the shop's pick.
+// The chosen product is the plan's own line, which is already the cheapest that fits the
+// family's rules. A product the basket already holds is left out of the card.
 //
-// A recipe card adds products. Our plan already adds better ones, and AddToBasket
-// sets an ABSOLUTE quantity, so the order matters: add the card first, then let
-// plan items overwrite the quantity, then zero out the lines the family profile
-// rejects. That is what `--write` does.
+// The recipe GUID is not in the page: it comes from search_products, whose `Recipes`
+// entries carry `Id`. The basket write lives in apply.mjs; this file is the reading and
+// the choice.
 //
-//   node recipes.mjs                    dry run: cards, GUIDs and what they would add
-//   node recipes.mjs --write --approve I-APPROVE-THIS-BASKET
+//   node recipes.mjs                    dry run: cards, GUIDs and what they would carry
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { connectGated } from "./lib.mjs";
-import { login } from "./auth.mjs";
+import { score, tokens, MIN_NAME_SCORE } from "./match.mjs";
+import { cleanQuery } from "./dinners.mjs";
 
-import { HOME as BASE } from "./paths.mjs";
+import { HOME as BASE, writeJsonAtomic } from "./paths.mjs";
 const PLAN = `${BASE}/data/plans/plan-latest.json`;
 const ID_CACHE = `${BASE}/data/recipe-ids.json`;
+const CARD_CACHE = `${BASE}/data/recipe-cards.json`;
 const APPROVE = "I-APPROVE-THIS-BASKET";
 const MAX_SEARCH = 8;
+const CARD_TIMEOUT = 60000;
+const CARD_TTL_MS = 30 * 24 * 3600 * 1000;
 
 function readJson(path, fallback) {
   if (!existsSync(path)) return fallback;
@@ -91,14 +92,156 @@ export function recipeLines(basketBody) {
   })));
 }
 
+/** The ingredients a recipe page offers for its product picker. A recipe with no selection
+ *  id cannot be filled by the API, so that ingredient is not returned. */
+export function recipeIngredients(page) {
+  const c = (page?.content && page.content[0]) || {};
+  const ingredients = [];
+  for (const group of c.IngredientGroups || []) {
+    for (const ing of group.Ingredients || []) {
+      const selectionId = String(ing.ProductSelectionId || "");
+      if (!selectionId) continue;
+      ingredients.push({
+        selectionId,
+        text: String(ing.Text || "").trim(),
+        amount: String(ing.Amount || "").trim(),
+        unit: String(ing.Unit || "").trim(),
+        grams: ing.MesaureWeightInGram == null ? null : Number(ing.MesaureWeightInGram),
+        litres: ing.MeasureMassInLiter == null ? null : Number(ing.MeasureMassInLiter),
+      });
+    }
+  }
+  return {
+    name: String(c.Header || "").trim(),
+    servings: Number(c.NumberOfPersons) || null,
+    ingredients,
+  };
+}
+
+/**
+ * The plan line that answers one recipe ingredient. The recipe often names a cut
+ * ("kylling i wok strimler") and the plan names the pack ("Kyllingebrystfilet"), so a
+ * plan word that starts with the ingredient's head word counts as the same product.
+ */
+export function planItemForIngredient(text, planItems) {
+  const cleaned = cleanQuery(String(text || "").split("/")[0].trim(), []);
+  let best = null;
+  let bestScore = 0;
+  for (const item of planItems) {
+    const s = score(cleaned, item.name);
+    if (s > bestScore) {
+      bestScore = s;
+      best = item;
+    }
+  }
+  if (bestScore >= MIN_NAME_SCORE) return best;
+  const head = tokens(cleaned)[0] || "";
+  if (head.length < 4) return null;
+  return planItems.find((item) => tokens(item.name).some((t) => t.startsWith(head))) || null;
+}
+
+/**
+ * Choose what each ingredient selection should carry. The plan's own pick wins, because
+ * the plan priced it and the family's rules already chose it. A product already in the
+ * basket, or already put on an earlier card, is skipped: nothing is bought twice.
+ */
+export function cardSelections(recipe, planItems, held = new Map(), used = new Set()) {
+  const selected = [];
+  const skipped = [];
+  const onRecipe = planItems.filter((item) => (item.sources || [])
+    .some((s) => String(s) === `dinner:${recipe.url}`));
+  for (const ing of recipe.ingredients) {
+    const best = planItemForIngredient(ing.text, onRecipe);
+    if (!best) {
+      skipped.push({ text: ing.text, why: "no plan line for it" });
+      continue;
+    }
+    const sku = String(best.sku);
+    if (used.has(sku)) {
+      skipped.push({ text: ing.text, why: `already on another card as ${best.name}` });
+      continue;
+    }
+    const have = Number(held.get(sku) || 0);
+    const need = Math.ceil(Number(best.packs) - have);
+    if (need <= 0) {
+      skipped.push({ text: ing.text, why: `${best.name} is already in the basket` });
+      continue;
+    }
+    selected.push({
+      ProductSelectionId: ing.selectionId,
+      ProductSelectionName: best.name,
+      ProductId: sku,
+      Quantity: need,
+      name: best.name,
+      ingredient: ing.text,
+      why: String(best.why || ""),
+    });
+    used.add(sku);
+  }
+  return { selected, skipped };
+}
+
+/** The body the shop's own recipe dialog sends for a card. IsNem3 false is this card's kind. */
+export function cardPayload(recipe, people, selected) {
+  return {
+    RecipeId: recipe.guid,
+    NumberOfPeople: Number(people),
+    Sorting: "priceasc",
+    SelectedProducts: selected.map((s) => ({
+      ProductSelectionId: s.ProductSelectionId,
+      ProductSelectionName: s.ProductSelectionName,
+      ProductId: s.ProductId,
+      Quantity: s.Quantity,
+    })),
+    SoldOutProducts: [],
+    SupplementProducts: [],
+    IsNem3: false,
+  };
+}
+
+/** Selection ids change rarely, so a recipe page is kept for 30 days. A corrupt cache is
+ *  an empty cache: the next run fetches the page again. */
+export function readCardCache(path = CARD_CACHE) {
+  const empty = { at: null, cards: {} };
+  if (!existsSync(path)) return empty;
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8"));
+    return parsed && parsed.cards && typeof parsed.cards === "object" && !Array.isArray(parsed.cards)
+      ? parsed
+      : empty;
+  } catch {
+    return empty;
+  }
+}
+
+export function writeCardCache(cache, path = CARD_CACHE) {
+  cache.at = new Date().toISOString();
+  writeJsonAtomic(path, cache);
+}
+
+/** The selection ids for one dinner, from the cache or the recipe page the MCP renders. */
+export async function recipeForCard(mcp, dish, cache, now = Date.now()) {
+  const url = dish.url || dish.id;
+  const key = recipeNumber(url) || dish.guid || String(url);
+  const hit = cache.cards[key];
+  const fresh = hit && Array.isArray(hit.ingredients) && hit.ingredients.length > 0
+    && hit.url === url && now - Date.parse(hit.at) < CARD_TTL_MS;
+  if (fresh) return { ok: true, ...hit, cached: true };
+  const r = await mcp.call("get_product_details", { productUrl: url }, { timeoutMs: CARD_TIMEOUT });
+  if (r.isError || !r.json) return { ok: false, why: `recipe page for "${dish.name}" could not be read` };
+  const page = recipeIngredients(r.json);
+  if (page.ingredients.length === 0) {
+    return { ok: false, why: `recipe page for "${dish.name}" lists no selectable ingredient` };
+  }
+  const entry = { url, guid: dish.guid, at: new Date(now).toISOString(), ...page };
+  cache.cards[key] = entry;
+  return { ok: true, ...entry, cached: false };
+}
+
 async function main() {
-  const write = process.argv.includes("--write");
-  const approved = process.argv.includes("--approve")
-    && process.argv[process.argv.indexOf("--approve") + 1] === APPROVE;
   const plan = readJson(PLAN, null);
   if (!plan?.dinnerMenu?.length) throw new Error(`no dinnerMenu in ${PLAN} - run plan.mjs first`);
 
-  // A card write is never retried: the same card twice in a basket is worse than a retry.
   const { mcp } = await connectGated({ concurrency: 1, minIntervalMs: 350, attempts: 1 });
   const dishes = await resolvePlanRecipes(mcp, plan);
   console.log(`Recipes in the plan (${plan.dinnerMenu.length}):`);
@@ -107,26 +250,13 @@ async function main() {
   }
   const missing = dishes.filter((d) => !d.guid).length;
   if (missing) console.log(`WARNING: ${missing} recipe GUID(s) unresolved.`);
-  if (!write) {
-    console.log("Dry run: nothing was added. Add --write --approve " + APPROVE + " to write.");
+  if (process.argv.includes("--write")) {
+    console.log("REFUSED: apply.mjs owns the basket write, and it chooses each product from the plan.");
+    console.log("Run: node apply.mjs --approve " + APPROVE);
+    process.exitCode = 3;
     return;
   }
-  if (!approved) throw new Error(`refusing to write without --approve ${APPROVE}`);
-
-  const people = Number(plan.options?.people || 5);
-  const session = await login();
-  for (const d of dishes.filter((x) => x.guid)) {
-    const res = await session.post("/webapi/basket/AddRecipeToBasket", {
-      RecipeId: d.guid,
-      NumberOfPeople: people,
-    });
-    console.log(`add "${d.name}" for ${people}: HTTP ${res.status}`);
-    if (res.status < 200 || res.status >= 300) console.log(`  ${res.text.slice(0, 200)}`);
-  }
-  const basket = await session.get("/webapi/basket/GetBasket");
-  const lines = recipeLines(basket.body);
-  console.log(`Basket now holds ${lines.length} recipe line items across ${(basket.body?.Recipes || []).length} card(s).`);
-  console.log("Next: run apply.mjs so plan quantities and the family profile overwrite them.");
+  console.log("Dry run: nothing was added.");
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
