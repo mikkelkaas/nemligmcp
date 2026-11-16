@@ -826,6 +826,8 @@ function poolDinnerIntents(options, wanted, rules) {
     minFish: Number(rot.minFishDishes ?? 1) || 0,
     noVegetarian: fam.household.noVegetarian,
     excludeWords: rot.excludeWords,
+    maxNewPerPlan: rot.maxNewPerPlan,
+    newMaxMinutes: rot.newMaxMinutes,
     // Two rules the profile carries and nothing used to read: a family that set them off
     // still got the interleaved queue and the variant ban. They are wired now.
     alternateNewAndKnown: rot.alternateNewAndKnown !== false,

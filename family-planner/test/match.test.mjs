@@ -514,6 +514,24 @@ test("a baby recipe is excluded by its name", () => {
   assert.ok(r.menu.every((m) => !m.name.toLowerCase().includes("mdr")), "no baby recipe: " + r.menu.map((m) => m.name).join(", "));
 });
 
+test("at most two new dinners, and a new one must be quick", () => {
+  const pool = [
+    { url: "/n1", name: "New 1", protein: "kylling", format: "gryde", minutes: 20, score: 5 },
+    { url: "/n2", name: "New 2", protein: "oksekod", format: "gryde", minutes: 25, score: 5 },
+    { url: "/n3", name: "New 3", protein: "fisk", format: "gryde", minutes: 20, score: 5 },
+    { url: "/n4", name: "New 4", protein: "svinepolse", format: "gryde", minutes: 45, score: 5 },
+    { url: "/k1", name: "Known 1", protein: "kylling", format: "fad", minutes: 20, score: 5 },
+    { url: "/k2", name: "Known 2", protein: "oksekod", format: "fad", minutes: 25, score: 5 },
+    { url: "/k3", name: "Known 3", protein: "fisk", format: "fad", minutes: 30, score: 5 },
+  ];
+  const lastUsed = { "/k1": "2026-08-01", "/k2": "2026-08-02", "/k3": "2026-08-03" };
+  const r = chooseDinners(pool, { days: 10, coversDays: 2, maxPerProtein: 5, minFish: 0, lastUsed,
+    taste: { liked: [], refused: [] }, wanted: [], maxNewPerPlan: 2, newMaxMinutes: 30 });
+  const fresh = r.menu.filter((m) => m.cookedAgo === "never");
+  assert.ok(fresh.length <= 2, "fresh: " + fresh.map((m) => m.name).join(", "));
+  assert.ok(fresh.every((m) => m.minutes <= 30), "a new dinner must be quick: " + fresh.map((m) => `${m.name} ${m.minutes}`).join(", "));
+});
+
 test("a family that wants meat never gets a vegetarian dinner from the rotation", () => {
   const pool = [
     { url: "/a", name: "Kylling A", protein: "kylling", format: "gryde", score: 9 },

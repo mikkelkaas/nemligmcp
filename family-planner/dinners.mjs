@@ -206,12 +206,14 @@ function orderQueue(rest, { rank, alternate }) {
  * of the same dinner. Every bend is recorded with the rule, the dish and the reason, because a
  * plan that quietly broke a rule is worse than one that says it had to.
  */
-function fillPeriod({ queue, forced, days, coversOf, maxPerProtein, isResting, noVariants, coolDays, coolTimes }) {
+function fillPeriod({ queue, forced, days, coversOf, maxPerProtein, isResting, noVariants, coolDays, coolTimes,
+  isNew = () => false, maxNew = Infinity, newMaxMinutes = Infinity }) {
   // One entry per cooking, not per dish: a dish can be cooked twice in a week when the pool is
   // too small for the period, and each cooking needs its own evenings and its own food.
   const chosen = [], relaxed = [], used = {};
   const covered = () => chosen.reduce((n, e) => n + e.nights, 0);
   const times = (p) => chosen.filter((e) => e.dish === p).length;
+  const newChosen = () => chosen.filter((e) => isNew(e.dish)).length;
   const push = (p, bend) => {
     const left = days - covered();
     if (left <= 0) return false;
@@ -228,19 +230,30 @@ function fillPeriod({ queue, forced, days, coversOf, maxPerProtein, isResting, n
     cap: (p) => ({ rule: "maxPerProtein", dish: p.name, because: `the cap is ${maxPerProtein} and the pool holds too few other proteins for ${days} evenings` }),
     variant: (p) => ({ rule: "neverTwoVariantsOfTheSameDinner", dish: p.name, because: `${days} evenings cannot be covered without a second version of ${p.protein || p.name}` }),
     reuse: (p) => ({ rule: "poolTooSmallForThePeriod", dish: p.name, because: `the pool runs out before the ${days} evenings do, so this dish is cooked twice - run node pick-recipe-pool.mjs to widen it` }),
+    newCap: (p) => ({ rule: "maxNewPerPlan", dish: p.name, because: `the ${days} evenings need more than ${maxNew} new dinner(s)` }),
+    slowNew: (p) => ({ rule: "newMaxMinutes", dish: p.name, because: `no new ${newMaxMinutes}-minute dinner could fill the week` }),
+  };
+  // A new dish is a trial, not the whole week: the cap keeps the library in charge, and
+  // the minute limit keeps a trial quick. A proven dish is never held to the trial limit.
+  const trialIssues = (p) => {
+    if (!isNew(p)) return [];
+    const issues = [];
+    if (newChosen() >= maxNew) issues.push(bends.newCap(p));
+    if (Number(p.minutes || 0) > newMaxMinutes) issues.push(bends.slowNew(p));
+    return issues;
   };
   // The ladder, in the order a family would bend its own rules: wait out a cooldown, then eat
   // one protein more often, then accept two versions of a dinner, and only then cook one dish
   // twice. Nothing above this pass runs once the evenings are covered.
   const passes = [
-    { rest: false, cap: maxPerProtein, variants: noVariants, reuse: false, bend: () => [] },
-    { rest: true, cap: maxPerProtein, variants: noVariants, reuse: false, bend: (p) => [bends.cooldown(p)] },
-    { rest: true, cap: Infinity, variants: noVariants, reuse: false,
+    { rest: false, cap: maxPerProtein, variants: noVariants, reuse: false, trial: true, bend: () => [] },
+    { rest: true, cap: maxPerProtein, variants: noVariants, reuse: false, trial: true, bend: (p) => [bends.cooldown(p)] },
+    { rest: true, cap: Infinity, variants: noVariants, reuse: false, trial: true,
       bend: (p) => (isResting(p) ? [bends.cooldown(p), bends.cap(p)] : [bends.cap(p)]) },
-    { rest: true, cap: Infinity, variants: false, reuse: false,
+    { rest: true, cap: Infinity, variants: false, reuse: false, trial: false,
       bend: (p) => [bends.variant(p)].concat((used[p.protein] || 0) >= maxPerProtein ? [bends.cap(p)] : [])
         .concat(isResting(p) ? [bends.cooldown(p)] : []) },
-    { rest: true, cap: Infinity, variants: false, reuse: true, bend: (p) => [bends.reuse(p)] },
+    { rest: true, cap: Infinity, variants: false, reuse: true, trial: false, bend: (p) => [bends.reuse(p)] },
   ];
   for (const pass of passes) {
     if (covered() >= days) break;
@@ -251,7 +264,9 @@ function fillPeriod({ queue, forced, days, coversOf, maxPerProtein, isResting, n
       if (!pass.rest && isResting(p)) continue;
       if ((used[p.protein] || 0) >= pass.cap) continue;
       if (pass.variants && clashWith(chosen.map((e) => e.dish), p)) continue;
-      push(p, pass.bend(p));
+      const trial = pass.trial ? trialIssues(p) : [];
+      if (trial.length > 0) continue;
+      push(p, pass.bend(p).concat(pass.trial ? [] : trialIssues(p)));
     }
   }
   return { chosen, relaxed, used };
@@ -326,8 +341,15 @@ export function chooseDinners(pool, opts) {
   // puts the favourite at the front of the known half without pinning it forever.
   const rank = (d) => cookedAgo(d) + (liked.has(d.url) ? 365 : 0);
   const queue = orderQueue(rest, { rank, alternate: opts.alternateNewAndKnown !== false });
+  const isNew = (d) => !lastUsed[d.url];
+  // No cap unless the profile asks for one: a direct caller of chooseDinners keeps the
+  // old behaviour, and the plan passes the family's rotation.maxNewPerPlan.
+  const maxNew = Number.isFinite(Number(opts.maxNewPerPlan)) && Number(opts.maxNewPerPlan) >= 0
+    ? Number(opts.maxNewPerPlan) : Infinity;
+  const newMaxMinutes = Number(opts.newMaxMinutes) > 0 ? Number(opts.newMaxMinutes) : Infinity;
   const fill = fillPeriod({ queue, forced, days, coversOf, maxPerProtein, isResting,
-    noVariants: opts.neverTwoVariantsOfTheSameDinner !== false, coolDays, coolTimes });
+    noVariants: opts.neverTwoVariantsOfTheSameDinner !== false, coolDays, coolTimes,
+    isNew, maxNew, newMaxMinutes });
   const fishSwap = ensureFish({ chosen: fill.chosen, queue, used: fill.used, minFish, isResting });
   let start = 1;
   const d0 = (c) => (byUrl.get(c.url) ? { ...byUrl.get(c.url), format: c.format || (byUrl.get(c.url) || {}).format } : c);
