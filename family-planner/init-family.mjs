@@ -94,6 +94,16 @@ function aliasesFor(staples) {
   return out;
 }
 
+/**
+ * An alias is learned after init, from an ask that never answers: the recipe words a
+ * topping, the shelf answers a different seed, the family buys the flake it toasts itself.
+ * A re-init cannot re-derive that, so it keeps what the family already taught it.
+ */
+export function learnedAliases(oldProfile, generated) {
+  const learned = (oldProfile && oldProfile.exclusions && oldProfile.exclusions.queryAliases) || {};
+  return { ...generated, ...learned };
+}
+
 function main() {
   const name = arg("name", null);
   // Accept "jensen", "of-4" or "family-jensen": people type all three, and a family
@@ -109,6 +119,8 @@ function main() {
   if (existsSync(out) && !process.argv.includes("--force")) {
     throw new Error(`${out} already exists. Edit it, or pass --force to rewrite it.`);
   }
+  // Read the profile that is about to be replaced: its learned words are kept below.
+  const previous = existsSync(out) ? READ(out, null) : null;
 
   const patterns = READ(`${BASE}/data/patterns.json`, null);
   const analysis = READ(`${BASE}/data/recipes-analysis.json`, null);
@@ -186,7 +198,7 @@ function main() {
       keepEvenThoughCommon: (coverage.filter((c) => FOLD(c.word).length > 3 && (c.boughtRecipes || 0) >= (c.askedRecipes || 1) && (c.askedRecipes || 0) >= 5).map((c) => c.word)).slice(0, 12),
       pantryWords: PANTRY_WORDS,
       neverBought,
-      queryAliases: aliasesFor(staples),
+      queryAliases: learnedAliases(previous, aliasesFor(staples)),
       _open: herbsBought.length
         ? `Your own history contradicts the herb rule for: ${herbsBought.join(", ")}. Move those words to keepEvenThoughCommon if you do buy them.`
         : "A miner cannot know your taste. Read exclusions and meat - those two sections are the difference between your basket and someone else's.",
@@ -201,7 +213,8 @@ function main() {
   console.log(`  meat from your cart : ${Object.values(profile.meat.perProtein).filter((k) => k.buy).length} of ${PROTEIN_KEYS.length} proteins filled in`);
   console.log(`  never bought        : ${neverBought.length} recipe words your family has never bought`);
   console.log(`  herbs left out      : ${profile.exclusions.herbWords.length} words; your keepEvenThoughCommon has ${profile.exclusions.keepEvenThoughCommon.length}`);
-  console.log(`  aliases             : ${Object.keys(profile.exclusions.queryAliases).length} that your own staples support`);
+  const kept = previous ? Object.keys((previous.exclusions || {}).queryAliases || {}).length : 0;
+  console.log(`  aliases             : ${Object.keys(profile.exclusions.queryAliases).length} that your own staples support, ${kept} kept from the profile you had`);
   console.log(`Use it: node plan.mjs --family ${slug} --days ${days}`);
 }
 

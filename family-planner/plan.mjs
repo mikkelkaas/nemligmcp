@@ -606,10 +606,10 @@ function markdownSwaps(plan) {
   }
   if ((plan.substitutions || []).length) {
     L.push("", "## Proposed substitution — approve or ignore", "");
-    L.push("None of the usual products were in stock. These are the cheapest alternatives. None of them is in the basket.");
+    L.push("The usual product did not answer today - out of stock, or the shelf spells it differently. These are the", "closest the shelf has. None of them is in the basket.");
     L.push("");
     for (const s of plan.substitutions) {
-      L.push(`- ${s.wanted} (${s.source}) → ${s.name}${s.brand && s.brand !== "-" ? " · " + s.brand : ""} · ${s.price.toFixed(2)} kr${s.onSale ? " (on sale)" : ""} · take ${s.packs} · ${s.why}`);
+      L.push(`- ${s.wanted} (${s.source}) → ${s.name}${s.brand && s.brand !== "-" ? " · " + s.brand : ""} · ${s.price.toFixed(2)} kr${s.onSale ? " (on sale)" : ""} · take ${s.packs}${s.foundBy ? " · " + s.foundBy : ""} · ${s.why}`);
       L.push(`  accept with: \`${s.accept}\``);
     }
   }
@@ -929,8 +929,8 @@ function printTrim(trimmed, capKr) {
 function printSummary(plan, diff, options, planTotal, jsonPath, mdPath) {
   if ((plan.substitutions || []).length) {
     console.log("");
-    console.log(`SUBSTITUTIONS: ${plan.substitutions.length} item(s) out of stock - cheapest alternative proposed, nothing added:`);
-    for (const s of plan.substitutions) console.log(`  ${s.wanted} -> ${s.name} ${s.price.toFixed(2)} kr   accept: ${s.accept}`);
+    console.log(`SUBSTITUTIONS: ${plan.substitutions.length} item(s) the shelf could not answer as searched - closest proposed, nothing added:`);
+    for (const s of plan.substitutions) console.log(`  ${s.wanted} -> ${s.name} ${s.price.toFixed(2)} kr${s.foundBy ? " (" + s.foundBy + ")" : ""}   accept: ${s.accept}`);
   }
   if (plan.uncoveredDays > 0) console.log(`WARNING: ${plan.uncoveredDays} evening(s) have no dinner - add cores with --dinners.`);
   console.log("");

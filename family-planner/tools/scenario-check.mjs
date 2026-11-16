@@ -209,8 +209,8 @@ function checkStamp(dir) {
     },
     {
       name: "stamp:a failure the shop caused",
-      prepare: () => write({ at, mode: "live", scenarios: 21, pass: 20, fail: 1, failedNames: ["plan:8 days"], failed: [{ name: "plan:8 days", kind: "family", detail: "Solsikkerugbrød øko skiver [lunchbox:rugbraod-skiver] alternative named" }], commit: "scenario" }),
-      want: /warn .*shop could not fill.*Solsikkerugbrød øko skiver .*alternative named/,
+      prepare: () => write({ at, mode: "live", scenarios: 21, pass: 20, fail: 1, failedNames: ["plan:8 days"], failed: [{ name: "plan:8 days", kind: "family", detail: "Grovbrød øko skiver [lunchbox:rugbraod-skiver] alternative named" }], commit: "scenario" }),
+      want: /warn .*shop could not fill.*Grovbrød øko skiver .*alternative named/,
     },
     {
       name: "stamp:a failure of an unknown kind",

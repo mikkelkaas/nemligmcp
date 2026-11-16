@@ -23,7 +23,7 @@ const HOUSEHOLD = { adults: 2, children: 1, people: 3, dinnersPerRecipe: 2, cook
 
 // Product families, folded so the Danish letters do not matter. First match wins.
 const FAMILIES_RAW = [
-  // "mælk" anywhere covers Minimælk, Go' mælk, Økoholdbar og chokolade- og jordbærmælk.
+  // "mælk" anywhere covers the small milk kind, Go' mælk, Økoholdbar and the flavoured milks.
   ["mælk", /mælk/],
   ["æg", /æg(?!.*nudler|.*mayonnaise|.*pasta)/],
   ["skyr og yoghurt", /skyr|yoghurt|mysa|biola|go'?a/],

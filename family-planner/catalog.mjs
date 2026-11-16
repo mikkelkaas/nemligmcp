@@ -261,9 +261,13 @@ async function attempt(mcp, query, intent, cache) {
     // blocked line is a decision a person can read rather than a magic number.
     const threshold = minNameScore(intent);
     const top = products.slice(0, 3).map((p) => `${p.name} (score ${nameScore(query, p.name, qualifierWords(intent), shelfContext(p))})`).join(", ");
+    // A word the shop spells differently is the same dead end as a shelf that is empty: the
+    // line has to carry an answer either way. Same shortlist as the out-of-stock branch.
+    const sub = await proposeSubstitute(mcp, query, intent, cache);
     return {
-      ok: false, query, why: `no name reached ${threshold} (best: ${top})`,
-      candidates: products.length, cached, ageMs,
+      ok: false, query, why: `no name reached ${threshold} (best: ${top})`
+        + (sub ? " - closest the shelf has, see substitution" : ""),
+      candidates: products.length, cached, ageMs, substitution: sub,
       // Two names that came close, if the shelf holds any, each with what it costs. The plan
       // prints them with the flag that takes one, so the line is not a dead end.
       nearMiss: nearMissOf(query, products, threshold, intent),
@@ -407,15 +411,41 @@ async function proposeSubstitute(mcp, query, intent, cache) {
       unitPrice: res.pick.unitPrice, unitLabel: res.pick.unitLabel, onSale: !!res.pick.onSale,
       packs: need ? packsFor(need, res.pick.pack) : 1,
       accept: extraFlag(res.pick.name, intent.need || "1 stk") || `--extra-file (sku ${res.pick.id}: the name holds both quote kinds)`,
+      // Said out loud, because the family asked for words the shelf does not answer with: they
+      // read which word was dropped, and ignore the line if that word was the point.
+      foundBy: q !== query ? `searched as "${q}"` : null,
     };
   }
   return null;
 }
 
-/** Search strings for a substitute: the profile alts first, then the head noun. */
+/**
+ * Queries with ONE word taken out, in the order a person would shorten them: the first word
+ * goes first, because in a Danish shelf line the leading word is usually how it was cooked
+ * ("stegt gulerødder", "grovbrød øko skiver"), and the word that names the thing is
+ * the one that stays. At most three, and never for a one-word query, so a blocked line costs
+ * the shop at most three extra reads and the shelf a word it must still match whole.
+ */
+export function relaxedQueries(query) {
+  // The raw words, not the matcher's tokens: the matcher drops the small words on purpose, and a
+  // query built from what survives is not a phrase the shop's own search would answer.
+  const words = String(query || "").trim().split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > 5) return [];
+  const drops = [0, words.length - 1, ...words.slice(1, -1).map((_, i) => i + 1)];
+  const out = [];
+  for (const i of drops) {
+    if (out.length >= 3) break;
+    const cut = words.filter((_, j) => j !== i).join(" ").trim();
+    if (cut && cut.split(/\s+/).length >= 1 && !out.includes(cut)) out.push(cut);
+  }
+  return out;
+}
+
+/** Search strings for a substitute: the profile alts, then the word-shortened queries, then the
+ *  head nouns. Bounded at four, so one blocked line cannot spend the whole shop budget. */
 function substitutionQueries(query, alt) {
-  const out = [...(alt || []), ...tokens(query).slice(0, 2), norm(query).split(" ")[0]];
-  return [...new Set(out.map((s) => String(s || "").trim()).filter(Boolean))].slice(0, 3);
+  const out = [...(alt || []), ...relaxedQueries(query), ...tokens(query).slice(0, 2), norm(query).split(" ")[0]];
+  return [...new Set(out.map((s) => String(s || "").trim()).filter(Boolean))].slice(0, 4);
 }
 
 /**

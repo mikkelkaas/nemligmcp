@@ -411,8 +411,8 @@ test("eight eggs out of a ten-pack is one pack, not eight", () => {
   assert.equal(packsFor({ qty: 2, unit: "stk" }, { qty: null, unit: null }), 2);
 });
 
-test("four folded letters still find the compound: milk finds minimilk", () => {
-  assert.ok(score("Mælk", "Minimælk 25%") > 0);
+test("four folded letters still find the compound: milk finds a compound milk", () => {
+  assert.ok(score("Mælk", "Skummetmælk 1,5%") > 0);
   assert.ok(score("Mælk", "Letmælk 1,5%") > 0);
   assert.equal(score("Agurk", "Agurkesalat"), 0);
 });

@@ -375,6 +375,15 @@ lines instead: no one cooks a fish salad for dinner.
   the one `--extra` flag that takes it. Nothing there is bought - a near miss is a decision to
   read, not a purchase. "Close" means within `NEAR_MISS_BAND` (0,15) below *your* bar, so a
   family that raised `purchasing.minNameScore` gets fewer of these lines, not more.
+- A blocked line carries the closest the shelf has, and says which words it gave up to find it.
+  Measured 2026-11-16 on this shelf: an ask no shelf line answers proposes its own shorter form,
+  printed as `searched as "..."`, and a sliced-bread ask proposes the bare bread. One word is
+  dropped at a time, the first word first, at most three reads of the shelf per blocked line, and
+  the shorter phrase has to clear the family's own name bar with nothing taken off it. A one-word
+  ask is never shortened. Nothing is bought: the proposal is one flag to read, and the family
+  ignores it when the word that was dropped was the point. The product names behind that
+  measurement stay in the family's own ignored files: this file describes the mechanism, not one
+  household's basket.
 - A printed flag must survive being pasted. A product name holding a double quote is flagged
   between single quotes (`--extra 'Grønt "Blandet":300 g'`), because a quote inside the name
   would otherwise end the quoted region and the shell would join the rest to the next argument.

@@ -22,7 +22,7 @@ const STOP = new Set(["m", "med", "og", "af", "til", "i", "på", "pa", "en", "et
 
 // Packaging and marketing words that describe the SAME product in a different size
 // or grade. Dropped from both sides so the score measures product identity:
-// "Solsikkerugbrød øko skiver" and "Solsikkerugbrød øko." are one product, and a
+// "grovbrød øko skiver" and "grovbrød øko." are one product, and a
 // recipe ingredient called "Gulerødder" may legally be answered by the non-organic
 // bag because the plan wants the cheapest one.
 const QUALIFIER = new Set(["øko", "oko", "økologisk", "okologisk", "økologiske", "skiver", "skive", "naturel", "natural",

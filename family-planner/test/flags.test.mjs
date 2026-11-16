@@ -94,3 +94,31 @@ test("a name is fenced where it is read, so a quote cannot move its end", () => 
   assert.equal(nameSpan("Revet Ost Danbo"), "`Revet Ost Danbo`", "the name is a code span in the plan");
   assert.equal(nameSpan("Ost `Danbo`"), "Ost `Danbo`", "a name holding a backtick is left plain, and the sku identifies it");
 });
+
+// A word the shelf spells differently (or does not use at all) used to end the line: the
+// substitution search tried the profile's alts and the head nouns, but only for a product the
+// shop had and could not sell. Now the same shortening runs for both, and it is bounded.
+test("a substitute query drops one word, the one that tells how it was cooked", async () => {
+  const { relaxedQueries } = await import("../catalog.mjs");
+  assert.deepEqual(relaxedQueries("Stegt gulerødder")[0], "gulerødder",
+    "the leading preparation word goes first: the shop names the flakes, not the frying");
+  assert.ok(relaxedQueries("Grovbrød øko skiver").includes("Grovbrød øko"),
+    "a trailing form word goes too, because the bread is the thing: " + relaxedQueries("Grovbrød øko skiver").join(" / "));
+  assert.deepEqual(relaxedQueries("Kaffefe"), [], "a one-word query cannot be shortened, so nothing is searched");
+  assert.deepEqual(relaxedQueries("a b c d e f"), [], "a six-word ask is not the shop's problem to guess: at most five words");
+  const many = relaxedQueries("Ristede løg i skiver øko");
+  assert.ok(many.length <= 3, "at most three reads of the shelf per blocked line: " + many.join(" / "));
+  for (const q of many) {
+    assert.ok(q.split(" ").length < 5, `the shortened query is shorter than the ask: ${q}`);
+    assert.ok(!q.includes("undefined"), `no hole left in the query: ${q}`);
+  }
+});
+
+test("init-family --force keeps the aliases a family taught it", async () => {
+  const { learnedAliases } = await import("../init-family.mjs");
+  const old = { exclusions: { queryAliases: { risoni: "Orzo", parmesan: "Aged Block" } } };
+  const merged = learnedAliases(old, { parmesan: "A parmesan block", vannamei: "Prawn Cooked" });
+  assert.deepEqual(merged, { parmesan: "Aged Block", vannamei: "Prawn Cooked", risoni: "Orzo" },
+    "the family's word wins over the generated one, a new generated word is added, the learned one survives");
+  assert.deepEqual(learnedAliases(null, { risoni: "Orzo" }), { risoni: "Orzo" }, "a first init has nothing to keep");
+});

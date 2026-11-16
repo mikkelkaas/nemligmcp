@@ -29,6 +29,7 @@ const PRIVATE = [
   [/\bMarco\b/, "a person's first name"],
   [/homeserver-iac/, "the owner's private infrastructure repo"],
   [/Grana Padano|Puntalette/, "a product one family buys, mined from their own orders"],
+  [/Kokosflager|Solsikkerugbrød|Flødehavarti|Minimælk/i, "a product one family buys, named in their own history or learned on their shelf"],
   [/1113,49 kr|1105 kr/, "a total out of one family's real baskets"],
   [/\b66 orders\b/, "how many orders one family has placed"],
   [/\b\d+-year-old\b/, "a child's age"],
