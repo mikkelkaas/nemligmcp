@@ -312,6 +312,7 @@ test("chooseDinners alternates a new dish with one the family knows", async () =
 // --- apply.mjs: recipe card first, plan quantity second, rejects third -------------
 import { wantQtyOf, cardDecisions, cardLineOf } from "../apply.mjs";
 import { recipeIngredients, cardSelections, planItemForIngredient, cardPayload } from "../recipes.mjs";
+import { basketDelta } from "../tools/mine-basket.mjs";
 
 test("a plan quantity overwrites the amount a recipe card put in, down as well as up", () => {
   assert.equal(wantQtyOf({ packs: 2 }, 5, true), 2);
@@ -328,7 +329,7 @@ test("a planned quantity of zero is refused instead of wiping a line", () => {
 });
 
 test("a card product the plan wants at that quantity is kept, not written again", () => {
-  const cards = [{ sku: "5001", name: "Spaghetti", qty: 3 }];
+  const cards = [{ sku: "5001", name: "Spaghetti", qty: 2 }];
   const plan = [{ sku: "5001", name: "Spaghetti", packs: 2 }];
   const out = cardDecisions(cards, plan);
   assert.deepEqual(out.keep.map((d) => d.sku), ["5001"], "the card already holds it");
@@ -382,6 +383,19 @@ test("a card line reads the field names recipeLines returns", () => {
   assert.equal(cardLineOf({ sku: "9", productNumber: "9", quantity: 1 }).sku, "", "the old wrong field is not read");
 });
 
+test("a card that brings more than the plan is zeroed before the plan line is written", () => {
+  const out = cardDecisions([{ sku: "5001", name: "Spaghetti", qty: 7 }], [{ sku: "5001", name: "Spaghetti", packs: 3 }]);
+  assert.equal(out.zero.length, 1);
+  assert.match(out.zero[0].why, /plan wants 3/);
+  assert.equal(out.covered.has("5001"), false, "so writeItems puts the plan amount in a line");
+});
+
+test("an over-bought card product with a line already there is left alone", () => {
+  const out = cardDecisions([{ sku: "5001", name: "Spaghetti", qty: 7 }], [{ sku: "5001", name: "Spaghetti", packs: 3 }], new Map([["5001", 2]]));
+  assert.equal(out.keep.length, 1);
+  assert.equal(out.zero.length, 0, "zeroing would take the existing line with it");
+});
+
 test("a card product that finishes a line already in the basket is kept, not topped up", () => {
   const cards = [{ sku: "5001", name: "Spaghetti", qty: 1 }];
   const plan = [{ sku: "5001", name: "Spaghetti", packs: 3 }];
@@ -432,6 +446,7 @@ test("the plan's own pick fills the card, in the quantity the plan still needs",
   }], "one pack, because the basket already holds one");
   assert.equal(out.skipped.length, 2, "no plan line for dill, and the second spaghetti is the same product");
   assert.match(out.skipped[1].why, /already on another card/);
+  assert.equal(out.expected, 1, "one plan line for this recipe");
 });
 
 test("a product the basket already holds at the plan quantity is not put on a card", () => {
@@ -448,6 +463,61 @@ test("a recipe word finds the plan's pack: a chicken cut is chicken", () => {
   assert.equal(planItemForIngredient("Kylling i wok strimler", [{ sku: "1", name: "Kyllingebrystfilet" }]).sku, "1");
   assert.equal(planItemForIngredient("Sojasauce - evt. glutenfri", [{ sku: "2", name: "Sojasauce" }]).sku, "2");
   assert.equal(planItemForIngredient("Dild", [{ sku: "3", name: "Spaghetti" }]), null);
+});
+
+test("a family alias and a long stem put the right product on the card", () => {
+  assert.equal(planItemForIngredient("Parmesan", [{ sku: "1", name: "Ost E" }], { parmesan: "Ost E" }).sku, "1");
+  assert.equal(planItemForIngredient("Spaghetti", [{ sku: "2", name: "Spaghettoni øko." }]).sku, "2");
+});
+
+test("a teaspoon is a kitchen measure, not the page's gram figure", () => {
+  const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] }, queryAsides: { words: [] } };
+  const recipe = { name: "T", servings: 4, ingredients: [
+    { text: "Chiliflager", amount: "2", unit: "tsk", grams: 50 },
+    { text: "Østerssauce", amount: "1", unit: "spsk", litres: 0.1 },
+  ] };
+  const out = recipeIntents(recipe, { amounts: { household: { cookServings: 4 } }, meat: { rules: [] }, exclusions, portions: 4, standardPortions: 4 });
+  assert.equal(out.intents.find((i) => i.query === "Chiliflager").need, "10 g", "2 tsk is 10 g, not the 50 g the page states");
+  assert.equal(out.intents.find((i) => i.query === "Østerssauce").need, "15 ml", "1 spsk is 15 ml, not 0.1 l");
+});
+
+test("a tiny pack is refused before it becomes ten packs", () => {
+  const tiny = { name: "Chiliflager", price: 5.95, pack: parsePack("5 g") };
+  assert.equal(choosePack({ qty: 50, unit: "g" }, [tiny], { name: "Chiliflager", maxPacksPerLine: 4 }), null);
+  assert.equal(choosePack({ qty: 10, unit: "g" }, [tiny], { name: "Chiliflager", maxPacksPerLine: 4 }).packs, 2);
+});
+
+test("a family that wants meat never gets a vegetarian dinner from the rotation", () => {
+  const pool = [
+    { url: "/a", name: "Kylling A", protein: "kylling", format: "gryde", score: 9 },
+    { url: "/b", name: "Okse B", protein: "oksekod", format: "gryde", score: 8 },
+    { url: "/c", name: "Veg C", protein: "vegetar", format: "gryde", score: 7 },
+    { url: "/e", name: "Ost E", protein: "ostaeq", format: "gryde", score: 5 },
+    { url: "/d", name: "Fisk D", protein: "fisk", format: "gryde", score: 6 },
+  ];
+  const r = chooseDinners(pool, { days: 4, coversDays: 2, maxPerProtein: 4, minFish: 1, noVegetarian: true, lastUsed: {}, wanted: [] });
+  assert.ok(r.menu.length >= 2, "the pool still fills the period");
+  assert.ok(r.menu.every((m) => !["vegetar", "ostaeq", "aeg"].includes(m.protein)), "meat or fish only: " + r.menu.map((m) => `${m.name} (${m.protein})`).join(", "));
+});
+
+test("a corrected basket reports what was removed, reduced, increased and added", () => {
+  const plan = { items: [
+    { sku: "1", name: "Spaghetti", packs: 2 },
+    { sku: "2", name: "Ris", packs: 1 },
+    { sku: "3", name: "Dild", packs: 1 },
+  ], dinnerMenu: [{ name: "Dinner A" }] };
+  const basket = {
+    Lines: [{ Id: "1", Name: "Spaghetti", Quantity: 1 }, { Id: "4", Name: "Salt", Quantity: 1 }],
+    Recipes: [{ Title: "Dinner B", RecipeLineItems: [{ ProductId: "2", ProductName: "Ris", Quantity: 2 }] }],
+    TotalProductsPrice: 100, TotalPrice: 120, DeliveryPrice: 20,
+  };
+  const d = basketDelta(plan, basket);
+  assert.deepEqual(d.cards.removed, ["Dinner A"]);
+  assert.deepEqual(d.cards.added, ["Dinner B"]);
+  assert.deepEqual(d.reduced.map((x) => x.sku), ["1"]);
+  assert.deepEqual(d.increased.map((x) => x.sku), ["2"]);
+  assert.deepEqual(d.removed.map((x) => x.sku), ["3"]);
+  assert.deepEqual(d.added.map((x) => x.sku), ["4"]);
 });
 
 test("the card body sends selected products and no default product list", () => {

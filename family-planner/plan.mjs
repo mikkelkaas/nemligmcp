@@ -824,6 +824,7 @@ function poolDinnerIntents(options, wanted, rules) {
     nightsOverride: fam.household.nightsOverride,
     maxPerProtein: Number(arg("max-per-protein", String(rot.maxPerProtein ?? 2))) || 2,
     minFish: Number(rot.minFishDishes ?? 1) || 0,
+    noVegetarian: fam.household.noVegetarian,
     // Two rules the profile carries and nothing used to read: a family that set them off
     // still got the interleaved queue and the variant ban. They are wired now.
     alternateNewAndKnown: rot.alternateNewAndKnown !== false,

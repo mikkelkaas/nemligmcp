@@ -131,6 +131,19 @@ export const PIECE_GRAMS = {
  */
 export const SUBUNIT_GRAMS = { fed: 5, skive: 25, skiver: 25, bådkartoffel: 120 };
 
+/** A spoon is a measure, not a pack. The recipe page's own gram figure for a spoon is
+ *  unreliable: 2 tsk of chili flakes arrived as 50 g and became ten 5 g packs. These
+ *  defaults are the ones a kitchen uses; a family can override them in pieceWeights. */
+export const SMALL_UNIT_GRAMS = { tsk: 5, spsk: 15, knivspids: 1 };
+
+export function smallUnitGrams(unit, extra = {}) {
+  const w = String(unit || "").toLowerCase().replace(/\.$/, "").trim();
+  if (!w) return null;
+  const mine = Number((extra || {})[w]);
+  if (Number.isFinite(mine) && mine > 0) return mine;
+  return Number(SMALL_UNIT_GRAMS[w]) || null;
+}
+
 /** Grams for one part of this recipe's unit word, or null when the word is not a part. */
 export function subunitGrams(word, extra = {}) {
   const w = String(word || "").toLowerCase().replace(/\s+/g, "").replace(/er$/, "");
@@ -530,7 +543,8 @@ export function choosePack(need, candidates, opts = {}) {
     : null;
   const n = needScale(need, per);
   if (!n || list.length === 0) return null;
-  const options = packOptions(need, n, list, per, opts);
+  const maxPacks = Math.max(1, Number(opts.maxPacksPerLine) || 6);
+  const options = packOptions(need, n, list, per, opts).filter((o) => o.packs <= maxPacks);
   if (options.length === 0) return null;
   const stable = isStable(nameOf, opts);
   const limit = stable ? numOr(opts.overshootPctStable, 400) : numOr(opts.overshootPctFresh, 25);

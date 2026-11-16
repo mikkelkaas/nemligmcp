@@ -204,12 +204,23 @@ export function cardDecisions(cardLines, planItems, held = new Map()) {
     if (exact) {
       const packs = Number(exact.packs);
       const have = Number(held.get(sku) || 0);
-      if (have + qty >= packs) {
+      const wantCard = packs - have;
+      if (have > 0 && qty > wantCard) {
+        // A line already holds the product. Zeroing the card now would remove both, so
+        // the over-buy is left alone; the line is the plan's amount.
         keep.push({ sku, name, qty, packs, held: have });
+        covered.add(sku);
+      } else if (wantCard <= 0 || qty > wantCard) {
+        // The card brings more than the plan. Zero it before the plan line is written:
+        // no line exists yet, so the zero cannot take a line with it.
+        zero.push({ sku, name, why: `the card brings ${qty}, the plan wants ${Math.max(0, wantCard)}: the plan amount goes in a line` });
+      } else if (qty === wantCard) {
+        keep.push({ sku, name, qty, packs, held: have });
+        covered.add(sku);
       } else {
-        topUp.push({ sku, name, qty, setTo: packs - have, held: have });
+        topUp.push({ sku, name, qty, setTo: wantCard, held: have });
+        covered.add(sku);
       }
-      covered.add(sku);
       continue;
     }
     const best = bestPlanMatch(name, planItems);
@@ -255,7 +266,7 @@ async function topUpCardProducts(mcp, topUps, keepGoing) {
  * what the shop added. A product already in the basket, or on an earlier card, is skipped,
  * so a card never buys a second time.
  */
-async function addRecipeCards(mcp, plan, before) {
+async function addRecipeCards(mcp, plan, before, aliases = {}) {
   const all = await resolvePlanRecipes(mcp, plan);
   for (const miss of all.filter((d) => !d.guid)) {
     console.log(`  miss  recipe card "${miss.name}": ${miss.why}`);
@@ -276,7 +287,7 @@ async function addRecipeCards(mcp, plan, before) {
       skipped.push({ name: dish.name, why });
       continue;
     }
-    const added = await addOneCard({ mcp, session, dish, plan, held, used, cache, people });
+    const added = await addOneCard({ mcp, session, dish, plan, held, used, cache, people, aliases });
     if (added.card) cards.push(added.card);
     else skipped.push(added.skipped);
     if (added.wait) await sleep(WEB_STEP_DELAY_MS); // the web session is not covered by the MCP gate
@@ -295,7 +306,7 @@ async function addRecipeCards(mcp, plan, before) {
 }
 
 /** One card: read its selections, name every skip, and post only when a product is left. */
-async function addOneCard({ mcp, session, dish, plan, held, used, cache, people }) {
+async function addOneCard({ mcp, session, dish, plan, held, used, cache, people, aliases }) {
   let page;
   try {
     page = await recipeForCard(mcp, dish, cache);
@@ -307,10 +318,18 @@ async function addOneCard({ mcp, session, dish, plan, held, used, cache, people 
     return { skipped: { name: dish.name, why: page.why } };
   }
   const recipe = { ...page, url: dish.url || dish.id, guid: dish.guid };
-  const picks = cardSelections(recipe, plan.items, held, used);
+  const picks = cardSelections(recipe, plan.items, held, used, aliases);
   for (const s of picks.skipped) console.log(`  skip  ${String(s.text).slice(0, 30).padEnd(30)} ${s.why}`);
   if (picks.selected.length === 0) {
     const why = "every planned product is already in the basket or on another card";
+    console.log(`  skip  recipe card "${dish.name}": ${why}`);
+    return { skipped: { name: dish.name, why } };
+  }
+  // A card with one product out of a recipe is not the recipe. Use the plan lines
+  // instead of a half card; the basket is complete either way.
+  const share = picks.expected > 0 ? picks.selected.length / picks.expected : 0;
+  if (picks.selected.length < 2 || share < 0.5) {
+    const why = `only ${picks.selected.length} of ${picks.expected} products could be put on the card; the plan lines are used`;
     console.log(`  skip  recipe card "${dish.name}": ${why}`);
     return { skipped: { name: dish.name, why } };
   }
@@ -428,7 +447,7 @@ async function writeBasket({ plan, planPath, slotId, keepGoing, wantCards, house
 
   // 1. Recipe cards first: their chosen products land in the basket, then one decision each.
   const cards = wantCards
-    ? await addRecipeCards(mcp, plan, before)
+    ? await addRecipeCards(mcp, plan, before, fam.exclusions?.queryAliases?.words || {})
     : { cards: [], lines: [], cardMoneyKr: 0, skipped: [] };
   if (!wantCards) console.log("  skip  recipe cards (--recipes no)");
 
@@ -440,18 +459,21 @@ async function writeBasket({ plan, planPath, slotId, keepGoing, wantCards, house
   // 3. Top up before the plan writes: add_to_basket would overwrite the card.
   const topUps = await topUpCardProducts(mcp, decisions.topUp, keepGoing);
 
-  // 4. The plan writes only what a card does not already cover.
-  const withCards = cards.lines.length ? await basketMap(mcp) : before;
-  const toWrite = plan.items.filter((i) => !decisions.covered.has(String(i.sku)));
+  // 4. A card product over the plan, or not in it, goes to zero before the plan writes.
+  //    No line exists for those yet, so the zero cannot take a line with it.
+  const dropped = await zeroExtras(mcp, decisions.zero, keepGoing);
+  if (decisions.zero.length) console.log(`  zero  ${dropped.zeroed.length} of ${decisions.zero.length} recipe product(s) the plan does not use or over-buys.`);
+
+  // 5. The plan writes only what a card does not already cover.
+  const withCards = cards.lines.length || dropped.zeroed.length ? await basketMap(mcp) : before;
+  const failedZero = new Set((dropped.failed || []).map((f) => String(f.sku)));
+  const toWrite = plan.items.filter((i) => !decisions.covered.has(String(i.sku))
+    && !failedZero.has(String(i.sku)));
   for (const item of plan.items.filter((i) => decisions.covered.has(String(i.sku)))) {
     console.log(`  cover ${String(item.name).slice(0, 42).padEnd(42)} already in the basket with a recipe card`);
   }
   const recipeSkus = new Set(cards.lines.map((l) => String(l.sku)));
   const { adds, failed } = await writeItems(mcp, toWrite, withCards.map, keepGoing, recipeSkus);
-
-  // 5. Card products the plan does not want go to zero. An earlier line is never touched.
-  const dropped = await zeroExtras(mcp, decisions.zero, keepGoing);
-  if (decisions.zero.length) console.log(`  zero  ${dropped.zeroed.length} of ${decisions.zero.length} recipe product(s) the plan does not use.`);
 
   await finishBasket({ mcp, plan, planPath, slotId, before, cards, topUps, dropped, adds, failed, household });
 }

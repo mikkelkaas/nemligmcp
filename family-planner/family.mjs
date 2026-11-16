@@ -117,6 +117,9 @@ function householdOf(p) {
     maxNightsPerDinner: Number((p.dinners || {}).maxNightsPerDinner || 2),
     reheatByFormat: (p.dinners || {}).reheatByFormat || null,
     nightsOverride: (p.dinners || {}).nightsOverride || {},
+    // A family that wants meat or fish on the table sets this. A vegetarian dish can still
+    // be asked for by name; the rotation just never picks one on its own.
+    noVegetarian: (p.dinners || {}).noVegetarian === true,
     planMaxAgeHours: Number((p.budget || {}).planMaxAgeHours || 12),
   };
 }
@@ -252,6 +255,9 @@ function purchasingOf(p) {
     overshootPctStable: num(raw.overshootPctStable, 400, 0, 10000),
     tieBreakKr: num(raw.tieBreakKr, 3, 0, 100),
     maxOverrunFreshMl: num(raw.maxOverrunFreshMl, 150, 0, 5000),
+    // The ceiling on packs of one product in one basket. Ten 5 g packs of a spice is not
+    // a shop, it is a parsing mistake; the line is left out instead of multiplied.
+    maxPacksPerLine: num(raw.maxPacksPerLine, 4, 1, 20),
     stableWords: stable || ["æg", "ris", "pasta", "mel", "sukker", "kaffe", "the", "pulver",
       "konserves", "tørret", "toilet", "køkkenrulle", "serviet", "sæbe", "fryse", "bouillon", "havregryn"],
     freshWords: Array.isArray(raw.freshWords) && raw.freshWords.length > 0

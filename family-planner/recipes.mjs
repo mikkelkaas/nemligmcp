@@ -15,7 +15,7 @@
 //   node recipes.mjs                    dry run: cards, GUIDs and what they would carry
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { connectGated } from "./lib.mjs";
-import { score, tokens, MIN_NAME_SCORE } from "./match.mjs";
+import { score, tokens, norm, MIN_NAME_SCORE } from "./match.mjs";
 import { cleanQuery } from "./dinners.mjs";
 
 import { HOME as BASE, writeJsonAtomic } from "./paths.mjs";
@@ -118,13 +118,22 @@ export function recipeIngredients(page) {
   };
 }
 
+/** The family's own word for this ingredient, or the ingredient text itself. */
+function aliasedQuery(text, aliases = {}) {
+  const cleaned = cleanQuery(String(text || "").split("/")[0].trim(), []);
+  const plain = norm(cleaned);
+  const hit = Object.entries(aliases || {}).find(([word]) => plain.includes(norm(word)));
+  return hit ? String(hit[1]) : cleaned;
+}
+
 /**
  * The plan line that answers one recipe ingredient. The recipe often names a cut
  * ("kylling i wok strimler") and the plan names the pack ("Kyllingebrystfilet"), so a
  * plan word that starts with the ingredient's head word counts as the same product.
+ * A family alias ("parmesan" is their "Ost E") is applied first.
  */
-export function planItemForIngredient(text, planItems) {
-  const cleaned = cleanQuery(String(text || "").split("/")[0].trim(), []);
+export function planItemForIngredient(text, planItems, aliases = {}) {
+  const cleaned = aliasedQuery(text, aliases);
   let best = null;
   let bestScore = 0;
   for (const item of planItems) {
@@ -136,8 +145,16 @@ export function planItemForIngredient(text, planItems) {
   }
   if (bestScore >= MIN_NAME_SCORE) return best;
   const head = tokens(cleaned)[0] || "";
-  if (head.length < 4) return null;
-  return planItems.find((item) => tokens(item.name).some((t) => t.startsWith(head))) || null;
+  if (head.length >= 4) {
+    const loose = planItems.find((item) => tokens(item.name).some((t) => t.startsWith(head)));
+    if (loose) return loose;
+  }
+  if (head.length >= 6) {
+    const stem = head.slice(0, -1);
+    return planItems.find((item) => tokens(item.name).some((t) => t.startsWith(stem)
+      && Math.abs(t.length - head.length) <= 4)) || null;
+  }
+  return null;
 }
 
 /**
@@ -145,13 +162,13 @@ export function planItemForIngredient(text, planItems) {
  * the plan priced it and the family's rules already chose it. A product already in the
  * basket, or already put on an earlier card, is skipped: nothing is bought twice.
  */
-export function cardSelections(recipe, planItems, held = new Map(), used = new Set()) {
+export function cardSelections(recipe, planItems, held = new Map(), used = new Set(), aliases = {}) {
   const selected = [];
   const skipped = [];
   const onRecipe = planItems.filter((item) => (item.sources || [])
     .some((s) => String(s) === `dinner:${recipe.url}`));
   for (const ing of recipe.ingredients) {
-    const best = planItemForIngredient(ing.text, onRecipe);
+    const best = planItemForIngredient(ing.text, onRecipe, aliases);
     if (!best) {
       skipped.push({ text: ing.text, why: "no plan line for it" });
       continue;
@@ -178,7 +195,7 @@ export function cardSelections(recipe, planItems, held = new Map(), used = new S
     });
     used.add(sku);
   }
-  return { selected, skipped };
+  return { selected, skipped, expected: onRecipe.length };
 }
 
 /** The body the shop's own recipe dialog sends for a card. IsNem3 false is this card's kind. */

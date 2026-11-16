@@ -13,7 +13,7 @@
 // price-per-kg ceiling this family uses.
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { subunitGrams } from "./units.mjs";
+import { subunitGrams, smallUnitGrams } from "./units.mjs";
 import { copenhagenNow } from "./slots.mjs";
 import { join } from "node:path";
 
@@ -133,6 +133,21 @@ function meatRuleFor(text, rules) {
 function needTextOf(ing, factor, pieceWeights) {
   const grams = Number(ing.grams) || 0;
   const litres = Number(ing.litres) || 0;
+  // A spoon or a pinch is a measure. The recipe page's gram figure for it is not trusted:
+  // 2 tsk of chili flakes arrived as 50 g and the shelf sold ten 5 g packs. Use the
+  // kitchen measure, and keep the family's own `pieceWeights` override if it has one.
+  const small = smallUnitGrams(ing.unit, pieceWeights);
+  if (small) {
+    const amount = Number(ing.amount) || 1;
+    if (litres > 0) {
+      const ml = amount * small * factor;
+      const rounded = Math.max(5, Math.ceil(ml / 5) * 5);
+      return { need: `${rounded} ml`, unit: "ml", litres: rounded / 1000 };
+    }
+    const g = amount * small * factor;
+    const rounded = Math.max(5, Math.ceil(g / 5) * 5);
+    return { need: `${rounded} g`, unit: "g", grams: rounded };
+  }
   if (grams > 0) {
     const g = grams * factor;
     const rounded = g >= 1000 ? Math.ceil(g / 250) * 250 : Math.max(50, Math.ceil(g / 50) * 50);
@@ -281,7 +296,11 @@ export function chooseDinners(pool, opts) {
   const taste = opts.taste || {};
   const refused = new Set(taste.refused || []);
   const liked = new Set(taste.liked || []);
-  const rest = pool.filter((p) => !forced.includes(p) && !refused.has(p.url));
+  // A family that asked for meat on the table never gets a vegetarian dish from the
+  // rotation. A dish named in `wanted` is still honoured, because that is a person asking.
+  const noVeg = opts.noVegetarian === true;
+  const isVeg = (p) => ["vegetar", "vegan", "vegetarisk", "ostaeq", "aeg"].includes(String(p.protein || "").toLowerCase());
+  const rest = pool.filter((p) => !forced.includes(p) && !refused.has(p.url) && !(noVeg && isVeg(p)));
   const ex = opts.exploration || {};
   const coolDays = Number(ex.cooldownDays) || 42;
   const coolTimes = Number(ex.cooldownTimes) || 3;
@@ -355,7 +374,9 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
   }
   const aliases = (exclusions.queryAliases || {}).words || {};
   for (const row of merged.values()) {
-    const need = row.grams ? `${row.grams} g` : row.litres ? `${row.litres} l` : `${row.pieces} stk`;
+    const need = row.grams ? `${row.grams} g`
+      : row.litres ? (row.litres < 0.1 ? `${Math.round(row.litres * 1000)} ml` : `${row.litres} l`)
+        : `${row.pieces} stk`;
     const rule = meatRuleFor(row.text, meat.rules);
     // The shop writes "Parmesan", the family buys its own hard cheese: rewrite before searching.
     // A family rule may carry no query of its own: then the recipe's word, or the family's alias
