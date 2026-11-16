@@ -2,13 +2,14 @@
 // pick-recipe-pool.mjs — turn the mined recipes into the dinner rotation this family uses.
 //
 // Inputs:
-//   data/recipe-candidates.json  Namlig recipes of MAX 35 min with Hovedret tag (mine-recipe-pool.mjs)
+//   data/recipe-candidates.json  Namlig main dishes collected by mine-recipe-pool.mjs
 //   data/recipes-raw.jsonl       the recipes we have actually ordered (mine-recipes-fetch.mjs)
 //   data/recipes-analysis.json   what we buy from each of those, and what we leave out
 //   data/staples.json            the 842 products this family buys
 //
-// Output: profiles/recipe-pool.json — 21 dinners, spread over the proteins, each one with
-// its ingredients and the reason it was picked. The planner rotates over this file.
+// Output: profiles/recipe-pool.json - the dinners the family asked for (rotation.poolSize),
+// spread over the proteins, each one with its ingredients and the reason it was picked. The
+// planner rotates over this file.
 //
 // The score answers one question: will we actually cook this with the products we buy?
 //   + a history order is proof, so it weighs most
@@ -17,6 +18,8 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { mainProtein, dishFormat, clashWith } from "./similarity.mjs";
+import { findProfileFile } from "./family.mjs";
+import { localStamp } from "./lib.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
 const CANDIDATES = BASE + "/data/recipe-candidates.json";
@@ -25,14 +28,35 @@ const ANALYSIS = BASE + "/data/recipes-analysis.json";
 const STAPLES = BASE + "/data/staples.json";
 const OUT = BASE + "/profiles/recipe-pool.json";
 
-const POOL_SIZE = 21;
-const MAX_HISTORY_MINUTES = 45;
+/**
+ * The numbers that shape the pool, read where the family edits them. They used to be constants in
+ * this file, so `rotation.poolSize` and `dinners.maxRecipeMinutes` in the profile changed nothing
+ * while the README said they did. The defaults are the numbers this file has always used: 21
+ * dinners, at least 8 of them new, at most 13 proven, new ones at 30 minutes or less, and a dish
+ * the family already cooks stays whatever it costs them.
+ */
+export function poolLimits(profile = {}) {
+  const rot = profile.rotation || {}, dn = profile.dinners || {};
+  const num = (v, dflt, min, max) => { const n = Number(v); return Number.isFinite(n) ? Math.max(min, Math.min(max, Math.round(n))) : dflt; };
+  const poolSize = num(rot.poolSize, 21, 6, 60);   // below six there is no rotation left to speak of
+  const minFresh = Math.min(num(rot.minFreshDinners, 8, 1, 30), Math.ceil(poolSize / 2));
+  return { poolSize, minFresh, maxProven: Math.max(1, poolSize - minFresh),
+    maxRecipeMinutes: num(dn.maxRecipeMinutes, 30, 10, 180),
+    maxHistoryMinutes: num(rot.maxHistoryMinutes, 45, 10, 180) };
+}
+
+/** The limits of the profile on this home, or the defaults with the reason said out loud. */
+function profileLimits() {
+  try { return poolLimits(JSON.parse(readFileSync(findProfileFile(), "utf8"))); }
+  catch (e) {
+    console.log(`  note: the pool is built from the defaults, not from a profile - ${String(e.message).split("\n")[0].slice(0, 90)}`);
+    return poolLimits({});
+  }
+}
+const L = profileLimits();
+
 const PROTEIN_CAPS = { oksekod: 6, kylling: 5, svinepolse: 4, fisk: 4, vegetar: 3, ostaeq: 2 };
-// The point of the pool is rotation, so proven dishes cannot fill it on their own.
-const MAX_PROVEN = 13;
-const MIN_FRESH = 8;
 const FRESH_MIN_BUYABLE = 70;
-const FRESH_MAX_MINUTES = 30;
 
 // Pantry things every recipe asks for and nobody buys for a single dinner.
 const PANTRY_WORDS = ["salt", "peber", "olie", "vand", "sukker", "bouillon", "mel", "smor", "eddik", "sennep", "majones", "ketchup", "hvidlog", "ingefar", "hvidlog"];
@@ -109,10 +133,10 @@ function scoreRecipe(r, analysisBy, vocab) {
 }
 
 /** Take the best dishes under the protein caps, at most `provenLimit` of them proven. */
-function takeUnderCaps(list, pool, used, provenLimit, provenInPool, roundLimit = POOL_SIZE) {
+export function takeUnderCaps(list, pool, used, provenLimit, provenInPool, roundLimit, lim = L) {
   const skipped = [];
   for (const s of list) {
-    if (pool.length >= Math.min(POOL_SIZE, roundLimit)) break;
+    if (pool.length >= Math.min(lim.poolSize, roundLimit)) break;
     const p = s.protein || (s.protein = proteinOf(s));
     if ((used[p] || 0) >= (PROTEIN_CAPS[p] ?? 3)) { skipped.push(s); continue; }
     // Same format and same protein is the same dinner in another wrapper: keep one.
@@ -127,22 +151,22 @@ function takeUnderCaps(list, pool, used, provenLimit, provenInPool, roundLimit =
   return skipped;
 }
 
-/** Build the pool: fresh dishes first up to MIN_FRESH, then the proven favourites. */
-function selectPool(scored) {
+/** Build the pool: fresh dishes first up to `lim.minFresh`, then the proven favourites. */
+export function selectPool(scored, lim = L) {
   for (const s of scored) { s.protein = proteinOf(s); s.format = dishFormat(s); }
-  const fresh = scored.filter((s) => !s.historyOrders && s.coverageBuyablePct >= FRESH_MIN_BUYABLE && (s.minutes || 99) <= FRESH_MAX_MINUTES && s.oddAsks.length === 0);
+  const fresh = scored.filter((s) => !s.historyOrders && s.coverageBuyablePct >= FRESH_MIN_BUYABLE && (s.minutes || 99) <= lim.maxRecipeMinutes && s.oddAsks.length === 0);
   const proven = scored.filter((s) => s.historyOrders > 0);
   const rest = scored.filter((s) => !fresh.includes(s) && !proven.includes(s));
   const pool = [], used = {};
   const provenInPool = { count: 0 };
-  const freshQuota = Math.max(MIN_FRESH, POOL_SIZE - MAX_PROVEN);
-  takeUnderCaps(fresh, pool, used, MAX_PROVEN, provenInPool, freshQuota);
+  const freshQuota = Math.max(lim.minFresh, lim.poolSize - lim.maxProven);
+  takeUnderCaps(fresh, pool, used, lim.maxProven, provenInPool, freshQuota, lim);
   const freshCount = pool.length;
-  takeUnderCaps(proven, pool, used, MAX_PROVEN, provenInPool);
-  takeUnderCaps(fresh, pool, used, MAX_PROVEN, provenInPool);
-  takeUnderCaps(rest, pool, used, POOL_SIZE, provenInPool);
-  takeUnderCaps([...proven, ...fresh, ...rest].sort((a, b) => b.score - a.score), pool, used, POOL_SIZE, provenInPool);
-  console.log(`Fresh dishes in the pool: ${freshCount} of ${fresh.length} accepted candidates (min ${MIN_FRESH}).`);
+  takeUnderCaps(proven, pool, used, lim.maxProven, provenInPool, lim.poolSize, lim);
+  takeUnderCaps(fresh, pool, used, lim.maxProven, provenInPool, lim.poolSize, lim);
+  takeUnderCaps(rest, pool, used, lim.poolSize, provenInPool, lim.poolSize, lim);
+  takeUnderCaps([...proven, ...fresh, ...rest].sort((a, b) => b.score - a.score), pool, used, lim.poolSize, provenInPool, lim.poolSize, lim);
+  console.log(`Fresh dishes in the pool: ${freshCount} of ${fresh.length} accepted candidates (min ${lim.minFresh}).`);
   return pool;
 }
 
@@ -161,7 +185,7 @@ function main() {
     if (by.has(h.url)) continue;
     const minutes = parseInt(String(h.totalTime || "").match(/\d+/g)?.slice(-1)[0] || "0", 10);
     const mins = /time|timer/i.test(h.totalTime || "") ? Math.max(minutes, 60) : minutes;
-    if (!mins || mins > MAX_HISTORY_MINUTES) continue;
+    if (!mins || mins > L.maxHistoryMinutes) continue;
     by.set(h.url, { url: h.url, name: h.header, minutes: mins, totalTime: h.totalTime, tags: [], servings: h.servings, orders: h.orders || 0, ingredients: h.ingredients || [], fromHistory: true, historyOnly: true });
   }
 
@@ -175,11 +199,18 @@ function main() {
     else scored.push(row);
   }
   scored.sort((a, b) => b.score - a.score || a.minutes - b.minutes || a.name.localeCompare(b.name, "da"));
+  console.log(`Pool limits from the profile: ${L.poolSize} dinners (>= ${L.minFresh} new, <= ${L.maxProven} proven), new ones <= ${L.maxRecipeMinutes} min, cooked ones <= ${L.maxHistoryMinutes} min.`);
+  const capped = Number(cand.maxMinutes || 0);
+  if (capped && L.maxRecipeMinutes > capped) {
+    console.log(`  note: the profile asks for ${L.maxRecipeMinutes} min, but data/recipe-candidates.json holds at most ${capped} min - run node mine-recipe-pool.mjs to widen it`);
+  }
   const pool = selectPool(scored);
   const mix = pool.reduce((m, p) => (m[p.protein] = (m[p.protein] || 0) + 1, m), {});
   writeFileSync(OUT, JSON.stringify({
     schemaVersion: 1,
-    at: new Date().toISOString(),
+    at: localStamp(),
+    limits: { poolSize: L.poolSize, minFresh: L.minFresh, maxProven: L.maxProven,
+      maxRecipeMinutes: L.maxRecipeMinutes, maxHistoryMinutes: L.maxHistoryMinutes },
     note: "Dinner rotation. One recipe is cooked once and eaten twice, so quantities are scaled to the servings a night this household eats, not to the recipe's own pot.",
     poolSize: pool.length,
     mix,
@@ -188,10 +219,12 @@ function main() {
     oddAsksLeftOut: ODD_WORDS,
     pool,
     lunchboxBakes: bakes,
-    rejectedSample: scored.slice(POOL_SIZE, POOL_SIZE + 10).map((s) => ({ name: s.name, score: s.score, reasons: s.reasons.slice(-2) })),
+    rejectedSample: scored.slice(L.poolSize, L.poolSize + 10).map((s) => ({ name: s.name, score: s.score, reasons: s.reasons.slice(-2) })),
   }, null, 1));
   console.log(`Wrote ${OUT}: ${pool.length} dinners, mix ${JSON.stringify(mix)}, lunchbox bakes ${bakes.length}.`);
   for (const p of pool) console.log(`  ${String(p.protein).padEnd(10)} ${String(p.minutes).padStart(3)} min  ${p.name.slice(0, 44).padEnd(46)} hist=${p.historyOrders} buyable=${p.coverageBuyablePct}% score=${p.score}`);
 }
 
-main();
+// Run only when started as a command, so a test can import the limits and the picker without
+// rewriting profiles/recipe-pool.json on the home.
+if (process.argv[1] && process.argv[1].endsWith("pick-recipe-pool.mjs")) main();

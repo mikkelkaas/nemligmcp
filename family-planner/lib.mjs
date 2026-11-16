@@ -209,6 +209,22 @@ export async function connect(env = loadEnv(), { limiter = null } = {}) {
 
 /** Sleep helper for paced loops. Not unref'd on purpose: an unref'd timer lets
  *  Node exit before the delay elapses when nothing else is pending. */
+/**
+ * The current time as the family reads a clock, with the offset written out, so the string stays
+ * machine-readable. A generated file that says 21:39 while the kitchen says 22:39 is the one
+ * thing a log about "when did this last run" must not be.
+ */
+export function localStamp(now = new Date()) {
+  const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Copenhagen", hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    .formatToParts(now).reduce((a, x) => (a[x.type] = x.value, a), {});
+  const wall = Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);
+  if (!Number.isFinite(wall)) return now.toISOString();
+  const off = Math.round((wall - now.getTime()) / 60000), sign = off < 0 ? "-" : "+", abs = Math.abs(off);
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`
+    + `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+}
+
 export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }

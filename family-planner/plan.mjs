@@ -16,6 +16,7 @@
 // Output:
 //   data/plans/plan-<timestamp>.json + .md, and copies named plan-latest.{json,md}
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { copenhagenNow } from "./slots.mjs";
 import { connect, loadEnv, Limiter, mapPool, readConcurrency, reportFailure, unknownFlags, warnUnknownFlags } from "./lib.mjs";
 import { resolveIntent, parseNeed, loadCache, saveCache, extraFlag } from "./catalog.mjs";
 import { toBaseMeasure, choosePack, pieceWeightOf } from "./units.mjs";
@@ -144,11 +145,17 @@ function noteOfFlag(spec, raw) {
 function norm(s) {
   return String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
+/**
+ * Whole calendar days since a date the mined history recorded, at noon on both sides and in the
+ * family's own zone. Counted from a wall instant against one noon, a 7-day cycle (the rye bread,
+ * the sliced cheese) opened a day late every morning, and the family went without it a day longer.
+ */
 function daysAgo(iso) {
   if (!iso) return null;
-  const t = Date.parse(iso + "T12:00:00Z");
-  if (!Number.isFinite(t)) return null;
-  return Math.floor((Date.now() - t) / 86400000);
+  const then = Date.parse(String(iso).slice(0, 10) + "T12:00:00Z");
+  const today = Date.parse(copenhagenNow().slice(0, 10) + "T12:00:00Z");
+  if (!Number.isFinite(then) || !Number.isFinite(today)) return null;
+  return Math.max(0, Math.round((today - then) / 86400000));
 }
 function readJson(path) {
   // A missing file here is always something a run wrote earlier, not the profile a person
@@ -800,7 +807,10 @@ function poolDinnerIntents(options, wanted, rules) {
   const pick = chooseDinners(fam.pool.pool, {
     days: options.days, coversDays, lastUsed, wanted,
     preferLeftovers: fam.household.preferLeftovers,
-    maxNights: fam.household.maxNightsPerDinner,
+    // `--covers` is the one knob for how long a dinner is eaten. It used to reach only the
+    // pinned-cores fallback, so the README promised a steering wheel while the rotation drove
+    // past it on `dinners.maxNightsPerDinner` whatever the person typed.
+    maxNights: process.argv.includes("--covers") ? coversDays : fam.household.maxNightsPerDinner,
     reheatByFormat: fam.household.reheatByFormat,
     nightsOverride: fam.household.nightsOverride,
     maxPerProtein: Number(arg("max-per-protein", String(rot.maxPerProtein ?? 2))) || 2,

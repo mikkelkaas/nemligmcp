@@ -14,15 +14,26 @@
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { subunitGrams } from "./units.mjs";
+import { copenhagenNow } from "./slots.mjs";
 import { join } from "node:path";
 
 const fold = (s) => String(s || "").toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/[^a-z0-9% ]/g, " ").replace(/\s+/g, " ").trim();
 
-const daysSince = (iso, now = Date.now()) => {
+/** The family's calendar day, as the cooked log writes it. */
+const copenhagenDay = (ms) => copenhagenNow(new Date(ms)).slice(0, 10);
+
+/**
+ * Whole calendar days since a cooked date, at noon on both sides and in the family's own zone,
+ * which is the zone the cooked log writes its dates in. Counted from a wall instant on one side
+ * and noon on the other, "cooked 40 d ago" came out as 39 until noon - the plan said a dish was
+ * waiting for them a day before it was.
+ */
+export const daysSince = (iso, now = Date.now()) => {
   if (!iso) return 9999;
-  const t = Date.parse(String(iso).slice(0, 10) + "T12:00:00Z");
-  if (!Number.isFinite(t)) return 9999;
-  return Math.max(0, Math.floor((now - t) / 86400000));
+  const then = Date.parse(String(iso).slice(0, 10) + "T12:00:00Z");
+  const today = Date.parse(copenhagenDay(now) + "T12:00:00Z");
+  if (!Number.isFinite(then) || !Number.isFinite(today)) return 9999;
+  return Math.max(0, Math.round((today - then) / 86400000));
 };
 
 /** Does the text contain the word, with word boundaries so "ost" misses "mos"? */
@@ -277,7 +288,10 @@ export function chooseDinners(pool, opts) {
   const isResting = (d) => {
     const c = (opts.cookedTimes || {})[d.url];
     if (!c || !c.dates || c.dates.length === 0) return false;
-    const cutoff = new Date(Date.now() - coolDays * 86400000).toISOString().slice(0, 10);
+    // The cutoff is a calendar day in the family's zone, because the dates it is compared
+    // against are written that way: a UTC-derived cutoff left every dish resting one day too
+    // long during the first hour of the local day.
+    const cutoff = copenhagenDay(Date.now() - coolDays * 86400000);
     return c.dates.filter((iso) => iso >= cutoff).length >= coolTimes;
   };
   const cookedAgo = (d) => (lastUsed[d.url] ? daysSince(lastUsed[d.url]) : NEVER_COOKED);

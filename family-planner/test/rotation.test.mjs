@@ -10,7 +10,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { chooseDinners, readRotation } from "../dinners.mjs";
+import { chooseDinners, readRotation, daysSince } from "../dinners.mjs";
 
 const DAY = 86400000;
 const daysAgo = (n) => new Date(Date.now() - n * DAY).toISOString().slice(0, 10);
@@ -192,4 +192,56 @@ test("when the pool runs out, a dinner is cooked twice instead of an evening goi
     next = to + 1;
   }
   assert.equal(next - 1, 10, "the cookings tile the whole period, the reused one included");
+});
+
+// The pool's own shape used to be constants inside pick-recipe-pool.mjs, so the two numbers the
+// profile documented changed nothing. These two cases are the pin that they are read now.
+test("the pool is built from the numbers the family edits", async () => {
+  const { poolLimits } = await import("../pick-recipe-pool.mjs");
+  const today = poolLimits({});
+  assert.deepEqual([today.poolSize, today.minFresh, today.maxProven, today.maxRecipeMinutes, today.maxHistoryMinutes],
+    [21, 8, 13, 30, 45],
+    "the defaults are the numbers the pool on this home was built from, so wiring them moves nothing: " + JSON.stringify(today));
+  const asked = poolLimits({ rotation: { poolSize: 9 }, dinners: { maxRecipeMinutes: 20 } });
+  assert.equal(asked.poolSize, 9, "rotation.poolSize is how many dinners the rotation gets");
+  assert.equal(asked.maxRecipeMinutes, 20, "dinners.maxRecipeMinutes is how long a new dish may be");
+  assert.equal(asked.minFresh + asked.maxProven, asked.poolSize, "the new/known split adds up to the pool the family asked for");
+  assert.equal(poolLimits({ rotation: { poolSize: 2 } }).poolSize, 6, "under six there is no rotation left, so six is the floor");
+});
+
+test("the picker stops at the size the family asked for", async () => {
+  const { selectPool } = await import("../pick-recipe-pool.mjs");
+  const names = ["Oksekød gryde", "Kylling i fad", "Laks i ovn", "Svinekød i fad", "Pizza med grønt",
+    "Æggekage med ost", "Ris med kylling", "Pasta med oksekød"];
+  const scored = names.map((name, i) => ({ url: `/opskrifter/pin-${i}`, name, minutes: 25, score: 100 - i,
+    historyOrders: 0, coverageBuyablePct: 95, oddAsks: [], servings: 4 }));
+  const got = selectPool(scored, { poolSize: 6, minFresh: 3, maxProven: 4, maxRecipeMinutes: 30, maxHistoryMinutes: 45 });
+  assert.equal(got.length, 6, "the pool holds the six the profile asked for, not the twenty-one it used to: " + got.map((p) => p.name).join(","));
+});
+
+test("--covers is how many evenings one dinner is eaten over", () => {
+  const pool = poolOf([
+    { url: "/a", name: "A", protein: "oksekod" },
+    { url: "/b", name: "B", protein: "kylling" },
+    { url: "/c", name: "C", protein: "fisk" },
+  ]);
+  const base = { days: 9, coversDays: 2, lastUsed: {}, maxPerProtein: 3, minFish: 0 };
+  const two = chooseDinners(pool, { ...base, maxNights: 2 });
+  const three = chooseDinners(pool, { ...base, coversDays: 3, maxNights: 3 });
+  const long = (p) => Math.max(...p.menu.map((m) => m.nights));
+  assert.equal(long(two), 2, "two is what the profile says today: " + two.menu.map((m) => m.nights).join("+"));
+  assert.equal(long(three), 3, "the flag raises the nights a dish that keeps runs, and the pot grows with it: " + three.menu.map((m) => m.nights).join("+"));
+});
+
+test("a dish cooked 40 days ago says 40 in the morning too", () => {
+  // The number used to be counted from a wall instant against a noon reference, so every
+  // morning until noon the plan told the family a dish had been waiting one day less than it had.
+  const morning = Date.parse("2026-11-16T07:33:00+01:00");
+  const evening = Date.parse("2026-11-16T20:00:00+01:00");
+  assert.equal(daysSince("2026-10-07", morning), 40, "07:33 in Copenhagen says 40, not 39");
+  assert.equal(daysSince("2026-10-07", evening), 40, "and the evening says the same");
+  assert.equal(daysSince("2026-11-15", Date.parse("2026-11-16T00:30:00+01:00")), 1,
+    "half past midnight in Copenhagen is already the next evening, the day the cooked log writes");
+  assert.equal(daysSince(null), 9999, "a dish with no date stays at the back of the queue");
+  assert.equal(daysSince("not a date"), 9999, "and a broken date is refused, not read as today");
 });

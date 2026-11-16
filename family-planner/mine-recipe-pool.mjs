@@ -14,7 +14,8 @@
 // Safety: read-only MCP calls.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { connectGated } from "./lib.mjs";
+import { findProfileFile } from "./family.mjs";
+import { connectGated, localStamp } from "./lib.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
 const OUT = BASE + "/data/recipe-candidates.json";
@@ -22,7 +23,22 @@ const LINES = BASE + "/data/order-lines-raw.jsonl";
 const RECIPE_PAGE = BASE + "/data/recipes-raw.jsonl";
 const CALL_TIMEOUT = 60000;
 const DELAY_MS = 300;
-const MAX_MINUTES = 35;
+const COLLECT_MINUTES = 35;
+
+/**
+ * How long a collected recipe may be. Never below the 35 minutes this file has always collected,
+ * and up to what the profile asks for: `pick-recipe-pool.mjs` filters the candidates it is given,
+ * so a profile that wants 45-minute dinners gets nothing from a list that stopped at 35.
+ */
+function collectMinutes() {
+  let asked = NaN;
+  try {
+    const prof = JSON.parse(readFileSync(findProfileFile(), "utf8"));
+    asked = Number((prof.dinners || {}).maxRecipeMinutes);
+  } catch { asked = NaN; }
+  return Number.isFinite(asked) ? Math.max(COLLECT_MINUTES, Math.round(asked)) : COLLECT_MINUTES;
+}
+const MAX_MINUTES = collectMinutes();
 const RECIPE_COUNT = 20; // the MCP schema caps recipeCount at 20
 const TAKE = 3;
 
@@ -158,7 +174,7 @@ async function main() {
   const out = [...by.values()]
     .map((c) => ({ ...c, queries: [...c.queries], ingredientCount: (c.ingredients || []).length }))
     .sort((a, b) => b.orders - a.orders || a.minutes - b.minutes || a.name.localeCompare(b.name, "da"));
-  writeFileSync(OUT, JSON.stringify({ schemaVersion: 1, at: new Date().toISOString(), maxMinutes: MAX_MINUTES, queries: QUERIES, recipes: out }, null, 1));
+  writeFileSync(OUT, JSON.stringify({ schemaVersion: 1, at: localStamp(), maxMinutes: MAX_MINUTES, queries: QUERIES, recipes: out }, null, 1));
   console.log(`Wrote ${OUT}: ${out.length} candidates (${out.filter((c) => c.orders > 0).length} ordered before, ${fetched} pages fetched now).`);
 }
 

@@ -14,7 +14,7 @@
 // Exit 0: every scenario behaved. Exit 1: one regressed, and its own line says which.
 // Run it after any change to plan.mjs, apply.mjs, catalog.mjs or trim.mjs.
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { HOME, envFile, writeJsonAtomic } from "../paths.mjs";
 import { validatePlan } from "../apply.mjs";
 import { mergeItems, markdownNotes } from "../plan.mjs";
+import { localStamp } from "../lib.mjs";
 import { chooseDinners } from "../dinners.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -412,25 +413,9 @@ function gitCommit() {
   return head + (d.status === 0 && String(d.stdout || "").trim() ? "-dirty" : "");
 }
 
-/**
- * The stamp time in the family's own zone, offset written out. `doctor.mjs` parses this with
- * Date.parse, so it stays machine-readable; a file that says 21:39 while the kitchen clock says
- * 22:39 is the one thing a log about "when quality last ran" must not be.
- */
-function stampTime(now = new Date()) {
-  const p = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Copenhagen", hourCycle: "h23",
-    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
-    .formatToParts(now).reduce((a, x) => (a[x.type] = x.value, a), {});
-  const wall = Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);
-  if (!Number.isFinite(wall)) return now.toISOString();
-  const off = Math.round((wall - now.getTime()) / 60000), sign = off < 0 ? "-" : "+", abs = Math.abs(off);
-  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`
-    + `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
-}
-
 function writeStamp(failed) {
   const stamp = {
-    at: stampTime(),
+    at: localStamp(),
     mode: process.argv.includes("--pure") ? "pure" : process.argv.includes("--offline") ? "offline" : "live",
     scenarios: results.length,
     pass: results.length - failed.length,
@@ -469,6 +454,33 @@ function checkLogDinner(dir) {
   record("log meal:a dinner the family ate is recorded",
     r.code === 0 && written === 1 && nonsense.code === 1 && /did you mean|no close name/.test(nonsense.out + nonsense.stderr) && future.code === 1,
     `${name} written for ${day}; a name the pool does not hold refused (exit ${nonsense.code}); a future evening refused (exit ${future.code})`);
+}
+
+/**
+ * The mined menu data has a shelf life, and doctor reads it. No shop call: the scratch home is
+ * copied, its pool is aged through the `at` the writer left in it, its raw order lines through
+ * their modification time, and doctor is run against it twice - once as it came, once aged.
+ */
+function checkMenuDataAge(dir) {
+  const pool = join(dir, "profiles", "recipe-pool.json");
+  const lines = join(dir, "data", "order-lines-raw.jsonl");
+  if (!existsSync(pool) || !existsSync(lines)) { record("data age:doctor grades the mined menu data", false, "no pool or raw order lines in the scratch home"); return; }
+  const dayMs = 86400000;
+  const env = { NEMLIG_HOME: dir, NEMLIG_ENV: envFile() };
+  const ageText = (r) => String(r.out + r.stderr);
+  const fresh = nodeRun("doctor.mjs", [], env, NODE_TIMEOUT_FAST, "doctor on fresh data");
+  const poolWas = readFileSync(pool, "utf8");
+  const oldAt = new Date(Date.now() - 60 * dayMs).toISOString().slice(0, 10) + "T09:00:00+01:00";
+  writeFileSync(pool, poolWas.replace(/"at":\s*"[^"]*"/, `"at": ${JSON.stringify(oldAt)}`));
+  const back = new Date(Date.now() - 45 * dayMs);
+  utimesSync(lines, back, back);
+  const aged = nodeRun("doctor.mjs", [], env, NODE_TIMEOUT_FAST, "doctor on aged data");
+  writeFileSync(pool, poolWas);
+  const hits = (ageText(aged).match(/mined \d+ d ago, older than/g) || []).length;
+  const clean = !/mined \d+ d ago, older than/.test(ageText(fresh));
+  record("data age:doctor grades the mined menu data",
+    clean && hits >= 2 && /recipe-pool\.json/.test(ageText(aged)) && /order-lines-raw\.jsonl/.test(ageText(aged)),
+    `fresh data says nothing; aged to 60 d (its own "at") and 45 d (mtime) it named ${hits} file(s) as warn`);
 }
 
 /**
@@ -540,6 +552,7 @@ function main() {
   checkStamp(first.dir);
   checkLogDinner(first.dir);
   checkMenuFills(first.dir);
+  checkMenuDataAge(first.dir);
   if (offline) {
     console.log("  skipped: the shop-facing scenarios (run without --offline to include them)");
   } else {

@@ -11,7 +11,7 @@
 //   node doctor.mjs --online   also probe the server: one GET /healthz, 3 s timeout
 //   node doctor.mjs --json     the same findings as one object, for an agent
 
-import { existsSync, readdirSync, mkdirSync, accessSync, readFileSync, constants } from "node:fs";
+import { existsSync, readdirSync, mkdirSync, accessSync, readFileSync, statSync, constants } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { HOME, PROFILES, DATA, PLANS, envFile, ENV_CANDIDATES } from "./paths.mjs";
 
@@ -113,6 +113,40 @@ function checkData(out) {
     if (existsSync(where + "/" + file)) continue;
     out.push(finding(dir + file, needed ? BLOCK : WARN,
       needed ? "the planner needs the mined history to know what this family buys" : "not built yet", next));
+  }
+  menuDataAge(out);
+}
+
+/** The README's rebuild interval, in days. Past it the pool is a picture of what the family
+ *  bought a season ago: still good enough to eat from, so it warns and never blocks. */
+const MENU_DATA_MAX_AGE_D = 31;
+
+/**
+ * How old the mined menu data is. A writer's own `at` beats the file's modification time, because
+ * copying a home or restoring a backup moves the clock on the disk and moves nothing about what
+ * the file knows.
+ */
+function menuDataAge(out) {
+  const dayMs = 86400000;
+  const files = [
+    ["recipe-pool.json", PROFILES, "node pick-recipe-pool.mjs, after mine-recipes.mjs and mine-recipes-fetch.mjs"],
+    ["amounts.json", PROFILES, "node mine-amounts.mjs"],
+    ["order-lines-raw.jsonl", DATA, "node mine-history.mjs"],
+  ];
+  for (const [file, dir, next] of files) {
+    const where = dir + "/" + file;
+    if (!existsSync(where)) continue;
+    let at = null;
+    try {
+      const raw = readFileSync(where, "utf8").slice(0, 4000);
+      const m = raw.match(/"at"\s*:\s*"([^"]+)"/);
+      if (m) at = Date.parse(m[1]);
+    } catch { at = null; }
+    if (!Number.isFinite(at)) { try { at = statSync(where).mtimeMs; } catch { continue; } }
+    const days = Math.floor((Date.now() - at) / dayMs);
+    if (days <= MENU_DATA_MAX_AGE_D) continue;
+    out.push(finding(where, WARN, `mined ${days} d ago, older than the ${MENU_DATA_MAX_AGE_D} d the README rebuilds on`,
+      `the rotation and the amounts are that old too - ${next}`));
   }
 }
 

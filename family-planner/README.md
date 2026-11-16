@@ -464,7 +464,18 @@ rotation decided, and what it bent`, and the dish cooked twice says so on both o
 A cooking asks for the food of its own evenings, so a dish cooked twice is bought twice. When
 `poolTooSmallForThePeriod` is the rule that bent, the fix is the pool. The rotation may fill
 `rotation.maxPerProtein` x the proteins in the pool x `dinners.maxNightsPerDinner` evenings;
-raise `POOL_SIZE` in `pick-recipe-pool.mjs` (21 today) above that need and rebuild.
+raise `rotation.poolSize` in the family profile above that need and rebuild.
+
+`pick-recipe-pool.mjs` reads the pool's shape from the profile, not from itself:
+`rotation.poolSize` (21), `rotation.minFreshDinners` (8 of them new), `dinners.maxRecipeMinutes`
+(30 - how long a NEW dish may be, and how long a recipe `mine-recipe-pool.mjs` collects) and
+`rotation.maxHistoryMinutes` (45 - a dish you already cook stays whatever it costs). The numbers
+it used are written into the pool file under `limits`, so a pool can be read back and traced.
+`--covers 3` overrides `dinners.maxNightsPerDinner` for one run: the same dinner is eaten over
+three evenings, so the pot and the ask grow with it. `--cores` is the pinned menu of
+`profiles/dinners.json` and keeps the hole the rotation fills - when the pinned cores run out the
+plan prints `WARNING: N evening(s) have no dinner` and buys nothing for them, because a pinned
+menu is pinned on purpose.
 
 Rebuild the generated data with these, in this order, about once a month:
 
@@ -482,6 +493,12 @@ node init-family.mjs --name <your-name> --adults 2 --children 2 --days 8 --force
 
 Each step reads what the step before it wrote: `pick-recipe-pool.mjs` needs the candidates
 `mine-recipe-pool.mjs` collected, and `mine-amounts.mjs` needs the pool.
+
+That interval has a listener: `doctor.mjs` grades the age of `profiles/recipe-pool.json`,
+`profiles/amounts.json` and `data/order-lines-raw.jsonl`, by the `at` the writer left in them and
+by their modification time otherwise. Past 31 days it is a `warn` with the rebuild command, never
+a block - a plan built on a month-old pool still feeds the family.
+
 
 The clash rule lives in `similarity.mjs`: two dishes are the same dinner when the FORMAT
 (spaghetti, pasta salad, noodles, pizza, wrap, rice, potato, stew, tray bake) and the PROTEIN
