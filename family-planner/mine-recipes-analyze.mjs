@@ -37,7 +37,7 @@ const median = (xs) => (xs.length ? [...xs].sort((a, b) => a - b)[Math.floor((xs
 
 // Recipe wording to product family, so a named cheese or a cut of meat still matches.
 const SYNONYMS = [
-  ["parmesan", "grana padano", "pecorino", "ost"],
+  ["parmesan", "grana", "pecorino", "ost"],
   ["piskefløde", "fløde", "madlavningsfløde"],
   ["æggeblommer", "æg", "skrabeæg"],
   ["oksekød", "hakket oksekød", "oksekød", "forloin", "entrecote", "hakket"],

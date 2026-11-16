@@ -11,29 +11,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PLANNER = dirname(dirname(fileURLToPath(import.meta.url)));
 const GIT_TIMEOUT_MS = 15000;
 const READ_LIMIT_BYTES = 400000;
+const READ_LIMIT_LINES = 20000;   // the order history only grows; a guard must not read forever
 
 /**
  * Facts that belong to one household. The first list is this repo's own history: a family
  * that forks this adds their own words here, because the guard only knows what it is told.
  * The last two are general: an age in prose and a budget in prose say too much anywhere.
  */
+/** Every pattern is case-insensitive: a mention in lower case is still a mention. */
 const PRIVATE = [
-  [/family-of-3\b/, "the profile name of one family"],
-  [/\bMarco\b/, "a person's first name"],
-  [/homeserver-iac/, "the owner's private infrastructure repo"],
-  [/Grana Padano|Puntalette/, "a product one family buys, mined from their own orders"],
+  [/family-of-3\b/i, "the profile name of one family"],
+  [/\bMarco\b/i, "a person's first name"],
+  [/homeserver-iac/i, "the owner's private infrastructure repo"],
+  [/Grana Padano|Puntalette/i, "a product one family buys, mined from their own orders"],
   [/Kokosflager|Solsikkerugbrød|Flødehavarti|Minimælk/i, "a product one family buys, named in their own history or learned on their shelf"],
-  [/1113,49 kr|1105 kr/, "a total out of one family's real baskets"],
-  [/\b66 orders\b/, "how many orders one family has placed"],
-  [/\b\d+-year-old\b/, "a child's age"],
-  [/softCapKr"?\s*:\s*1500|the 1500 kr soft cap/, "one family's budget"],
+  [/1113,49 kr|1105 kr/i, "a total out of one family's real baskets"],
+  [/\b66 orders\b/i, "how many orders one family has placed"],
+  [/\b\d+-year-old\b/i, "a child's age"],
+  [/softCapKr"?\s*:\s*1500|the 1500 kr soft cap/i, "one family's budget"],
 ];
 
 /** A credential pattern is always a failure, whatever the file. */
@@ -105,4 +107,58 @@ test("the suite does not read anybody's own profile", () => {
     if (direct) bad.push(file + " - reads a family profile instead of the fixture: " + direct[0]);
   }
   assert.deepEqual(bad, [], "a clean clone has no private profile, so every case must use test/fixtures/profiles/");
+});
+
+/**
+ * The order totals on THIS machine, as "1113,49", 1000 kr and up. Null when there is no
+ * history here, which is the case on a clean clone: then the case skips and says so.
+ * A total is one household's spending, not a shop fact, so it belongs at home.
+ */
+function orderTotals(path = join(PLANNER, "data/order-lines-raw.jsonl")) {
+  if (!existsSync(path)) return null;
+  let raw;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return null;                                          // unreadable: not this guard's business
+  }
+  const out = new Set();
+  for (const line of raw.split("\n").slice(0, READ_LIMIT_LINES)) {
+    if (!line.trim()) continue;
+    let row;
+    try {
+      row = JSON.parse(line);
+    } catch {
+      continue;                                           // a half-written line is not a total
+    }
+    const value = Number(row && row.total);
+    if (Number.isFinite(value) && value >= 1000) out.add(value.toFixed(2).replace(".", ","));
+  }
+  return out;
+}
+
+/** Money written in a file that matches one of those totals, in either 1.113,49 or 1113,49 form. */
+function quotedTotals(text, totals) {
+  const out = [];
+  for (const m of String(text).matchAll(/\d[\d .]{0,6},\d{2}\s*kr/g)) {
+    const bare = m[0].replace(/[ .]/g, "").replace(/kr$/, "").trim();
+    if (totals.has(bare)) out.push("an order total of " + bare + " kr");
+  }
+  return out;
+}
+
+test("no tracked file quotes an order total out of this machine's history", () => {
+  const files = trackedFiles();
+  if (files === null) return;
+  const totals = orderTotals();
+  if (totals === null) {
+    console.log("skipped: this machine has no data/order-lines-raw.jsonl, so there is no history to protect");
+    return;
+  }
+  const bad = [];
+  for (const file of files) {
+    if (file === "test/hygiene.test.mjs") continue;
+    for (const hit of quotedTotals(readText(file), totals)) bad.push(file + " - " + hit);
+  }
+  assert.deepEqual(bad, [], "an order total is one household's spending and must not be shipped:\n" + bad.join("\n"));
 });

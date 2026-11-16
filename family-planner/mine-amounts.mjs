@@ -46,7 +46,7 @@ const FAMILIES_RAW = [
   ["æg", /æg(?!.*nudler|.*mayonnaise|.*pasta)/],
   ["skyr og yoghurt", /skyr|yoghurt|mysa|biola|go'?a/],
   ["fløde", /fløde|flødeskum|piskefløde|letfløje/],
-  ["ost", /emmentaler|mozzarella|grana padano|ricotta|ost (i|på)|i blok|revet ost|flødeost|cheddar|havarti|sancerre|burrata/],
+  ["ost", /emmentaler|mozzarella|grana|ricotta|ost (i|på)|i blok|revet ost|flødeost|cheddar|havarti|sancerre|burrata/],
   ["brød", /rugbrød|boller|grove bolle|tebirkes|croissant|baguette|loff|bagel|bageri|hvedebolle/],
   ["pasta, ris og mel", /spaghetti|pasta|penne|fusilli|macaroni|tortellini|lasagneplader|ris|nudler|couscous|mel$|gryn|pizza dej|pizzadej|dej o|pølsehornsdej|tortilla|wraps/],
   ["kartofler", /kartoffel/],
