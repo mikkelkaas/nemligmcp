@@ -47,7 +47,7 @@ export { unknownFlags };
 
 const KNOWN_FLAGS = ["family", "days", "people", "breakfast", "lunchbox", "snacks", "household",
   "soft-cap", "avoid", "fresh", "serial", "max-minutes", "dinners", "cores", "covers",
-  "max-per-protein", "extra", "extra-file", "max-kr", "trim", "debug", "help"];
+  "max-per-protein", "extra", "extra-file", "max-kr", "trim", "simulate-empty", "debug", "help"];
 
 /** A flag word for yes or no, in the words a person actually types, Danish included.
  *  Returns null when the word means neither, so the caller reports what it used instead.
@@ -825,6 +825,7 @@ function poolDinnerIntents(options, wanted, rules) {
     maxPerProtein: Number(arg("max-per-protein", String(rot.maxPerProtein ?? 2))) || 2,
     minFish: Number(rot.minFishDishes ?? 1) || 0,
     noVegetarian: fam.household.noVegetarian,
+    excludeWords: rot.excludeWords,
     // Two rules the profile carries and nothing used to read: a family that set them off
     // still got the interleaved queue and the variant ban. They are wired now.
     alternateNewAndKnown: rot.alternateNewAndKnown !== false,
@@ -988,6 +989,9 @@ function readOptions() {
     // --serial is the polite switch: one call at a time, wider spacing. Use it when the
     // shop answers slowly or pushes back. maxMinutes ends the run instead of hanging.
     serial: process.argv.includes("--serial"),
+    // A full basket as if the shop basket were empty. It reads the shelf and never writes
+    // the basket, so a family can see the whole plan before a shop, or audit a change.
+    simulateEmpty: process.argv.includes("--simulate-empty"),
     maxMinutes: maxRunMinutes(a("max-minutes", process.env.NEMLIG_MAX_MINUTES || "15")),
   };
 }
@@ -1006,6 +1010,7 @@ const USAGE = [
   "  --cores                 --max-per-protein N  --avoid \"brand,word\"",
   "  --extra \"Name:300g\"    --fresh (ignore the 24 h price cache)",
   "  --serial                one request at a time, wider spacing",
+  "  --simulate-empty        plan the whole basket as if the live basket were empty; never writes it",
   "  --max-minutes 15        stop the run after this much wall clock",
   "  --debug                 print the stack on a failure",
   "  A value that cannot be used as given is reported with a warn line, naming the value used.",
@@ -1078,9 +1083,12 @@ async function main() {
   // How often a tilbud beat this family's own habit today. Worth one line per run:
   // it is the only place the planner overrides a favourite on price.
   const saleSwaps = resolved.filter((r) => r && r.ok && r.compare === "sale-vs-usual").length;
-  const basket = await mcp.call("get_basket", {}, { timeoutMs: CALL_TIMEOUT });
-  if (basket.isError) throw new Error("get_basket failed: " + basket.text.slice(0, 200));
-  const bJson = basket.json || {};
+  let bJson = { Lines: [] };
+  if (!options.simulateEmpty) {
+    const basket = await mcp.call("get_basket", {}, { timeoutMs: CALL_TIMEOUT });
+    if (basket.isError) throw new Error("get_basket failed: " + basket.text.slice(0, 200));
+    bJson = basket.json || {};
+  }
   const diff = basketDiff(items, bJson.Lines || []);
   const planTotal = Number(diff.adds.reduce((sum, i) => sum + i.total, 0).toFixed(2));
   const menu = poolMenu || menuOf(dinners.cores, wantedIds, options.days, dinners.coversDays);

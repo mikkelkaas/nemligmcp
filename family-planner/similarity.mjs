@@ -41,7 +41,7 @@ const PROTEINS = [
   ["fisk", ["laks", "torsk", "morrej", "hvidfisk", "hvid fisk", "sej", "rødspætte", "makrel", "sild", "ørred", "fiskefars", "fiskefilet", "fiskedeller", "fisk", "rejer", "hummer", "muslinger", "blæksprutte", "tun", "fish"]],
   ["kylling", ["kylling", "kyllinge", "kalkun", "fjerkræ", "kip", "andefilet", "forår"]],
   // A sauce named after its meat counts as that meat: "bolognese" is ground beef.
-  ["oksekod", ["okse", "hakket", "kød", "kødboller", "kødbolle", "kødsovs", "kødsauce", "bolognese", "gullash", "gulasj", "boef", "kalv", "kofte", "burger", "stroganoff", "entrecote", "mørbrad", "forloverit", "mørkebiff"]],
+  ["oksekod", ["okse", "hakket", "kød", "kødboller", "kødbolle", "kødsovs", "kødsauce", "bolognese", "gullash", "gulasj", "boef", "kalv", "kofte", "kebab", "burger", "stroganoff", "entrecote", "mørbrad", "forloverit", "mørkebiff"]],
   ["svinepolse", ["svin", "flæsk", "ribben", "medister", "pølse", "skinke", "bacon", "nakke", "pendel", "spege", "medaljon", "marineret", "carbonara", "pølseret"]],
   ["aegost", ["æg", "ost", "mozzarella", "ricotta", "feta", "cheddar", "parmesan", "yoghurt"]],
   ["vegetar", ["kikerter", "linser", "bønner", "kidneyer", "tofu", "svampe", "champignon", "portabelo", "kål", "blomkål", "hakkede mandler"]],

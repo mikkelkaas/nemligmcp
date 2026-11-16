@@ -27,9 +27,8 @@
 // The shop scales a card's own pack count by people, so the card is set to the recipe's
 // own servings. The household's extra portions become the difference line in step 2.
 // Use --recipes no to skip the cards.
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { connect, loadEnv, Limiter, sleep, reportFailure, warnUnknownFlags } from "./lib.mjs";
-import { writeRotation } from "./dinners.mjs";
 import { login } from "./auth.mjs";
 import { resolvePlanRecipes, recipeLines, recipeForCard, readCardCache, writeCardCache, cardSelections, cardPayload } from "./recipes.mjs";
 import { loadFamily } from "./family.mjs";
@@ -55,18 +54,6 @@ function round2(n) {
   return Number(Number(n).toFixed(2));
 }
 
-/**
- * One line per dinner, appended when a plan really goes into the basket. This is the
- * record of what was cooked, and the rotation cooldown and learn.mjs read it. A dry
- * run never writes here, because a printed plan is not dinner.
- */
-function appendCookLog(file, menu, day) {
-  const lines = menu.filter((m) => m && (m.url || m.id)).map((m) => JSON.stringify({
-    at: day, url: m.url || m.id, name: m.name || null, minutes: m.minutes || null, protein: m.protein || null,
-  }));
-  if (lines.length === 0) return;
-  appendFileSync(file, lines.join("\n") + "\n");
-}
 
 function arg(name, dflt) {
   const i = process.argv.indexOf("--" + name);
@@ -504,15 +491,6 @@ async function finishBasket({ mcp, plan, planPath, slotId, before, cards, topUps
     verification: missing.length === 0 ? "all added products present at the planned quantity" : "MISMATCH",
     missing,
   };
-  const cooked = (plan.dinnerMenu || []).map((m) => m.url || m.id).filter(Boolean);
-  // A run that wrote nothing is not dinner: a kept basket must not move the rotation.
-  if (cooked.length && failed.length === 0 && (adds.length > 0 || cards.cards.length > 0)) {
-    const day = new Intl.DateTimeFormat("en-CA", { timeZone: household.timezone || "Europe/Copenhagen" }).format(new Date());
-    writeRotation(BASE + "/data/rotation.json", cooked, day);
-    appendCookLog(BASE + "/data/cooked-log.jsonl", plan.dinnerMenu || [], day);
-    report.rotationRecorded = { day, dinners: cooked.length };
-    console.log(`Rotation updated: ${cooked.length} dinner(s) marked cooked on ${day}, so the next plan rotates away from them.`);
-  }
   const written = saveReport(report);
   printResult({ adds, failed, after, report, missing, written, cards, dropped, topUps });
   if (failed.length || topUps.failed.length) process.exitCode = 1;

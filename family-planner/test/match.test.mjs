@@ -295,6 +295,17 @@ test("recipeIntents scales to 5 servings, merges repeats and skips pantry words"
   assert.deepEqual(out.leftOut.map((l) => l.text), ["Persille", "Kapers"]);
 });
 
+test("a liked dish leads the queue even when it was cooked recently", () => {
+  const pool = [
+    { url: "/liked", name: "Liked", protein: "kylling", format: "gryde", score: 5 },
+    { url: "/old", name: "Old", protein: "oksekod", format: "gryde", score: 5 },
+  ];
+  const r = chooseDinners(pool, { days: 2, coversDays: 1, maxPerProtein: 2, minFish: 0,
+    lastUsed: { "/liked": "2026-11-16", "/old": "2026-08-01" },
+    taste: { liked: ["/liked"], refused: [] }, wanted: [] });
+  assert.equal(r.menu[0].name, "Liked");
+});
+
 test("chooseDinners alternates a new dish with one the family knows", async () => {
   const pool = [
     { url: "/a", name: "Known A", protein: "oksekod", score: 50 },
@@ -313,6 +324,7 @@ test("chooseDinners alternates a new dish with one the family knows", async () =
 import { wantQtyOf, cardDecisions, cardLineOf } from "../apply.mjs";
 import { recipeIngredients, cardSelections, planItemForIngredient, cardPayload } from "../recipes.mjs";
 import { basketDelta } from "../tools/mine-basket.mjs";
+import { keptDinners } from "../tools/mine-menu.mjs";
 
 test("a plan quantity overwrites the amount a recipe card put in, down as well as up", () => {
   assert.equal(wantQtyOf({ packs: 2 }, 5, true), 2);
@@ -487,6 +499,21 @@ test("a tiny pack is refused before it becomes ten packs", () => {
   assert.equal(choosePack({ qty: 10, unit: "g" }, [tiny], { name: "Chiliflager", maxPacksPerLine: 4 }).packs, 2);
 });
 
+test("a generic category in front of a shape is dropped: pasta penne is penne", () => {
+  assert.equal(cleanQuery("Pasta penne"), "Penne");
+  assert.equal(cleanQuery("Pasta"), "Pasta", "a category on its own is still the product");
+});
+
+test("a baby recipe is excluded by its name", () => {
+  const pool = [
+    { url: "/a", name: "Hurtige pizzasnegle - fra 9 mdr.", protein: "svinepolse", format: "pizza", score: 9 },
+    { url: "/b", name: "Kylling A", protein: "kylling", format: "gryde", score: 8 },
+    { url: "/c", name: "Okse B", protein: "oksekod", format: "gryde", score: 7 },
+  ];
+  const r = chooseDinners(pool, { days: 2, coversDays: 1, maxPerProtein: 4, minFish: 0, noVegetarian: true, excludeWords: ["baby", "fra 9 mdr"], lastUsed: {}, wanted: [] });
+  assert.ok(r.menu.every((m) => !m.name.toLowerCase().includes("mdr")), "no baby recipe: " + r.menu.map((m) => m.name).join(", "));
+});
+
 test("a family that wants meat never gets a vegetarian dinner from the rotation", () => {
   const pool = [
     { url: "/a", name: "Kylling A", protein: "kylling", format: "gryde", score: 9 },
@@ -498,6 +525,20 @@ test("a family that wants meat never gets a vegetarian dinner from the rotation"
   const r = chooseDinners(pool, { days: 4, coversDays: 2, maxPerProtein: 4, minFish: 1, noVegetarian: true, lastUsed: {}, wanted: [] });
   assert.ok(r.menu.length >= 2, "the pool still fills the period");
   assert.ok(r.menu.every((m) => !["vegetar", "ostaeq", "aeg"].includes(m.protein)), "meat or fish only: " + r.menu.map((m) => `${m.name} (${m.protein})`).join(", "));
+});
+
+test("only the dinners whose products survived the correction are kept", () => {
+  const plan = {
+    dinnerMenu: [{ name: "Dinner A", url: "/a" }, { name: "Dinner B", url: "/b" }, { name: "Dinner C", url: "/c" }],
+    items: [
+      { sku: "1", name: "Spaghetti", packs: 1, sources: ["dinner:/a"] },
+      { sku: "2", name: "Ris", packs: 1, sources: ["dinner:/b"] },
+      { sku: "3", name: "Dild", packs: 1, sources: ["dinner:/c"] },
+      { sku: "4", name: "Salt", packs: 1, sources: ["dinner:/c"] },
+    ],
+  };
+  const basket = { Lines: [{ Id: "1", Name: "Spaghetti", Quantity: 1 }, { Id: "3", Name: "Dild", Quantity: 1 }], Recipes: [] };
+  assert.deepEqual(keptDinners(plan, basket).map((d) => d.name), ["Dinner A"], "Dinner C has only one of two lines");
 });
 
 test("a corrected basket reports what was removed, reduced, increased and added", () => {
@@ -615,6 +656,10 @@ test("eight eggs out of a ten-pack is one pack, not eight", () => {
   assert.equal(packsFor({ qty: 12, unit: "stk" }, { qty: 10, unit: "stk" }), 2);
   assert.equal(packsFor({ qty: 2, unit: "stk" }, { qty: 1, unit: "stk" }), 2);
   assert.equal(packsFor({ qty: 2, unit: "stk" }, { qty: null, unit: null }), 2);
+});
+
+test("a size word in front of the product does not hide it: baby salatmix is salatmix", () => {
+  assert.equal(score("Salatmix", "Baby salatmix øko."), 1);
 });
 
 test("four folded letters still find the compound: milk finds a compound milk", () => {

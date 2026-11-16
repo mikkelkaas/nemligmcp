@@ -25,7 +25,7 @@ const STOP = new Set(["m", "med", "og", "af", "til", "i", "på", "pa", "en", "et
 // "grovbrød øko skiver" and "grovbrød øko." are one product, and a
 // recipe ingredient called "Gulerødder" may legally be answered by the non-organic
 // bag because the plan wants the cheapest one.
-const QUALIFIER = new Set(["øko", "oko", "økologisk", "okologisk", "økologiske", "skiver", "skive", "naturel", "natural",
+const QUALIFIER = new Set(["øko", "oko", "økologisk", "okologisk", "økologiske", "baby", "skiver", "skive", "naturel", "natural",
   "dansker", "danmark", "dk", "klasse", "1", "2", "3", "stk", "ex", "pant", "uden", "indh", "indholdt", "tilsat",
   "light", "let", "stor", "store", "mellem", "sm", "ml", "g", "kg", "l"]);
 

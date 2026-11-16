@@ -60,6 +60,9 @@ function ruleLabel(rule) {
 
 // Words in front of the product, or a quantity stuck to it, that Namlig search does
 // not need. They made "Håndfuld bønnespirer" and "Ægnudler, ca. 200 g" unfindable.
+// A category in front of a shape is not the product: "Pasta penne" is Penne. The list
+// stays short on purpose; a word that is itself a product ("ris", "fisk") is not here.
+const GENERIC_HEAD = new Set(["pasta"]);
 const NOISE = ["håndfuld", "hndsfuld", "knivspids", "lidt", "ca", "evt", "gerne", "fx", "til", "ell", "eller", "optøede", "friske", "frisk", "frosne", "frossen",
   "finthakkede", "finthakket", "grofthakkede", "hakket", "revet", "rivet", "snittede", "skiver", "stykker", "stk", "pk", "både", "bidder", "små", "halv", "halve", "kvart", "lille", "store", "stor",
   "saften", "heraf", "deraf", "gerne", "pr", "person", "portioner", "af", "med", "og", "til", "en", "et", "den", "det", "the", "røget", "røgede", "glutenfri", "økologisk", "øko"];
@@ -98,6 +101,7 @@ export function cleanQuery(text, asides = []) {
   const words = asideCut(t, asides)
     .filter((w) => w.length > 1 && !NOISE.includes(w))
     .filter((w) => !/^\d/.test(w));
+  if (words.length > 1 && GENERIC_HEAD.has(fold(words[0]))) words.shift();
   const kept = words.slice(0, 3);
   if (kept.length === 0) return String(text || "").trim();
   return titleCase(kept.join(" "));
@@ -300,7 +304,10 @@ export function chooseDinners(pool, opts) {
   // rotation. A dish named in `wanted` is still honoured, because that is a person asking.
   const noVeg = opts.noVegetarian === true;
   const isVeg = (p) => ["vegetar", "vegan", "vegetarisk", "ostaeq", "aeg"].includes(String(p.protein || "").toLowerCase());
-  const rest = pool.filter((p) => !forced.includes(p) && !refused.has(p.url) && !(noVeg && isVeg(p)));
+  const excludedWords = (opts.excludeWords || []).map((w) => String(w).toLowerCase().trim()).filter(Boolean);
+  const nameExcluded = (p) => excludedWords.some((w) => String(p.name || "").toLowerCase().includes(w));
+  const rest = pool.filter((p) => !forced.includes(p) && !refused.has(p.url)
+    && !(noVeg && isVeg(p)) && !nameExcluded(p));
   const ex = opts.exploration || {};
   const coolDays = Number(ex.cooldownDays) || 42;
   const coolTimes = Number(ex.cooldownTimes) || 3;
@@ -314,7 +321,10 @@ export function chooseDinners(pool, opts) {
     return c.dates.filter((iso) => iso >= cutoff).length >= coolTimes;
   };
   const cookedAgo = (d) => (lastUsed[d.url] ? daysSince(lastUsed[d.url]) : NEVER_COOKED);
-  const rank = (d) => cookedAgo(d) + (liked.has(d.url) ? 30 : 0);
+  // A dish the family rated good is a favourite, not a nudge: +30 was smaller than a
+  // normal gap between two dinners, so a liked dish still lost to the oldest one. A year
+  // puts the favourite at the front of the known half without pinning it forever.
+  const rank = (d) => cookedAgo(d) + (liked.has(d.url) ? 365 : 0);
   const queue = orderQueue(rest, { rank, alternate: opts.alternateNewAndKnown !== false });
   const fill = fillPeriod({ queue, forced, days, coversOf, maxPerProtein, isResting,
     noVariants: opts.neverTwoVariantsOfTheSameDinner !== false, coolDays, coolTimes });
