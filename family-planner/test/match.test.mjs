@@ -310,7 +310,7 @@ test("chooseDinners alternates a new dish with one the family knows", async () =
 });
 
 // --- apply.mjs: recipe card first, plan quantity second, rejects third -------------
-import { wantQtyOf, extrasToZero } from "../apply.mjs";
+import { wantQtyOf, cardDecisions, cardLineOf } from "../apply.mjs";
 
 test("a plan quantity overwrites the amount a recipe card put in, down as well as up", () => {
   assert.equal(wantQtyOf({ packs: 2 }, 5, true), 2);
@@ -326,15 +326,59 @@ test("a planned quantity of zero is refused instead of wiping a line", () => {
   assert.equal(wantQtyOf({ packs: 0 }, 2, true), null);
 });
 
-test("only recipe products the plan rejects are zeroed", () => {
-  const lines = [
-    { sku: "1", name: "Dild" },
-    { sku: "2", name: "Kylling" },
-    { sku: "3", name: "Salt" },
-    { sku: "3", name: "Salt" },
+test("a card product the plan wants at that quantity is kept, not written again", () => {
+  const cards = [{ sku: "5001", name: "Spaghetti", qty: 3 }];
+  const plan = [{ sku: "5001", name: "Spaghetti", packs: 2 }];
+  const out = cardDecisions(cards, plan);
+  assert.deepEqual(out.keep.map((d) => d.sku), ["5001"], "the card already holds it");
+  assert.deepEqual(out.topUp, []);
+  assert.deepEqual(out.zero, []);
+  assert.equal(out.covered.has("5001"), true, "so writeItems does not touch it");
+});
+
+test("a card product the plan wants more of is topped up, never added again", () => {
+  const cards = [{ sku: "5002", name: "Ris", qty: 1 }];
+  const plan = [{ sku: "5002", name: "Ris", packs: 3 }];
+  const out = cardDecisions(cards, plan);
+  assert.deepEqual(out.topUp.map((d) => [d.sku, d.setTo]), [["5002", 3]], "set_basket_quantity, not add_to_basket");
+  assert.equal(out.keep.length, 0);
+  assert.equal(out.covered.has("5002"), true);
+});
+
+test("a card product no plan line matches is zeroed", () => {
+  const cards = [{ sku: "5003", name: "Dild", qty: 1 }];
+  const plan = [{ sku: "5001", name: "Spaghetti", packs: 2 }];
+  const out = cardDecisions(cards, plan);
+  assert.equal(out.zero.length, 1);
+  assert.match(out.zero[0].why, /no plan line for it/);
+  assert.equal(out.covered.size, 0);
+});
+
+test("a card product the plan buys as another product is zeroed, and the plan's pick wins", () => {
+  const cards = [{ sku: "5004", name: "Spaghetti", qty: 1 }];
+  const plan = [{ sku: "5005", name: "Spaghetti øko.", packs: 2 }];
+  const out = cardDecisions(cards, plan);
+  assert.equal(out.zero.length, 1);
+  assert.match(out.zero[0].why, /plan buys it as Spaghetti øko\./);
+  assert.equal(out.topUp.length, 0, "the card sku is not the plan sku, so nothing is topped up");
+});
+
+test("one decision per sku, and a card line with no sku is skipped", () => {
+  const cards = [
+    { sku: "5001", name: "Spaghetti", qty: 2 },
+    { sku: "5001", name: "Spaghetti", qty: 2 },
+    { sku: "", name: "Salt", qty: 1 },
   ];
-  const out = extrasToZero(lines, new Set(["2"]), new Set(["3"]));
-  assert.deepEqual(out.map((x) => x.sku), ["1"]);
+  const plan = [{ sku: "5001", name: "Spaghetti", packs: 2 }];
+  const out = cardDecisions(cards, plan);
+  assert.equal(out.keep.length, 1);
+  assert.equal(out.zero.length, 0, "a line with no sku cannot be acted on");
+});
+
+test("a card line reads the field names recipeLines returns", () => {
+  const line = cardLineOf({ recipe: "A", productId: 5001, name: "Spaghetti", quantity: "2" });
+  assert.deepEqual(line, { sku: "5001", name: "Spaghetti", qty: 2 });
+  assert.equal(cardLineOf({ sku: "9", productNumber: "9", quantity: 1 }).sku, "", "the old wrong field is not read");
 });
 
 // --- similarity.mjs: the same dinner in another wrapper ---------------------------

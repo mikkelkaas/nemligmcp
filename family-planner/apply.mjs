@@ -28,6 +28,7 @@ import { writeRotation } from "./dinners.mjs";
 import { login } from "./auth.mjs";
 import { resolvePlanRecipes, recipeLines } from "./recipes.mjs";
 import { loadFamily } from "./family.mjs";
+import { score, MIN_NAME_SCORE } from "./match.mjs";
 
 import { HOME as BASE, writeJsonAtomic, withLock } from "./paths.mjs";
 // What this script understands, so a typo in a flag is named instead of ignored.
@@ -43,6 +44,11 @@ function writeGate() {
 // Recipe cards go through the shop's own web API with its own session, so the gate above
 // does not reach them. They keep their own fixed spacing.
 const WEB_STEP_DELAY_MS = 350;
+
+/** Two decimals, for a kr amount the shop reported. */
+function round2(n) {
+  return Number(Number(n).toFixed(2));
+}
 
 /**
  * One line per dinner, appended when a plan really goes into the basket. This is the
@@ -62,16 +68,51 @@ function arg(name, dflt) {
   return i > -1 ? process.argv[i + 1] : dflt;
 }
 
-/** Read the live basket into a map of sku -> { qty, name }. */
+/** One product a recipe card brought, in the shape the card path uses. The field names
+ *  matter: recipeLines returns productId and quantity, and a wrong read here leaves every
+ *  card line with no sku and no quantity, so no decision can be made about it. */
+export function cardLineOf(line) {
+  return {
+    sku: String(line.productId ?? ""),
+    name: String(line.name ?? ""),
+    qty: Number(line.quantity ?? 0),
+  };
+}
+
+/** The products that sit inside recipe cards, keyed by sku. A card product is not a basket
+ *  line: it lives under Recipes[].RecipeLineItems and the same sku can arrive on two cards. */
+function cardProductsOf(json) {
+  const map = new Map();
+  for (const line of recipeLines(json).map(cardLineOf)) {
+    if (!line.sku) continue;
+    const prev = map.get(line.sku);
+    map.set(line.sku, prev ? { ...prev, qty: prev.qty + line.qty } : line);
+  }
+  return map;
+}
+
+/** Read the live basket into a map of sku -> { qty, name }, plus the card products.
+ *  The map holds Lines only, because that is what a quantity write acts on. */
 async function basketMap(mcp) {
   const b = await mcp.call("get_basket", {}, { timeoutMs: CALL_TIMEOUT });
   if (b.isError) throw new Error("get_basket failed: " + b.text.slice(0, 200));
+  const json = b.json || {};
   const map = new Map();
-  for (const l of (b.json && b.json.Lines) || []) {
+  for (const l of json.Lines || []) {
     const sku = String(l.ProductNumber ?? l.ProductId ?? l.Id ?? "");
     if (sku) map.set(sku, { sku, name: l.Name || l.ProductName || "", qty: Number(l.Quantity ?? l.Amount ?? 0) });
   }
-  return { map, json: b.json || {} };
+  return { map, cards: cardProductsOf(json), json };
+}
+
+/** What the basket holds for a sku: its own line plus what the recipe cards brought. */
+function quantityMap(lines, cards) {
+  const out = new Map(lines);
+  for (const [sku, entry] of cards) {
+    const prev = out.get(sku);
+    out.set(sku, prev ? { ...prev, qty: prev.qty + entry.qty } : entry);
+  }
+  return out;
 }
 
 /** One write per product: absolute quantity. A plan line that came with a recipe card is
@@ -121,18 +162,85 @@ export function wantQtyOf(item, existingQty, fromRecipe) {
   return Math.max(existingQty, packs);
 }
 
-/** Recipe-card products the plan does not want, and that were not in the basket before. */
-export function extrasToZero(lines, plannedSkus, beforeSkus) {
-  const out = [];
+/** The plan item whose name reads most like the card product, or null below the threshold. */
+function bestPlanMatch(cardName, planItems) {
+  let best = null;
+  let bestScore = 0;
+  for (const item of planItems) {
+    const s = score(cardName, item.name);
+    if (s > bestScore) {
+      bestScore = s;
+      best = item;
+    }
+  }
+  return bestScore >= MIN_NAME_SCORE ? best : null;
+}
+
+/**
+ * What to do with each product that came with a recipe card. One pass, one decision per
+ * sku. The card brings the product when the plan wants that product, the plan's own pick
+ * wins when it is another product, and nothing is bought twice.
+ * Pure, so the suite can hand it fake cards and fake plan items.
+ */
+export function cardDecisions(cardLines, planItems) {
+  const keep = [];
+  const zero = [];
+  const topUp = [];
+  const covered = new Set();
   const seen = new Set();
-  for (const line of lines) {
+  for (const line of cardLines) {
     const sku = String(line.sku ?? "");
     if (!sku || seen.has(sku)) continue;
     seen.add(sku);
-    if (plannedSkus.has(sku) || beforeSkus.has(sku)) continue;
-    out.push({ sku, name: String(line.name || "") });
+    const name = String(line.name ?? "");
+    const qty = Number(line.qty ?? 0);
+    const exact = planItems.find((item) => String(item.sku) === sku);
+    if (exact) {
+      const packs = Number(exact.packs);
+      if (qty >= packs) {
+        keep.push({ sku, name, qty, packs });
+      } else {
+        topUp.push({ sku, name, qty, setTo: packs });
+      }
+      covered.add(sku);
+      continue;
+    }
+    const best = bestPlanMatch(name, planItems);
+    zero.push({
+      sku,
+      name,
+      why: best ? `plan buys it as ${best.name}` : "no plan line for it",
+    });
   }
-  return out;
+  return { keep, zero, topUp, covered };
+}
+
+/** One line per card decision: what happens, to which product, and why. */
+function printDecisions(decisions) {
+  for (const d of decisions.keep) console.log(`  keep  ${String(d.name).slice(0, 42).padEnd(42)} card ${d.qty}, plan wants ${d.packs}: the card brings it`);
+  for (const d of decisions.topUp) console.log(`  topup ${String(d.name).slice(0, 42).padEnd(42)} card ${d.qty}, plan wants ${d.setTo}: top up`);
+  for (const d of decisions.zero) console.log(`  zero  ${String(d.name).slice(0, 42).padEnd(42)} ${d.why}`);
+  const total = decisions.keep.length + decisions.topUp.length + decisions.zero.length;
+  if (total) console.log(`  card  ${total} decision(s): ${decisions.keep.length} kept, ${decisions.topUp.length} topped up, ${decisions.zero.length} zeroed.`);
+}
+
+/** Raise a card product to the plan's quantity. The shop turns the difference into a line
+ *  and re-prices the card. Never add_to_basket here: that overwrites the card's own amount. */
+async function topUpCardProducts(mcp, topUps, keepGoing) {
+  const done = [];
+  const failed = [];
+  for (const up of topUps) {
+    const r = await mcp.call("set_basket_quantity", { productId: up.sku, quantity: up.setTo }, { timeoutMs: CALL_TIMEOUT });
+    if (r.isError) {
+      failed.push({ sku: up.sku, name: up.name, error: r.text.slice(0, 160) });
+      console.log(`  FAIL  ${String(up.name).slice(0, 42).padEnd(42)} could not top up: ${r.text.slice(0, 120)}`);
+      if (!keepGoing) break;
+      continue;
+    }
+    done.push(up);
+  }
+  if (topUps.length) console.log(`  topup ${done.length} of ${topUps.length} card product(s) raised to the plan quantity.`);
+  return { done, failed };
 }
 
 /**
@@ -145,7 +253,7 @@ async function addRecipeCards(mcp, plan) {
     console.log(`  miss  recipe card "${miss.name}": ${miss.why}`);
   }
   const dishes = all.filter((d) => d.guid);
-  if (dishes.length === 0) return { cards: [], lines: [] };
+  if (dishes.length === 0) return { cards: [], lines: [], cardMoneyKr: 0 };
   const people = Number(plan.options?.people || 5);
   const session = await login();
   const cards = [];
@@ -160,12 +268,14 @@ async function addRecipeCards(mcp, plan) {
     if (ok) await sleep(WEB_STEP_DELAY_MS); // the web session is not covered by the MCP gate
   }
   const basket = await session.get("/webapi/basket/GetBasket");
-  const lines = recipeLines(basket.body).map((l) => ({ sku: l.sku ?? l.productNumber, name: l.name, qty: l.quantity }));
-  console.log(`  card  ${lines.length} product(s) came in with the recipe cards.`);
-  return { cards, lines };
+  const body = basket.body || {};
+  const lines = recipeLines(body).map(cardLineOf);
+  const cardMoneyKr = round2((body.Recipes || []).reduce((sum, r) => sum + (Number(r.RecipeTotalPrice) || 0), 0));
+  console.log(`  card  ${lines.length} product(s) came in with the recipe cards, ${cardMoneyKr} kr in card money.`);
+  return { cards, lines, cardMoneyKr };
 }
 
-/** Step 3: drop the recipe products the plan does not want. Never touches an earlier line. */
+/** Step 5: zero the recipe products the plan does not want. Never touches an earlier line. */
 async function zeroExtras(mcp, extras, keepGoing) {
   const zeroed = [];
   const failed = [];
@@ -173,12 +283,12 @@ async function zeroExtras(mcp, extras, keepGoing) {
     const r = await mcp.call("set_basket_quantity", { productId: extra.sku, quantity: 0 }, { timeoutMs: CALL_TIMEOUT });
     if (r.isError) {
       failed.push({ sku: extra.sku, name: extra.name, error: r.text.slice(0, 160) });
-      console.log(`  FAIL  ${extra.name.slice(0, 42).padEnd(42)} could not remove: ${r.text.slice(0, 120)}`);
+      console.log(`  FAIL  ${String(extra.name).slice(0, 42).padEnd(42)} could not remove: ${r.text.slice(0, 120)}`);
       if (!keepGoing) break;
       continue;
     }
     zeroed.push(extra);
-    console.log(`  zero  ${extra.name.slice(0, 42).padEnd(42)} from the recipe card, not in the plan`);
+    console.log(`  zero  ${String(extra.name).slice(0, 42).padEnd(42)} ${extra.why || "not in the plan"}`);
   }
   return { zeroed, failed };
 }
@@ -233,39 +343,71 @@ async function main() {
   await withLock("apply", () => writeBasket({ plan, planPath, slotId, keepGoing, wantCards, household, fam }));
 }
 
+/** The shop's own kr amounts beside the plan's total. A null means the shop did not report it. */
+function moneyOf(plan, cards, after) {
+  const planTotalKr = Number(plan.planTotal);
+  const products = after.json.TotalProductsPrice;
+  const basketProductsKr = products === null || products === undefined ? NaN : Number(products);
+  const known = Number.isFinite(planTotalKr) && Number.isFinite(basketProductsKr);
+  return {
+    planTotalKr: Number.isFinite(planTotalKr) ? planTotalKr : null,
+    cardMoneyKr: round2(cards.cardMoneyKr || 0),
+    basketProductsKr: Number.isFinite(basketProductsKr) ? basketProductsKr : null,
+    differenceKr: known ? round2(basketProductsKr - planTotalKr) : null,
+    overPlan: known && basketProductsKr > planTotalKr * 1.05,
+  };
+}
+
 /** Everything that touches the live basket, in one bounded sequence. */
 async function writeBasket({ plan, planPath, slotId, keepGoing, wantCards, household, fam }) {
   const { mcp } = await connect(loadEnv(), { limiter: new Limiter(writeGate()) });
   const before = await basketMap(mcp);
-  const beforeSkus = new Set(before.map.keys());
   console.log(`Basket before: ${before.map.size} line(s), ${before.json.TotalProductsPrice ?? 0} kr products.`);
 
-  // 1. recipe cards first: their products land in the basket, then the plan overwrites them.
+  // 1. Recipe cards first: their products land in the basket, then one decision each.
   const cards = wantCards
     ? await addRecipeCards(mcp, plan)
-    : { cards: [], lines: [], skipped: "--recipes no" };
+    : { cards: [], lines: [], cardMoneyKr: 0 };
   if (!wantCards) console.log("  skip  recipe cards (--recipes no)");
-  const recipeSkus = new Set(cards.lines.map((l) => String(l.sku)));
 
-  // 2. the plan's own quantities, read against the basket the cards just changed.
+  // 2. What each card product is worth to this plan.
+  const decisions = cardDecisions(cards.lines, plan.items);
+  printDecisions(decisions);
+
+  // 3. Top up before the plan writes: add_to_basket would overwrite the card.
+  const topUps = await topUpCardProducts(mcp, decisions.topUp, keepGoing);
+
+  // 4. The plan writes only what a card does not already cover.
   const withCards = cards.lines.length ? await basketMap(mcp) : before;
-  const { adds, failed } = await writeItems(mcp, plan.items, withCards.map, keepGoing, recipeSkus);
+  const toWrite = plan.items.filter((i) => !decisions.covered.has(String(i.sku)));
+  for (const item of plan.items.filter((i) => decisions.covered.has(String(i.sku)))) {
+    console.log(`  cover ${String(item.name).slice(0, 42).padEnd(42)} already in the basket with a recipe card`);
+  }
+  const recipeSkus = new Set(cards.lines.map((l) => String(l.sku)));
+  const { adds, failed } = await writeItems(mcp, toWrite, withCards.map, keepGoing, recipeSkus);
 
-  // 3. what the cards brought that the plan does not want goes to zero.
-  const extras = extrasToZero(cards.lines, new Set(plan.items.map((i) => String(i.sku))), beforeSkus);
-  const dropped = await zeroExtras(mcp, extras, keepGoing);
-  if (extras.length) console.log(`  zero  ${dropped.zeroed.length} of ${extras.length} recipe product(s) the plan does not use.`);
+  // 5. Card products the plan does not want go to zero. An earlier line is never touched.
+  const dropped = await zeroExtras(mcp, decisions.zero, keepGoing);
+  if (decisions.zero.length) console.log(`  zero  ${dropped.zeroed.length} of ${decisions.zero.length} recipe product(s) the plan does not use.`);
 
+  await finishBasket({ mcp, plan, planPath, slotId, before, cards, topUps, dropped, adds, failed, household });
+}
+
+/** Read the basket back, verify it, record the shop's money, and print the result. */
+async function finishBasket({ mcp, plan, planPath, slotId, before, cards, topUps, dropped, adds, failed, household }) {
   const slot = await pickSlot(mcp, slotId, adds);
   const after = await basketMap(mcp);
-  const missing = verificationOf(adds, after.map);
+  const missing = verificationOf(adds, quantityMap(after.map, after.cards));
   const report = {
     kind: "nemlig-apply",
     at: new Date().toLocaleString("da-DK", { timeZone: household.timezone || "Europe/Copenhagen", hour12: false }) + " (Europe/Copenhagen)",
     planFile: planPath,
     planCreatedAt: plan.createdAt,
+    ...moneyOf(plan, cards, after),
     added: adds,
     failed,
+    cardTopUps: topUps.done,
+    cardTopUpFailed: topUps.failed,
     recipeCards: cards.cards,
     recipeProducts: cards.lines.length,
     removedFromRecipe: dropped.zeroed,
@@ -285,8 +427,8 @@ async function writeBasket({ plan, planPath, slotId, keepGoing, wantCards, house
     console.log(`Rotation updated: ${cooked.length} dinner(s) marked cooked on ${day}, so the next plan rotates away from them.`);
   }
   const written = saveReport(report);
-  printResult(adds, failed, after, report, missing, written, cards, dropped);
-  if (failed.length) process.exitCode = 1;
+  printResult({ adds, failed, after, report, missing, written, cards, dropped, topUps });
+  if (failed.length || topUps.failed.length) process.exitCode = 1;
 }
 
 /** Refuse to write when the plan is not applicable. Returns null when all is well.
@@ -374,18 +516,23 @@ function saveReport(report) {
   return { file, stamp };
 }
 
-function printResult(adds, failed, after, report, missing, written, cards, dropped) {
+function printResult({ adds, failed, after, report, missing, written, cards, dropped, topUps }) {
   console.log("");
   console.log(`APPLIED: ${adds.length} product(s) written. Basket now ${after.map.size} lines, ${after.json.TotalProductsPrice ?? "?"} kr products, ${after.json.TotalPrice ?? "?"} kr total (delivery ${after.json.DeliveryPrice ?? "?"} kr).`);
+  console.log(`Money: plan ${report.planTotalKr ?? "?"} kr, recipe cards ${report.cardMoneyKr} kr, basket products ${report.basketProductsKr ?? "?"} kr, difference ${report.differenceKr ?? "?"} kr.`);
+  if (report.overPlan) {
+    console.log(`NOTE: basket products ${report.basketProductsKr} kr is ${report.differenceKr} kr more than the ${report.planTotalKr} kr plan, over 5 percent. Read the card decisions before you confirm.`);
+  }
   if (after.json.MinimumOrderTotal && after.json.IsMinTotalValid === false) {
     console.log(`NOTE: minimum order is ${after.json.MinimumOrderTotal} kr and it is not met yet.`);
   }
   if (cards.cards.length) {
     const okCards = cards.cards.filter((c) => c.ok).length;
-    console.log(`Recipe cards: ${okCards}/${cards.cards.length} added, ${cards.lines.length} product(s) came with them, ${dropped.zeroed.length} of those removed again.`);
+    console.log(`Recipe cards: ${okCards}/${cards.cards.length} added, ${cards.lines.length} product(s) came with them, ${topUps.done.length} topped up, ${dropped.zeroed.length} removed again.`);
   }
   console.log("Verification: " + report.verification + (missing.length ? " — " + missing.map((m) => m.name + " wanted " + m.wanted + " got " + m.got).join("; ") : ""));
-  if (failed.length) console.log(`Failed writes: ${failed.length} — see ${written.file}`);
+  const writeFailures = failed.length + topUps.failed.length;
+  if (writeFailures) console.log(`Failed writes: ${writeFailures} — see ${written.file}`);
   console.log("No order was placed. Check the basket in the app, then confirm there.");
 }
 
