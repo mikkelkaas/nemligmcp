@@ -369,6 +369,10 @@ export function mergeItems(resolved, purchase) {
     if (nb) {
       if (!e.needMeasure) e.needMeasure = nb.measure;
       if (e.needMeasure === nb.measure) e.needAmount = Number((e.needAmount + nb.value).toFixed(2));
+      // A count ask ("2 stk" milk from the breakfast block) cannot be added to a litre need
+      // from a recipe. Remember the packs that ask paid for, so the litre sum cannot bargain
+      // the basket down under a quantity the family named.
+      else e.unfoldedPacks = Number((e.unfoldedPacks || 0) + r.packs);
     }
     e.packs += r.packs;
     e.sources.push(r.source);
@@ -387,10 +391,15 @@ export function mergeItems(resolved, purchase) {
     const summed = e.needMeasure && e.needAmount > 0 && e.sources.length > 1
       ? choosePack({ qty: e.needAmount, unit: e.needMeasure }, [e], { name: e.name, pieceWeight: pieceWeightOf(e), ...(purchase || {}) })
       : null;
-    if (summed && summed.packs !== e.packs) {
-      e.packs = summed.packs;
+    // The sum decides the pack, but never below the packs a count ask paid for.
+    const wantPacks = summed ? Math.max(summed.packs, e.unfoldedPacks || 0) : e.packs;
+    if (summed && wantPacks !== e.packs) {
+      e.packs = wantPacks;
       e.why.push(`${summed.why} summed from ${e.sources.length} lines`);
-      e.rationales.push(`${e.needAmount} ${e.needMeasure} wanted across ${e.sources.length} lines, bought as ${summed.packs} pack(s)`);
+      e.rationales.push(`${e.needAmount} ${e.needMeasure} wanted across ${e.sources.length} lines, bought as ${e.packs} pack(s)`);
+      if ((e.unfoldedPacks || 0) > summed.packs) {
+        e.why.push(`${e.unfoldedPacks} pack(s) were asked as a count on one line: a ${e.needMeasure} sum cannot hold that, so the count stands`);
+      }
     }
     return {
       ...e,

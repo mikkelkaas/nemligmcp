@@ -227,3 +227,20 @@ test("a pantry line states the basis its quantity is written on", () => {
   assert.match(lineFor({ per: "person-day" }, 0).skipped, /household.blockPeople.lunchbox is 0/, "and says why");
   assert.equal(lineFor({}, 0).need, "1 stk", "a mined line keeps its floor even with no head-count");
 });
+
+import { parsePack } from "../units.mjs";
+
+test("a count ask is not bargained away by a summed measure", () => {
+  // Breakfast wants 2 packs of the milk; the æggekage recipe needs 1 dl of the same sku.
+  const milk = { sku: "5019862", name: "Letmælk 0,4%", brand: "Danmælk", price: 10.5, unitPrice: 10.5,
+    unitLabel: "kr/l", pack: parsePack("1000 ml"), url: "", onSale: true };
+  const rows = [
+    { ok: true, source: "dinner:/opskrifter/aeggekage", mode: "cheapest", need: { qty: 0.1, unit: "l" }, packs: 1, pick: milk, why: "cheapest", rationale: "0.1 l" },
+    { ok: true, source: "breakfast:minimaelk", mode: "history", need: { qty: 2, unit: "stk" }, packs: 2, pick: milk, why: "your block", rationale: "2 stk" },
+  ];
+  const merged = mergeItems(rows, {}).items;
+  assert.equal(merged.length, 1, "one shelf item, one basket line");
+  assert.equal(merged[0].packs, 2, "the litre sum covers 0,1 l in one pack, and must not cut the 2 packs the block asked for");
+  assert.equal(merged[0].total, 21, "2 x 10,50 kr");
+  assert.ok(String(merged[0].why).includes("count stands"), "the plan says why the count won");
+});
