@@ -69,6 +69,16 @@ function sumOf(plan) {
   return Number((plan.items || []).reduce((s, i) => s + Number(i.total || 0), 0).toFixed(2));
 }
 
+/** The lines a plan's total is the sum of: the adds when the plan carries them, else all
+ *  items. validatePlan uses the same basis, so a check that wants to read planTotal must. */
+function totalBasisOf(plan) {
+  return Array.isArray(plan.adds) ? plan.adds : (plan.items || []);
+}
+
+function sumForTotal(plan) {
+  return Number(totalBasisOf(plan).reduce((s, i) => s + Number(i.total || 0), 0).toFixed(2));
+}
+
 /** A closed-endpoint env file, written into the scratch home. Credentials in it are fakes:
  *  the port answers nothing, so no endpoint is ever reached with anything real. */
 function closedEnvFile(home) {
@@ -98,15 +108,18 @@ function handPlan(home, name, change) {
 function checkGuards(dir) {
   const approve = ["--approve", "I-APPROVE-THIS-BASKET"];
   const cases = [
-    { name: "guard:stale", make: (p) => { p.atIso = new Date(Date.now() - 40 * 3600000).toISOString(); },
+    // Each probe states the whole condition it is about. An unresolved line is a shop fact,
+    // and it is refused before the age gate: the two age cases clear it, or they measure the
+    // stock-out instead of the guard they name.
+    { name: "guard:stale", make: (p) => { p.atIso = new Date(Date.now() - 40 * 3600000).toISOString(); p.unresolved = []; },
       expect: (r) => r.code === 5 && /h old/.test(r.out), want: "exit 5, named as hours old" },
-    { name: "guard:no readable stamp", make: (p) => { p.atIso = null; p.createdAt = "sidst"; },
+    { name: "guard:no readable stamp", make: (p) => { p.atIso = null; p.createdAt = "sidst"; p.unresolved = []; },
       expect: (r) => r.code === 5 && /no readable time stamp/.test(r.out), want: "exit 5, an unknown age is refused too" },
     { name: "guard:unresolved line", make: (p) => { p.unresolved = [{ query: "Ost 38+", source: "dinners:test" }]; },
       expect: (r) => r.code === 4 && /Ost 38\+/.test(r.out), want: "exit 4, naming the line" },
     { name: "guard:no products", make: (p) => { p.items = []; },
       expect: (r) => r.code === 6 && /does not hold up/.test(r.out), want: "exit 6, the file is rejected" },
-    { name: "guard:total does not add up", make: (p) => { p.planTotal = sumOf(p) + 50; },
+    { name: "guard:total does not add up", make: (p) => { p.planTotal = sumForTotal(p) + 50; },
       expect: (r) => r.code === 6 && /does not match/.test(r.out), want: "exit 6, arithmetic is checked" },
   ];
   for (const c of cases) {
@@ -124,9 +137,9 @@ function checkArithmetic(dir, label) {
   const plan = planOf(dir);
   if (!plan) return record(label, false, "no plan file to check");
   const problems = validatePlan(plan);
-  const sum = sumOf(plan), total = Number(plan.planTotal);
+  const sum = sumForTotal(plan), total = Number(plan.planTotal);
   record(label, problems.length === 0 && Math.abs(sum - total) < 0.51,
-    `${plan.items.length} lines, they add up to ${sum.toFixed(2)}, planTotal says ${total.toFixed(2)}, validator: ${problems.length ? problems[0] : "clean"}`);
+    `${totalBasisOf(plan).length} line(s), they add up to ${sum.toFixed(2)}, planTotal says ${total.toFixed(2)}, validator: ${problems.length ? problems[0] : "clean"}`);
 }
 
 function checkEightDay(dir) {
