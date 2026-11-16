@@ -204,6 +204,9 @@ function familyRulesOf(profile) {
     if (r.minPackGrams !== undefined && !(Number.isFinite(r.minPackGrams) && r.minPackGrams >= 1 && r.minPackGrams <= 5000)) {
       throw new Error(`${at}.minPackGrams must be between 1 and 5000 grams - a pack nobody sells is a mistake, not a taste`);
     }
+    if (r.maxFatPct !== undefined && !(Number.isFinite(r.maxFatPct) && r.maxFatPct >= 1 && r.maxFatPct <= 50)) {
+      throw new Error(`${at}.maxFatPct must be between 1 and 50 percent`);
+    }
     // `alt` is a search text, so it keeps the family's case; the word lists do not.
     const alt = texts(r.alt, `${at}.alt`, 5);
     return {
@@ -212,6 +215,7 @@ function familyRulesOf(profile) {
       query: r.query === undefined ? null : r.query.trim(), alt,
       avoid: words(r.avoid, `${at}.avoid`, 20, 2),
       maxKrPerKg: r.maxKrPerKg === undefined ? null : r.maxKrPerKg,
+      maxFatPct: r.maxFatPct === undefined ? null : r.maxFatPct,
       minPackGrams: r.minPackGrams === undefined ? null : r.minPackGrams,
     };
   });
@@ -227,6 +231,7 @@ function meatOf(profile, generated) {
       query: k.buy || rule.query,
       fatBands: k.fatBands || rule.fatBands,
       maxKrPerKg: k.maxKrPerKg === undefined ? rule.maxKrPerKg : k.maxKrPerKg,
+      maxFatPct: k.maxFatPct === undefined ? rule.maxFatPct : k.maxFatPct,
       avoid: k.never || rule.avoid,
       // Extra queries worth trying when Namlig is out of the preferred one: the profile
       // lists them per protein, so an out-of-stock item becomes a swap, not a miss.

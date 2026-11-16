@@ -55,7 +55,8 @@ function ruleLabel(rule) {
     if (rule.maxKrPerKg) bits.push(`ceiling ${rule.maxKrPerKg} kr per kg`);
     return bits.join(", ");
   }
-  return `meat rule "${rule.id}": ${rule.fatBands?.length ? "fat " + rule.fatBands.join("/") + ", " : ""}ceiling ${rule.maxKrPerKg || "-"} kr per kg`;
+  const fat = rule.maxFatPct ? `fat at most ${rule.maxFatPct}%, ` : rule.fatBands?.length ? "fat " + rule.fatBands.join("/") + ", " : "";
+  return `meat rule "${rule.id}": ${fat}ceiling ${rule.maxKrPerKg || "-"} kr per kg`;
 }
 
 // Words in front of the product, or a quantity stuck to it, that Namlig search does
@@ -441,6 +442,7 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
       alt: rule ? rule.alt || [] : [altQuery(row.text, asides)].filter((q) => q && q !== row.query),
       avoidWords: rule ? rule.avoid || [] : [],
       maxUnitPrice: rule && rule.maxKrPerKg ? rule.maxKrPerKg : undefined,
+      maxFatPct: rule && rule.maxFatPct ? rule.maxFatPct : undefined,
       minPackGrams: rule && rule.minPackGrams ? rule.minPackGrams : undefined,
       need,
       mode: "cheapest",

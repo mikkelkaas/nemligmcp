@@ -122,6 +122,7 @@ and it refuses to run without `--approve I-APPROVE-THIS-BASKET`.
 |---|---|---|
 | `lib.mjs` | MCP client: env, endpoint, session, tool calls, timeouts | nothing |
 | `mine-history.mjs` | reads `get_order_history`, learns rebuys | `data/history-raw.json`, `data/patterns.json`, `data/staples.json`, `data/recipes.json` |
+| `pantry.mjs` | compiles the rebuy list and its cadence | `profiles/pantry.json` |
 | `match.mjs` | Danish name matching (norm, tokens, score, nameMatches) | nothing |
 | `units.mjs` | pack parsing and unit maths (g/kg, ml/l, stk) | nothing |
 | `catalog.mjs` | search + cache + intent → one product, with `alt` fallbacks | `data/product-cache.json` |
@@ -397,6 +398,7 @@ lines instead: no one cooks a fish salad for dinner.
 
 ```bash
 node mine-history.mjs            # after 5+ new orders
+node pantry.mjs --write          # compile the rebuy list and its stock schedule
 node pin-skus.mjs --write        # re-pin favourite SKUs
 node --test test/*.test.mjs      # the suite, incl. a stubbed search (no network)
 node tools/scenario-check.mjs    # the battery: guards, arithmetic, notes, shop scenarios
@@ -493,6 +495,7 @@ Rebuild the generated data with these, in this order, about once a month:
 
 ```bash
 node mine-history.mjs            # order history to data/staples.json, history-raw.json, recipes.json, patterns.json
+node pantry.mjs --write          # merge the rebuy evidence into profiles/pantry.json
 node mine-recipes.mjs            # every order's raw lines, recipe lines included
 node mine-recipes-fetch.mjs      # the recipe page of every recipe you have ordered
 node mine-recipes-analyze.mjs    # recipe ingredients vs what you actually bought

@@ -16,10 +16,20 @@
     "for the child roles, breakfast for everyone, the paper block for nobody). When that",
     "guess is wrong - adults who take a lunch box, say - set household.blockPeople in the",
     "family profile: { \"breakfast\": 3, \"kidLunchbox\": 3, \"snacks\": 2, \"household\": 1 }.",
-    "Every value here is invented. The quantities are the shape of the file, not advice."
+    "Every value here is invented. The quantities are the shape of the file, not advice.",
+    "After mine-history.mjs, run `node pantry.mjs --write`: it updates the evidence on each",
+    "line, computes everyNDays at 80 % of the measured purchase gap, and adds frequent",
+    "staples whose block is known. A name in `rejected` is never added again."
   ],
   "schemaVersion": 1,
   "cycleDays": 14,
+  "mining": {
+    "minOrders": 6,
+    "minPct": 8,
+    "maxPerBlock": 12,
+    "_note": "Thresholds for pantry.mjs. Edit them, or the block word lists under mining.blocks, for a household with other habits."
+  },
+  "rejected": [],
   "blocks": {
     "breakfast": [
       {

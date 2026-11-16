@@ -877,6 +877,7 @@ function poolDinnerIntents(options, wanted, rules, household) {
 export function searchIntentOf(it, options = {}) {
   const floor = Number(it.minPackGrams);
   const cap = Number(it.maxUnitPrice);
+  const fat = Number(it.maxFatPct);
   return {
     query: it.query, need: it.need, mode: it.mode, sku: it.sku, alt: it.alt || [],
     avoidBrands: options.avoid,
@@ -885,6 +886,7 @@ export function searchIntentOf(it, options = {}) {
     // every chicken product when the word was a product, not a maker.
     avoidWords: [...new Set([...(it.avoidWords || []), ...(options.avoid || [])])].slice(0, 40),
     maxUnitPrice: Number.isFinite(cap) && cap > 0 ? cap : undefined,
+    maxFatPct: Number.isFinite(fat) && fat > 0 ? fat : undefined,
     minPackGrams: Number.isFinite(floor) && floor > 0 ? floor : undefined,
     force: options.fresh,
     preferSale: it.preferSale, saleTolerancePct: it.saleTolerancePct, purchasing: options.purchasing,

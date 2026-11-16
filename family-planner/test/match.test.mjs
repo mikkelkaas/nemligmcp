@@ -655,6 +655,7 @@ test("two chicken pasta salads are the same dinner", () => {
 test("the protein comes from the name, not from one garnish line", () => {
   assert.equal(mainProtein({ name: "Nudler med kylling og broccoli", ingredients: [{ text: "Vannamei rejer" }] }), "kylling");
   assert.equal(mainProtein({ name: "Bami goreng med okse", ingredients: [{ text: "Kyllingestrimler" }] }), "oksekod");
+  assert.equal(mainProtein({ name: "Salatpizza med kebab og dressing", url: "/opskrifter/salatpizza-kyllingekebab-98004472" }), "kylling");
   assert.equal(dishFormat({ name: "Æggekage med spinat og laks" }), "aeg");
 });
 

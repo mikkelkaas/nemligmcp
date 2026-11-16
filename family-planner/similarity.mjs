@@ -69,7 +69,9 @@ function hits(tokens, word) {
 }
 
 export function mainProtein(recipe) {
-  const name = FOLD(wordsOf(recipe, "name")).split(" ").filter(Boolean);
+  // The url is the recipe's own slug: "salatpizza-kyllingekebab" names the meat even
+  // when the title only says "kebab", which the beef list would otherwise claim.
+  const name = FOLD([wordsOf(recipe, "name"), recipe.url || ""].join(" ")).split(" ").filter(Boolean);
   const tags = FOLD(wordsOf(recipe, "tags")).split(" ").filter(Boolean);
   const rawIng = FOLD(wordsOf(recipe, "ing"));
   // Fish sauce, soy and oyster sauce are seasonings, not the protein of the dish.

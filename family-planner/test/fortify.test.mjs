@@ -108,3 +108,14 @@ test("an explicit NEMLIG_MCP_URL is the only endpoint the client will try", asyn
     },
   );
 });
+
+test("the manual exclusion editor changes exact words, not substrings", async () => {
+  const { changeWords } = await import("../exclusions.mjs");
+  assert.deepEqual(
+    changeWords(["kapers", "prosciutto", "ymer"], { remove: ["ProSciutto", "ymer"], add: ["Feta", "feta"] }),
+    ["kapers", "feta"],
+    "case is folded, duplicates collapse, and kapers is untouched",
+  );
+  assert.deepEqual(changeWords(["x"], { remove: ["y"] }), ["x"], "removing a missing word is a no-op");
+  assert.deepEqual(changeWords([], { add: ["a", "a", "b"] }), ["a", "b"]);
+});

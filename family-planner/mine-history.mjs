@@ -2,6 +2,7 @@
 // mine-history.mjs — pull the whole Nemlig order history and build the knowledge base.
 //
 // Usage:  node mine-history.mjs [--max N] [--out DIR] [--quiet]
+//         node mine-history.mjs --from-raw   # rebuild staples and patterns offline
 //         --max 0 (default) mines every order the account returns, capped at 1000.
 //
 // Writes into --out (default this folder/data):
@@ -13,7 +14,7 @@
 //
 // Safety: read-only MCP calls (get_order_history, get_order_details). Nothing here
 // touches the basket. Calls are paced, every loop is bounded, every result is checked.
-import { mkdirSync, writeFileSync, appendFileSync } from "node:fs";
+import { mkdirSync, writeFileSync, appendFileSync, readFileSync } from "node:fs";
 import { connectGated, sleep } from "./lib.mjs";
 
 const PAGE = 10;          // get_order_history page size
@@ -123,7 +124,7 @@ function buildStaples(orders) {
       const e = byKey.get(key) || {
         sku: l.sku, name: l.name, group: l.group, mainGroup: l.mainGroup, packSize: l.packSize,
         orders: 0, totalQty: 0, qtys: [], unitPrices: [], recipeLines: 0,
-        firstDate: o.iso, lastDate: o.iso, lastOrder: o.orderNumber,
+        firstDate: o.iso, lastDate: o.iso, lastOrder: o.orderNumber, dates: new Set(),
       };
       e.orders += 1;
       e.totalQty += l.qty;
@@ -131,6 +132,7 @@ function buildStaples(orders) {
       if (l.unitPrice > 0) e.unitPrices.push(l.unitPrice);
       if (l.isRecipeLine) e.recipeLines += 1;
       if (o.iso) {
+        e.dates.add(o.iso);
         if (o.iso < e.firstDate) e.firstDate = o.iso;
         if (o.iso > e.lastDate) { e.lastDate = o.iso; e.lastOrder = o.orderNumber; }
       }
@@ -138,15 +140,24 @@ function buildStaples(orders) {
     }
   }
   const n = Math.max(1, orders.length);
-  return [...byKey.values()].map((e) => ({
-    sku: e.sku, name: e.name, group: e.group, mainGroup: e.mainGroup, packSize: e.packSize,
-    orders: e.orders, ordersPct: Number((e.orders / n * 100).toFixed(0)),
-    totalQty: Number(e.totalQty.toFixed(2)),
-    medianQty: median(e.qtys), meanQty: mean(e.qtys),
-    medianUnitPrice: Number(median(e.unitPrices).toFixed(2)),
-    recipeLinePct: Number((e.recipeLines / e.orders * 100).toFixed(0)),
-    firstDate: e.firstDate, lastDate: e.lastDate, lastOrder: e.lastOrder,
-  })).sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name));
+  return [...byKey.values()].map((e) => {
+    const dates = [...e.dates].sort();
+    const gaps = [];
+    for (let i = 1; i < dates.length; i++) {
+      const days = Math.round((Date.parse(dates[i]) - Date.parse(dates[i - 1])) / 86400000);
+      if (days > 0) gaps.push(days);
+    }
+    return {
+      sku: e.sku, name: e.name, group: e.group, mainGroup: e.mainGroup, packSize: e.packSize,
+      orders: e.orders, ordersPct: Number((e.orders / n * 100).toFixed(0)),
+      totalQty: Number(e.totalQty.toFixed(2)),
+      medianQty: median(e.qtys), meanQty: mean(e.qtys),
+      medianUnitPrice: Number(median(e.unitPrices).toFixed(2)),
+      recipeLinePct: Number((e.recipeLines / e.orders * 100).toFixed(0)),
+      firstDate: e.firstDate, lastDate: e.lastDate, lastOrder: e.lastOrder,
+      medianGapDays: gaps.length ? median(gaps) : null,
+    };
+  }).sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name));
 }
 
 /** Per-recipe usage, keyed on the recipe URL. One recipe spans many order lines. */
@@ -230,7 +241,8 @@ function buildPatterns(orders, staples) {
   };
 }
 
-async function main() {
+/** Fetch every order over MCP. Read-only, paced, bounded by MAX_PAGES and maxOrders. */
+async function mineOrders() {
   const { mcp, info } = await connectGated({ minIntervalMs: 200 });
   log(`connected to ${info.name} ${info.version}`);
   const listed = await listOrders(mcp);
@@ -254,14 +266,30 @@ async function main() {
     await sleep(DELAY_MS);
     if (maxOrders > 0 && orders.length >= maxOrders) break;
   }
+  return orders;
+}
+
+/** Rebuild the data files, from the API or from history-raw.json with --from-raw. */
+async function main() {
+  const offline = process.argv.includes("--from-raw");
+  let orders;
+  if (offline) {
+    orders = JSON.parse(readFileSync(outDir + "/history-raw.json", "utf8"));
+    if (!Array.isArray(orders)) throw new Error("history-raw.json must hold an array of orders");
+    log(`offline: ${orders.length} orders from ${outDir}/history-raw.json`);
+  } else {
+    orders = await mineOrders();
+  }
   orders.sort((a, b) => String(b.iso).localeCompare(String(a.iso)));
   const staples = buildStaples(orders);
   const recipes = buildRecipes(orders);
-  writeFileSync(outDir + "/history-raw.json", JSON.stringify(orders, null, 1));
   writeFileSync(outDir + "/staples.json", JSON.stringify(staples, null, 1));
-  writeFileSync(outDir + "/recipes.json", JSON.stringify(recipes, null, 1));
   writeFileSync(outDir + "/patterns.json", JSON.stringify(buildPatterns(orders, staples), null, 1));
-  log(`wrote 4 data files to ${outDir}`);
+  if (!offline) {
+    writeFileSync(outDir + "/history-raw.json", JSON.stringify(orders, null, 1));
+    writeFileSync(outDir + "/recipes.json", JSON.stringify(recipes, null, 1));
+  }
+  log(`wrote ${offline ? 2 : 4} data files to ${outDir}`);
   console.log(`\nOrders: ${orders.length} | distinct products: ${staples.length} | distinct recipes: ${recipes.length}`);
   console.log(`Window: ${orders.length ? orders.at(-1).iso : "-"} to ${orders.length ? orders[0].iso : "-"}`);
 }

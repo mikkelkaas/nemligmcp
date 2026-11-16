@@ -56,6 +56,35 @@ yes, lunch box yes, snacks no, household auto, menu chosen by the rotation".
 If the user says "do not touch my basket", that is a hard stop after Step 2: print the
 plan, report the numbers, and do not mention Step 3 as an option you are about to take.
 
+## Manual exclusion list
+
+The family profile is the source. The generated `profiles/exclusions.json` is evidence and
+is never hand-edited; `mine-history.mjs` may rebuild it. Use the editor:
+
+```bash
+node exclusions.mjs --list
+node exclusions.mjs --remove "prosciutto,ymer" --target never --write
+node exclusions.mjs --add "persille" --target herbs --write
+```
+
+`--target` is `never`, `pantry`, `herbs` or `rotation`. A run without `--write` is a dry run.
+The editor prints the removed and added words, then writes `profiles/family-*.json`.
+
+## Pantry and its schedule
+
+`profiles/pantry.json` is the rebuy list: milk, bread, lunch-box topping, fruit, cleaning.
+It is compiled from the history, not typed by hand:
+
+```bash
+node mine-history.mjs                 # refresh data/staples.json and data/patterns.json
+node pantry.mjs --write               # merge the evidence into profiles/pantry.json
+```
+
+`pantry.mjs` computes `everyNDays` as 80 % of the measured gap between purchases, capped
+at 180 days. An item bought every order gets no gate. A hand-written note, unit or
+`everyNDays` is kept. New lines are added only for a pinned sku, a known block, and a
+product that is not a cooking ingredient. Add a name to `rejected` to keep it out for good.
+
 ## Step 2 — plan (dry run, always first)
 
 ```bash
@@ -157,8 +186,8 @@ Report every `FAIL` line with product name and error text.
 
 ## Maintenance
 
-- Learn new staples: `node mine-history.mjs` (writes `data/staples.json` and
-  `profiles/pantry.json`). Run after 5 or more new orders.
+- Learn new staples: `node mine-history.mjs` then `node pantry.mjs --write`. Run after
+  5 or more new orders. The miner is read-only against the shop.
 - Re-pin favourite SKUs: `node pin-skus.mjs --write`.
 - Regression suite: `node --test test/*.test.mjs` (matcher, packs, learning, the traffic
   gate, the plan check, and the golden set of scored decisions - all without network).

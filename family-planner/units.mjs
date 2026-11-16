@@ -264,6 +264,16 @@ export function cheapest(candidates, opts = {}) {
     campaignTip: campaignOf(pick, pool), alternatives: pool.filter((c) => c.id !== pick.id).slice(0, 3) };
 }
 
+/** The highest fat percentage a product name states, or null when it states none.
+ *  "8-12%" is 12, "12-19%" is 19, "4%" is 4. The upper end is what the family eats. */
+export function fatPercentOf(name) {
+  const text = String(name || "");
+  const range = /(\d{1,2})\s*-\s*(\d{1,2})\s*%/.exec(text);
+  if (range) return Math.max(Number(range[1]), Number(range[2]));
+  const one = /(\d{1,2})\s*%/.exec(text);
+  return one ? Number(one[1]) : null;
+}
+
 /** Drop unavailable products and avoided brands; boost the preferred sku to the front.
  *  Exported: a trim decision runs the same filter over the rivals of the sku it is
  *  looking at, so a saving is never taken on a product the shop cannot deliver. */
@@ -275,6 +285,7 @@ export function eligibleOf(candidates, opts) {
   // (kr/kg, kr/l), so a fat-priced cut can be refused while the pack price is cheap.
   const avoidWords = (opts.avoidWords || []).map((w) => foldWords(String(w))).filter(Boolean);
   const maxUnit = Number(opts.maxUnitPrice) > 0 ? Number(opts.maxUnitPrice) : null;
+  const maxFat = Number(opts.maxFatPct) > 0 ? Number(opts.maxFatPct) : null;
   const eligible = [];
   const rejected = [];
   for (const c of candidates || []) {
@@ -292,6 +303,13 @@ export function eligibleOf(candidates, opts) {
     if (maxUnit !== null && Number(c.unitPrice) > maxUnit) {
       rejected.push({ id: c.id, name: c.name, why: `${Number(c.unitPrice).toFixed(1)} ${c.unitLabel || "per unit"} is above the ${maxUnit} limit` });
       continue;
+    }
+    if (maxFat !== null) {
+      const fat = fatPercentOf(c.name);
+      if (fat !== null && fat > maxFat) {
+        rejected.push({ id: c.id, name: c.name, why: `${fat}% fat is above the ${maxFat}% limit` });
+        continue;
+      }
     }
     if (prefer && String(c.id) === prefer) eligible.unshift({ ...c, _preferBoost: true });
     else eligible.push(c);

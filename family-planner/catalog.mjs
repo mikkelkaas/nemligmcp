@@ -225,7 +225,7 @@ export const NEAR_MISS_BAND = 0.15;
  *  price ceiling apply here too - a near miss on a refused brand helps nobody. */
 function nearMissOf(query, products, threshold, intent) {
   const split = eligibleOf(products, {
-    avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
+    avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice, maxFatPct: intent.maxFatPct,
   });
   const words = qualifierWords(intent);
   return split.eligible
@@ -280,7 +280,7 @@ async function attempt(mcp, query, intent, cache) {
   // pin was not, so a brand the family refused came back as the favourite. maxUnitPrice is
   // deliberately NOT checked here: that is a price preference, and sale-vs-usual below
   // already trades the pin against the rivals on price.
-  const pinCheck = pinned ? eligibleOf([pinned], { avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords }) : null;
+  const pinCheck = pinned ? eligibleOf([pinned], { avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxFatPct: intent.maxFatPct }) : null;
   const pinRefused = pinCheck && pinCheck.eligible.length === 0 ? (pinCheck.rejected[0] || { why: "refused by the never-list" }) : null;
   const keep = pinned && !pinRefused ? pinned : null;
   const pinMissed = mode === "history" && intent.sku && !keep ? String(intent.sku) : null;
@@ -290,7 +290,7 @@ async function attempt(mcp, query, intent, cache) {
     // other pick: deliverable, not an avoided brand, under the unit-price ceiling. A
     // trim decision reads these, so it never promises a saving the shop cannot deliver.
     const rivals = eligibleOf(matching.filter((p) => String(p.id) !== String(keep.id)), {
-      avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
+      avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice, maxFatPct: intent.maxFatPct,
     }).eligible.slice()
       .sort((a, b) => (Number(a.unitPrice) || Number.MAX_VALUE) - (Number(b.unitPrice) || Number.MAX_VALUE)
         || (Number(a.price) || Number.MAX_VALUE) - (Number(b.price) || Number.MAX_VALUE))
@@ -318,7 +318,7 @@ async function attempt(mcp, query, intent, cache) {
     };
   }
   const res = cheapest(matching, {
-    avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
+    avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice, maxFatPct: intent.maxFatPct,
     preferSale: intent.preferSale, saleTolerancePct: intent.saleTolerancePct,
   });
   if (!res.pick) {
@@ -326,7 +326,7 @@ async function attempt(mcp, query, intent, cache) {
     // "Unavailable" and "refused" are different sentences. A shelf that holds exactly the
     // product your never-list refuses is not empty, and a person reading "not available"
     // would go looking for stock instead of reading their own words.
-    const split = eligibleOf(matching, { avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice });
+    const split = eligibleOf(matching, { avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice, maxFatPct: intent.maxFatPct });
     const refusals = [...new Set(split.rejected.filter((r) => /brand|name says/i.test(String(r.why || ""))).map((r) => r.why))];
     const refusedText = refusals.length && split.eligible.length === 0
       ? `; your own never-list refused them (${refusals.slice(0, 2).join(", ")})` : "";
@@ -401,7 +401,7 @@ async function proposeSubstitute(mcp, query, intent, cache) {
     }
     const pool = products.filter((p) => nameMatches(q, p.name, minNameScore(intent), qualifierWords(intent), shelfContext(p)));
     const res = cheapest(pool, {
-      avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice,
+      avoidBrands: intent.avoidBrands, avoidWords: intent.avoidWords, maxUnitPrice: intent.maxUnitPrice, maxFatPct: intent.maxFatPct,
     preferSale: intent.preferSale, saleTolerancePct: intent.saleTolerancePct,
     });
     if (!res.pick) continue;
