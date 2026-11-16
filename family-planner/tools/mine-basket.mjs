@@ -12,6 +12,20 @@ import { HOME as BASE } from "../paths.mjs";
 const PLAN = `${BASE}/data/plans/plan-latest.json`;
 const CALL_TIMEOUT = 60000;
 
+/** The basket as the miner needs it. The address and email are not evidence and must
+ *  never be copied into data/plans, which every scratch home and report scans. */
+function slimBasket(b) {
+  return {
+    Lines: Array.isArray(b.Lines) ? b.Lines : [],
+    Recipes: Array.isArray(b.Recipes) ? b.Recipes : [],
+    TotalProductsPrice: b.TotalProductsPrice,
+    TotalPrice: b.TotalPrice,
+    DeliveryPrice: b.DeliveryPrice,
+    MinimumOrderTotal: b.MinimumOrderTotal,
+    IsMinTotalValid: b.IsMinTotalValid,
+  };
+}
+
 /** What the basket holds for a sku: its own line plus what a recipe card brought. */
 function basketRows(basket) {
   const rows = new Map();
@@ -96,7 +110,7 @@ async function main() {
     if (b.isError) throw new Error("get_basket failed: " + b.text.slice(0, 200));
     basket = b.json || {};
     const saved = `${BASE}/data/plans/basket-before-order-${stamp}.json`;
-    writeFileSync(saved, JSON.stringify(basket, null, 1));
+    writeFileSync(saved, JSON.stringify(slimBasket(basket), null, 1));
     console.log(`snapshot ${saved}`);
   }
   const delta = basketDelta(plan, basket);
