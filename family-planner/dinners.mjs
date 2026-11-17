@@ -359,7 +359,9 @@ export function chooseDinners(pool, opts) {
   // puts the favourite at the front of the known half without pinning it forever.
   const rank = (d) => cookedAgo(d) + (liked.has(d.url) ? 365 : 0);
   const queue = orderQueue(rest, { rank, alternate: opts.alternateNewAndKnown !== false });
-  const isNew = (d) => !lastUsed[d.url];
+  // A dish the family chose and rated is a favourite, even before its first cook.
+  // It must not consume one of the two exploration slots.
+  const isNew = (d) => !lastUsed[d.url] && !liked.has(d.url);
   // No cap unless the profile asks for one: a direct caller of chooseDinners keeps the
   // old behaviour, and the plan passes the family's rotation.maxNewPerPlan.
   const maxNew = Number.isFinite(Number(opts.maxNewPerPlan)) && Number(opts.maxNewPerPlan) >= 0
