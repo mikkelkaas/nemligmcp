@@ -301,6 +301,7 @@ async function attempt(mcp, query, intent, cache) {
       const kept = [pickOf(keep)].concat(rivals.filter((r) => String(r.id) !== String(sale.rival.id)));
       return {
         ok: true, query, mode, pick: pickOf(sale.rival), packs: sale.packs, need, total: sale.total,
+        packWindow: intent.packWindow || null,
         why: `the usual sku ${keep.id} is not today's deal: ${sale.rival.name} on sale, ${sale.packs} x `
           + `${Number(sale.rival.price).toFixed(2)} kr = ${sale.total.toFixed(2)} kr against ${pinTotal.toFixed(2)} kr `
           + `for the usual (${keep.name})`,
@@ -311,6 +312,7 @@ async function attempt(mcp, query, intent, cache) {
     }
     return {
       ok: true, query, mode, pick: pickOf(keep), packs, need,
+      packWindow: intent.packWindow || null,
       total: pinTotal,
       why: "family favourite sku, still in stock" + (keep.onSale ? "; tilbud" : ""), compare: "sku-pin",
       candidates: matching.length, cached, ageMs, stale,
@@ -344,6 +346,7 @@ async function attempt(mcp, query, intent, cache) {
   // floor set for one good cannot quietly raise every other pack on the basket.
   const packOpts = { name: res.pick.name, pieceWeight: pieceWeightOf(res.pick), ...(intent.purchasing || {}) };
   if (Number(intent.minPackGrams) > 0) packOpts.minPackGrams = Number(intent.minPackGrams);
+  if (intent.packWindow) packOpts.packWindow = intent.packWindow;
   const bought = need && onShelf.length > 0 ? choosePack(need, onShelf, packOpts) : null;
   const chosen = bought ? bought.candidate : res.pick;
   const packs = bought ? bought.packs : (need ? packsFor(need, res.pick.pack, { pieceWeight: pieceWeightOf(res.pick), name: res.pick.name }) : 1);
@@ -375,6 +378,7 @@ async function attempt(mcp, query, intent, cache) {
   const why = bits.join("; ");
   return {
     ok: true, query, mode, pick: pickOf(chosen), packs, need,
+    packWindow: intent.packWindow || null,
     total: Number((chosen.price * packs).toFixed(2)),
     why: mismatch ? why + "; " + mismatch : why,
     compare: res.mode, candidates: matching.length, cached, ageMs, stale, pinMissed,

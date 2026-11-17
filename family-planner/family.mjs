@@ -324,6 +324,23 @@ function purchasingOf(p) {
     proteinScaleWords: Array.isArray(raw.proteinScaleWords)
       ? raw.proteinScaleWords.slice(0, 30).map((w) => String(w).toLowerCase())
       : [],
+    // How this family sizes a main protein, in grams per person for one night's need.
+    // Inside the band the planner takes the cheapest pack total, so it can come under
+    // or over the recipe gram. Left out, the recipe gram is covered exactly.
+    meatWindowGrams: (() => {
+      const w = (p.meat || {}).windowPerPersonGrams || {};
+      const min = Number(w.min);
+      const max = Number(w.max);
+      return Number.isFinite(min) && Number.isFinite(max) && min > 0 && min <= max && max <= 4000
+        ? { min, max } : null;
+    })(),
+    // Sauces and pastes a family tops up from the cupboard: a line naming one may miss
+    // its grams by condimentShortfallPct (0-60, 0 = never) so one bottle is chosen
+    // where two would cover. Family data, not code: without it every line covers.
+    condimentWords: Array.isArray(raw.condimentWords)
+      ? raw.condimentWords.slice(0, 30).map((w) => String(w).toLowerCase())
+      : [],
+    condimentShortfallPct: num(raw.condimentShortfallPct, 0, 0, 60),
   };
 }
 

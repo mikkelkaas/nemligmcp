@@ -235,6 +235,15 @@ anyone keeping a list.
   The default weights for parts (`fed` 5 g, `skive` 25 g) live in the code because they are
   the language's, not one family's; correct any of them for your household under
   `purchasing.pieceWeights`, e.g. `"pieceWeights": { "fed": 8 }`.
+- How much protein your family wants is yours to say, not the recipe's:
+  `meat.windowPerPersonGrams: { "min": 135, "max": 190 }` sets the band of grams per
+  person for the cooked pot (120 g x 5 portions is 600 g for two nights). Inside the
+  band the planner still buys the cheapest total, so one big pack can beat two small
+  ones, and a pack that is a bit smaller still feeds everyone. Without the key the
+  recipe gram is covered exactly. A line naming a word from `purchasing.condimentWords`
+  with `purchasing.condimentShortfallPct` (e.g. 30) may come that percent under its
+  grams, so one 150 g bottle of sauce is bought where two would cover - the cupboard
+  tops the dish up. Both keys are family data; other families keep the plain rule.
 - What to buy is decided over the WHOLE shelf, on the total for the need - so a product
   priced per piece competes with one priced per kilo (`4 kr / stk` against `66,65 kr / kg`
   is decided by what your 50 g costs, not by which price axis has more products on it). The

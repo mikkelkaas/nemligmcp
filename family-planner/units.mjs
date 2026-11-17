@@ -571,8 +571,15 @@ function packOptions(need, n, list, per, opts) {
     }
     const kMin = Math.max(1, Math.ceil(scale.amount / one.size - 1e-9));
     // The covering number is always in the list; one more only while it stays sane.
-    for (const k of [kMin, kMin + 1]) {
-      if (k !== kMin && k > 6) continue;
+    // A packWindow ({min,max} grams or ml on opts) widens the hunt: a cheaper combo that
+    // undershoots the need but stays inside the window joins, and a bigger one outside it
+    // does not. Without a window the old two options stand.
+    const win = opts.packWindow && (Number(opts.packWindow.min) > 0 || Number(opts.packWindow.max) > 0)
+      ? { min: Number(opts.packWindow.min) || 0, max: Number(opts.packWindow.max) || 0 } : null;
+    const ks = new Set([kMin]);
+    if (kMin + 1 <= 6 && (!win || win.max <= 0 || one.size * (kMin + 1) <= win.max)) ks.add(kMin + 1);
+    if (kMin > 1 && win && win.min > 0 && one.size * (kMin - 1) >= win.min) ks.add(kMin - 1);
+    for (const k of [...ks].sort((a, b) => a - b)) {
       options.push({ candidate: c, scale, packs: k, total: round2(Number(c.price) * k), supply: one.size * k,
         pieces: one.pieces === undefined ? null : one.pieces * k, over: one.size * k - scale.amount,
         wastePct: ((one.size * k - scale.amount) / scale.amount) * 100,

@@ -238,13 +238,24 @@ export function blockIntents(items, blockName, days, cycleDays, staplesByName, s
         .filter((x) => Number.isFinite(x));
       const since = seen.length ? Math.min(...seen) : null;
       const elapsed = since === null ? it.everyNDays : since;
-      if (elapsed < it.everyNDays) {
+      // A stop, not an emergency: two evidence-based ways to say it, both family-settable.
+      // The pantry compiler marks mined lines stoppedBuying when orders kept passing them
+      // by, and a family may write staleAfterCycles on any line. No time default: without
+      // either note, an overdue line stays urgent and is planned.
+      const staleAfter = Number(it.staleAfterCycles) > 0 ? Number(it.staleAfterCycles) : 0;
+      const stale = it.stoppedBuying === true
+        || (staleAfter > 0 && since !== null && since > staleAfter * it.everyNDays);
+      if (stale) {
+        const ago = known && Number.isFinite(Number(known.ordersSince)) && Number(known.ordersSince) > 0
+          ? `absent from ${known.ordersSince} orders since` : `cycle ${it.everyNDays} d`;
+        gate = `stale: last bought ${since === null ? "unknown" : since + " d ago"}, ${ago} - not planned`;
+      } else if (elapsed < it.everyNDays) {
         gate = `skipped: last bought ${since === null ? "unknown" : since + " d ago"}, cycle ${it.everyNDays} d`;
       } else {
         gate = `due: last bought ${since === null ? "unknown" : since + " d ago"}, cycle ${it.everyNDays} d`;
       }
     }
-    if (gate && gate.startsWith("skipped")) {
+    if (gate && (gate.startsWith("skipped") || gate.startsWith("stale"))) {
       out.push({ source: blockName + ":" + it.id, sourceLabel: blockName, query: it.query, skipped: gate, sku: it.sku, mode: it.mode });
       continue;
     }
@@ -376,7 +387,7 @@ export function mergeItems(resolved, purchase) {
       sku: r.pick.sku, name: r.pick.name, brand: r.pick.brand, price: r.pick.price,
       unitPrice: r.pick.unitPrice, unitLabel: r.pick.unitLabel, pack: r.pick.pack,
       url: r.pick.url, packs: 0, sources: [], why: [], rationales: [], recipe: null, mode: r.mode, onSale: !!r.pick.onSale,
-      needMeasure: null, needAmount: 0, alternatives: [],
+      needMeasure: null, needAmount: 0, alternatives: [], packWindow: r.packWindow || null,
     };
     // Two different names can land on the same shelf item (a recipe's "Æg" and the
     // breakfast "Skrabeæg"). Their needs are summed so the pack decision sees the whole
@@ -389,6 +400,12 @@ export function mergeItems(resolved, purchase) {
       // from a recipe. Remember the packs that ask paid for, so the litre sum cannot bargain
       // the basket down under a quantity the family named.
       else e.unfoldedPacks = Number((e.unfoldedPacks || 0) + r.packs);
+    }
+    if (r.packWindow) {
+      // Two dinner lines of the same meat widen the band by both person counts:
+      // the sum need may undershoot or overshoot within the summed window.
+      e.packWindow = { min: (e.packWindow ? e.packWindow.min : 0) + (r.packWindow.min || 0),
+        max: (e.packWindow ? e.packWindow.max : 0) + (r.packWindow.max || 0) };
     }
     e.packs += r.packs;
     e.sources.push(r.source);
@@ -405,7 +422,7 @@ export function mergeItems(resolved, purchase) {
   }
   const items = [...bySku.values()].map((e) => {
     const summed = e.needMeasure && e.needAmount > 0 && e.sources.length > 1
-      ? choosePack({ qty: e.needAmount, unit: e.needMeasure }, [e], { name: e.name, pieceWeight: pieceWeightOf(e), ...(purchase || {}) })
+      ? choosePack({ qty: e.needAmount, unit: e.needMeasure }, [e], { name: e.name, pieceWeight: pieceWeightOf(e), ...(purchase || {}), ...(e.packWindow ? { packWindow: e.packWindow } : {}) })
       : null;
     // The sum decides the pack, but never below the packs a count ask paid for.
     const wantPacks = summed ? Math.max(summed.packs, e.unfoldedPacks || 0) : e.packs;
@@ -892,6 +909,7 @@ export function searchIntentOf(it, options = {}) {
     maxUnitPrice: Number.isFinite(cap) && cap > 0 ? cap : undefined,
     maxFatPct: Number.isFinite(fat) && fat > 0 ? fat : undefined,
     minPackGrams: Number.isFinite(floor) && floor > 0 ? floor : undefined,
+    packWindow: it.packWindow && typeof it.packWindow === "object" ? it.packWindow : undefined,
     force: options.fresh,
     preferSale: it.preferSale, saleTolerancePct: it.saleTolerancePct, purchasing: options.purchasing,
   };

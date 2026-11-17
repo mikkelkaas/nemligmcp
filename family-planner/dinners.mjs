@@ -460,6 +460,22 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, purchasing = 
     const query = (rule && rule.query) || (aliased ? aliased[1] : row.query);
     if (aliased && !(rule && rule.query)) row.query = query;
     const why = `${row.recipeAmount || "as listed"} for ${recipe.servings || 4} in the recipe -> ${need} for ${needPortions || basePortions || "?"} portions${note ? ` (${note})` : ""}`;
+    // Two profile windows widen the pack hunt around the need. The meat window gives the
+    // band of grams this family accepts per person for a main protein; a cheaper pack
+    // inside the band may come under or over the target. The condiment band lets a sauce
+    // line miss its grams a little, so one bottle is chosen where two would cover.
+    // Without the keys the planner keeps the plain covering rule.
+    const mw = purchasing.meatWindowGrams;
+    const persons = needPortions || basePortions || 0;
+    const proteinHit = mw && row.grams > 0 && persons > 0 &&
+      (purchasing.proteinScaleWords || []).find((w) => hasWord(row.text, w) || fold(row.text).startsWith(fold(w)));
+    const condimentHit = !proteinHit && row.grams > 0 && Number(purchasing.condimentShortfallPct) > 0 &&
+      (purchasing.condimentWords || []).find((w) => hasWord(row.text, w));
+    const packWindow = proteinHit
+      ? { min: Math.round(Number(mw.min) * persons), max: Math.round(Number(mw.max) * persons) }
+      : condimentHit
+        ? { min: Math.max(1, Math.round(row.grams * (1 - Number(purchasing.condimentShortfallPct) / 100))), max: 0 }
+        : null;
     intents.push({
       source: `${sourcePrefix}:${recipe.slug || recipe.url}`,
       sourceLabel: recipe.name,
@@ -473,6 +489,7 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, purchasing = 
       mode: "cheapest",
       rationale: rule ? `${why}; ${ruleLabel(rule)}` : why,
       ingredient: row.text,
+      packWindow: packWindow || undefined,
     });
   }
   return { intents, leftOut };

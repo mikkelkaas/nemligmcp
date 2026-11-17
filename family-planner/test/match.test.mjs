@@ -1582,3 +1582,37 @@ test("a card and a plan may spell the same recipe url differently", () => {
   const basket = { Lines: [], Recipes: [{ Id: "guid", Url: "/opskrifter/a/", Title: "" }] };
   assert.deepEqual(keptDinners(plan, basket).map((d) => d.name), ["Dinner A"]);
 });
+
+// --- packWindow: a band around the need where the cheapest total may undershoot ----
+const pack500 = { sku: "p500", name: "Hakket oksekoed", price: 59.95, pack: { qty: 500, unit: "g" } };
+const pack1000 = { sku: "p1000", name: "Hakket oksekoed", price: 96.19, pack: { qty: 1000, unit: "g" } };
+const pack350 = { sku: "p350", name: "Hakket oksekoed", price: 29, pack: { qty: 350, unit: "g" } };
+
+test("without a window the need is covered for the lowest total", () => {
+  const bought = choosePack({ qty: 900, unit: "g" }, [pack500, pack1000], { name: "Hakket oksekoed" });
+  assert.equal(bought.packs, 1, "one 1 kg pack costs less than two 500 g");
+  assert.equal(bought.candidate.sku, "p1000");
+});
+
+test("a meat window lets a smaller total win while it still feeds everyone", () => {
+  const bought = choosePack({ qty: 900, unit: "g" }, [pack350, pack500],
+    { name: "Hakket oksekoed", packWindow: { min: 700, max: 1040 } });
+  assert.equal(bought.packs, 2, "two 350 g packs (700 g) beat two 500 g inside the band");
+  assert.equal(bought.candidate.sku, "p350");
+});
+
+test("the window floor never lets a too-small undershoot in", () => {
+  const bought = choosePack({ qty: 900, unit: "g" }, [pack350],
+    { name: "Hakket oksekoed", packWindow: { min: 800, max: 1040 } });
+  assert.equal(bought.packs, 3, "700 g is under the 800 g floor, so 1050 g is bought");
+  assert.ok(bought.supply >= 1050, "three 350 g packs is the smallest cover");
+});
+
+test("a condiment band buys one bottle where the exact cover needs two", () => {
+  const sauce = { sku: "s150", name: "Pad thai wok sauce", price: 19, pack: { qty: 150, unit: "g" } };
+  const exact = choosePack({ qty: 200, unit: "g" }, [sauce], { name: "Pad thai wok sauce" });
+  assert.equal(exact.packs, 2, "without the band two 150 g bottles cover 200 g");
+  const band = choosePack({ qty: 200, unit: "g" }, [sauce],
+    { name: "Pad thai wok sauce", packWindow: { min: 140, max: 0 } });
+  assert.equal(band.packs, 1, "150 g is 25 % under 200 g, inside the 30 % condiment band");
+});
