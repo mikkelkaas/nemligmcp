@@ -361,7 +361,9 @@ async function zeroExtras(mcp, extras, keepGoing) {
   return { zeroed, failed };
 }
 
-async function main() {
+// Exported for run.mjs, which sets process.argv and calls it in one process after
+// planning. It still self-runs only when apply.mjs is the command.
+export async function main() {
   // --help answers before anything is read or written: no plan file, no lock, no basket.
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log("usage: node apply.mjs [--plan data/plans/plan-latest.json] --approve I-APPROVE-THIS-BASKET [--slot <timeslotId>] [--keep-going] [--family <name>] [--ignore-unresolved]");

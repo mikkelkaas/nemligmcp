@@ -1063,7 +1063,9 @@ const USAGE = [
   "plan file: data/plans/plan-latest.md and plan-latest.json",
 ].join("\n");
 
-async function main() {
+// The main below is exported so run.mjs can call it in-process after setting
+// process.argv; it still self-runs only when plan.mjs is the command.
+export async function main() {
   const tRun = Date.now();
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     console.log(USAGE);
