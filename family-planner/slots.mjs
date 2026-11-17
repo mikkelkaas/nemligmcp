@@ -77,9 +77,10 @@ export function deadlinePassed(deadline, nowIso) {
   return d <= String(nowIso).slice(0, 16);
 }
 
-/** 1 = fully open, 2 = limited, 0 = not bookable (Namlig Availability codes). */
+/** Namlig Availability codes as the shop sends them (verified live 2026-11-17):
+ * 0 = ledig (bookable), 1 = deadline passed, 2 = sold out, 3 = not active. */
 export function bookable(s, { deliveryType = "attended", minHours = 0 } = {}) {
-  if (s.availability === 0 || s.availability === undefined) return false;
+  if (s.availability !== 0) return false;
   if (s.event) return false;
   if (deliveryType === "attended" && s.type !== 0) return false;
   if (deliveryType === "unattended" && s.type !== 1) return false;
