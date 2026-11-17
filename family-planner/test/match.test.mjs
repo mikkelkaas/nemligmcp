@@ -632,6 +632,21 @@ test("a refused timeslot is a failure even when the HTTP call succeeded", () => 
   assert.equal(slotOutcomeOf({ isError: true, text: "boom" }, 5).isError, true);
 });
 
+test("a refused window names the product and the day, not the shop's JSON", () => {
+  const undeliv = slotOutcomeOf({ isError: false, text: "{ raw json }",
+    json: { IsReserved: false, PriceChangeDiff: 0, ProductLineDiffs: [{ ProductName: "Bønnespirer øko.", Undeliverable: true, AmountDiff: 0 }] } },
+  2452582, "søndag 2026-11-22 kl. 12-16");
+  assert.equal(undeliv.isError, true);
+  assert.match(undeliv.human, /^Bønnespirer øko\. cannot be delivered then \(søndag 2026-11-22 kl\. 12-16\)$/);
+  assert.match(undeliv.text, /raw json/, "the raw answer stays for the log file");
+  const priced = slotOutcomeOf({ isError: false, text: "",
+    json: { IsReserved: false, PriceChangeDiff: 52, ProductLineDiffs: [{ ProductName: "Risnudler", AmountDiff: 4.5 }] } }, 1);
+  assert.match(priced.human, /1 product line\(s\) cost \+4\.50 kr/);
+  assert.match(priced.human, /delivery costs \+52\.00 kr/);
+  const bare = slotOutcomeOf({ isError: false, text: "", json: { IsReserved: false } }, 1);
+  assert.match(bare.human, /would not take the window/, "a bare refusal still says something a person can read");
+});
+
 test("the card body sends selected products and no default product list", () => {
   const payload = cardPayload({ guid: "recipe-guid" }, 5, [{
     ProductSelectionId: "11111111-1111-1111-1111-111111111111",

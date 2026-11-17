@@ -35,6 +35,7 @@ import { loadFamily } from "./family.mjs";
 import { score, MIN_NAME_SCORE } from "./match.mjs";
 
 import { HOME as BASE, writeJsonAtomic, withLock } from "./paths.mjs";
+import { flatten as flattenSlots } from "./slots.mjs";
 // What this script understands, so a typo in a flag is named instead of ignored.
 const APPLY_FLAGS = ["plan", "approve", "slot", "family", "recipes", "keep-going", "ignore-unresolved", "allow-stale", "help", "debug"];
 const TOKEN = "I-APPROVE-THIS-BASKET";
@@ -564,16 +565,47 @@ function copenhagenWallClock(date = new Date()) {
 
 /** Book the timeslot the person approved, only after something was actually added. */
 /** What the shop said about a timeslot. A 200 with IsReserved false is still a refusal:
- *  the delivery time did not change, and the basket must not be reported as booked. */
-export function slotOutcomeOf(response, slotId) {
+ *  the delivery time did not change, and the basket must not be reported as booked.
+ *  "when" names the window ("onsdag 2026-11-18 kl. 17-20") when the caller looked it up.
+ *  human is the one sentence a person reads; text keeps the shop's raw answer for the log. */
+export function slotOutcomeOf(response, slotId, when = null) {
   const body = response.json || {};
   const reserved = body.IsReserved;
+  const diffs = (Array.isArray(body.ProductLineDiffs) ? body.ProductLineDiffs : []).filter((d) => d && typeof d === "object");
+  const undeliv = [...new Set(diffs.filter((d) => d.Undeliverable).map((d) => String(d.ProductName || "a basket product")))];
+  const changed = diffs.filter((d) => !d.Undeliverable && Number.isFinite(Number(d.AmountDiff)) && Number(d.AmountDiff) !== 0);
+  const lineSum = Number(changed.reduce((s, d) => s + Number(d.AmountDiff), 0).toFixed(2));
+  const price = Number(body.PriceChangeDiff) || 0;
+  const then = when ? ` then (${when})` : "";
+  const bits = [];
+  if (undeliv.length > 0) bits.push(`${undeliv.slice(0, 4).join(", ")}${undeliv.length > 4 ? ` and ${undeliv.length - 4} more` : ""} cannot be delivered${then}`);
+  if (changed.length > 0) bits.push(`${changed.length} product line(s) cost ${lineSum >= 0 ? "+" : ""}${lineSum.toFixed(2)} kr${then}`);
+  if (price !== 0) bits.push(`delivery costs ${price >= 0 ? "+" : ""}${price.toFixed(2)} kr${then}`);
+  if (reserved === false && bits.length === 0) bits.push("the shop would not take the window without changing the basket");
+  const human = bits.length > 0
+    ? bits.join("; ")
+    : String(response.text || "the shop gave no reason").slice(0, 140);
   return {
     id: Number(slotId),
     isError: Boolean(response.isError) || reserved === false,
     reserved: reserved === true,
+    human,
     text: String(response.text || "").slice(0, 300),
   };
+}
+
+/** One best-effort read call: which day and window this id is, so the failure sentence
+ *  names it. Never fails the report - null just leaves the window unnamed. */
+async function slotWindowOf(mcp, slotId) {
+  try {
+    const r = await mcp.call("get_timeslots", { days: 8 }, { timeoutMs: CALL_TIMEOUT });
+    if (r.isError || !r.json) return null;
+    const hit = flattenSlots(r.json).find((s) => String(s.id) === String(slotId));
+    if (!hit) return null;
+    return `${hit.weekday} ${hit.iso} kl. ${String(hit.start).padStart(2, "0")}-${String(hit.end).padStart(2, "0")}`;
+  } catch {
+    return null;                                  // a shop that answers nothing cannot name the day
+  }
 }
 
 async function pickSlot(mcp, slotId, adds) {
@@ -584,13 +616,17 @@ async function pickSlot(mcp, slotId, adds) {
   }
   const id = Number(slotId);
   if (!Number.isInteger(id) || id <= 0) {
-    const slot = { id: null, isError: true, reserved: false, text: `not a numeric slot id: ${slotId}` };
-    console.log(`  slot  FAILED ${slot.text}`);
-    return slot;
+    console.log(`  slot  FAILED not a numeric slot id: ${slotId}`);
+    return { id: null, isError: true, reserved: false, human: `not a numeric slot id: ${slotId}`, text: "" };
   }
   const s = await mcp.call("select_timeslot", { timeslotId: id }, { timeoutMs: CALL_TIMEOUT });
-  const slot = slotOutcomeOf(s, id);
-  console.log(`  slot  ${slot.isError ? "FAILED (the change would alter the basket - re-plan, then retry, or pass --force in the app) " + slot.text : "selected id " + slot.id}`);
+  const first = slotOutcomeOf(s, id);
+  const slot = first.isError
+    ? slotOutcomeOf(s, id, await slotWindowOf(mcp, id))
+    : first;
+  console.log(`  slot  ${slot.isError
+    ? `FAILED: ${slot.human}. Pick another window (node slots.mjs --days 8) or book in the app.`
+    : "selected id " + slot.id}`);
   return slot;
 }
 
