@@ -1,6 +1,7 @@
 name: Quality
 
-# The weekly drift check for the family planner, on GitHub's clock instead of a machine's.
+# The drift check for the family planner, on GitHub's clock instead of a machine's: it
+# runs on every pull request that touches the planner, on merges to master, and weekly.
 # It runs what needs no shop and no credentials: the syntax of every file, the offline test
 # suite, and the golden shelves - ten fixture shelves whose lines must not move more than 5 %.
 # That last step is the drift detector: if a matcher or a price rule starts choosing
@@ -18,6 +19,10 @@ name: Quality
 on:
   schedule:
     - cron: "37 3 * * 1" # Mondays 03:37 UTC, roughly 04:37 in Copenhagen. Off the top of the hour.
+  pull_request: # a proposed change runs the same checks before it merges, not after.
+    paths:        # Everything here needs no shop and no credentials, so fork PRs can run it.
+      - "family-planner/**"
+      - ".github/workflows/quality.yml"
   push:
     branches: [master]
     paths:
