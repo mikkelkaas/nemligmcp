@@ -21,8 +21,9 @@ container `nemligmcp`, service `nemligmcp` in `/opt/docker/infra-stack.yml`. Che
 Another host runs the server its own way: point `NEMLIG_MCP_URL` at it and use that host's
 own command to check it.
 
-**Only `apply.mjs` writes to the basket. Never call `add_to_basket`,
-`set_basket_quantity`, `remove_from_basket` or `clear_basket` by hand.**
+**Only `apply.mjs` writes to the basket — directly or through `run.mjs`, which calls it.
+Never call `add_to_basket`, `set_basket_quantity`, `remove_from_basket` or `clear_basket`
+by hand.**
 
 ## Step 1 — ask the questions
 
@@ -167,7 +168,7 @@ report the unresolved lines and stop - `apply.mjs` refuses them anyway.
 A section of the plan file that is not there was empty, not skipped: no substitutions, no
 bulk offers, no stale favourites, no learnings yet.
 
-## Step 3 — wait for approval
+## Step 3 — wait for approval, then write
 
 Say the basket was not touched, and wait. Only after the user approves in chat:
 
@@ -178,6 +179,23 @@ node apply.mjs --plan data/plans/plan-latest.json --approve I-APPROVE-THIS-BASKE
 
 `--slot` takes the id the user chose. It is optional; without it the delivery stays as it
 is in the app.
+
+When the user asked for the full run from the start, skip the two-step and use one
+command instead: it plans, then writes, in one process over the same warm cache.
+
+```bash
+node run.mjs --days 7 --breakfast yes --lunchbox yes --approve I-APPROVE-THIS-BASKET --slot <id>
+```
+
+`run.mjs` takes every `plan.mjs` flag plus `--approve`, `--slot`, `--keep-going` and
+`--dry` (stop after the plan). It is the only fast path: a warm plan run takes under a
+second, and apply reads the plan it just wrote. A request for "the full run" is the
+approval — do not stop at the dry plan when the user already said to apply.
+
+A slot booking can fail when a product on a recipe card cannot be delivered on that day.
+The run prints the product name under `ProductLineDiffs` with `Undeliverable: true` and
+keeps the basket. Then offer the user the other ranked slots, or book one that the shop
+accepts for the whole basket.
 
 ## Step 4 — report
 
