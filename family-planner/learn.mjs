@@ -5,8 +5,9 @@
 // checks out. That edit is the clearest signal there is about this family, and it
 // is already stored - in the order history. This file reads the last plans and the
 // orders that followed them and writes profiles/learned.json: products that keep
-// being taken out, products that keep being added, how much more or less of a
-// product this family really buys, and which recipe cards they kept.
+// being taken out, products that keep being added, the amount of a product this
+// family really buys (lower median of what they bought, so the odd big basket
+// never ratchets the weekly baseline up), and which recipe cards they kept.
 //
 // What it does NOT do: it never edits profiles/family-*.json (the human file) and
 // never decides anything alone. plan.mjs reads learned.json UNDER the profile, so a
@@ -135,13 +136,18 @@ export function observedDelta(plan, orders) {
   }
   const removed = plan.items.filter((i) => !bought.has(i.sku));
   const added = [...bought.values()].filter((b) => !planBySku.has(b.sku));
+  // "observed" counts every planned product the family bought in the period,
+  // also the ones at exactly the planned quantity: agreement is a vote too.
   const quantityChanges = [];
+  const observed = [];
   for (const b of bought.values()) {
     const p = planBySku.get(b.sku);
-    if (p && p.qty !== b.qty) quantityChanges.push({ sku: b.sku, name: b.name, planned: p.qty, bought: b.qty });
+    if (!p || !(p.qty > 0) || !(b.qty > 0)) continue;
+    observed.push({ sku: b.sku, name: b.name, planned: p.qty, bought: b.qty });
+    if (p.qty !== b.qty) quantityChanges.push({ sku: b.sku, name: b.name, planned: p.qty, bought: b.qty });
   }
   const recipes = list.flatMap((o) => o.lines.filter((l) => l.recipeUrl).map((l) => l.recipeUrl));
-  return { kept: plan.items.length - removed.length, removed, added, quantityChanges, recipes };
+  return { kept: plan.items.length - removed.length, removed, added, quantityChanges, observed, recipes };
 }
 
 function bump(map, key, value, name) {
@@ -161,9 +167,25 @@ const median = (a) => {
 };
 
 /**
+ * Median that rounds to the smaller side. Used for quantities: a line only
+ * moves up when more than half the baskets pushed it up, and only moves
+ * down when more than half pushed it down. Two baskets of extra milk can
+ * then never ratchet the weekly plan to three forever - the agreed baskets
+ * outvote them.
+ */
+const lowerMedian = (a) => {
+  const v = a.filter((x) => Number.isFinite(x)).sort((x, y) => x - y);
+  return v.length === 0 ? null : v[Math.floor((v.length - 1) / 2)];
+};
+
+/**
  * Turn paired plan/order deltas into the learned file.
  * `minObservations` keeps single disagreements out: a product must keep being taken
  * out (or added) across that many separate baskets before the planner reacts.
+ * Quantity factors are a lowerMedian over every observed basket, agreed ones
+ * included: a line moves only when more than half the baskets pushed that way,
+ * so a weekly baseline emerges from the family's own buying instead of ratcheting
+ * upward on the odd big basket.
  */
 export function learnedFrom(pairs, opts = {}) {
   const min = Number(opts.minObservations) || 2;
@@ -179,7 +201,20 @@ export function learnedFrom(pairs, opts = {}) {
     const d = observedDelta(plan, orders);
     for (const r of d.removed) bump(removedMap, productWord(r.name), { at: plan.at, name: r.name }, r.name);
     for (const a of d.added) bump(addedMap, productWord(a.name), { at: plan.at, name: a.name, qty: a.qty }, a.name);
-    for (const q of d.quantityChanges) bump(qtyMap, productWord(q.name), { at: plan.at, factor: q.bought / q.planned, name: q.name }, q.name);
+    // One vote per word per basket: sum what was planned and what was bought
+    // for that word, so a basket that kept the plan votes 1.0 and the
+    // disagreements cannot drown it. Two skus of the same word vote once.
+    const byWord = new Map();
+    for (const o of d.observed) {
+      const w = productWord(o.name);
+      if (!w) continue;
+      const e = byWord.get(w) || { word: w, name: o.name, planned: 0, bought: 0 };
+      e.planned += o.planned; e.bought += o.bought;
+      byWord.set(w, e);
+    }
+    for (const e of byWord.values()) {
+      if (e.planned > 0) bump(qtyMap, e.word, { at: plan.at, factor: e.bought / e.planned, name: e.name }, e.name);
+    }
     for (const url of d.recipes) recipeCounts.set(url, (recipeCounts.get(url) || 0) + 1);
   }
   const avoid = [...removedMap.values()].filter((e) => e.count >= min)
@@ -191,8 +226,16 @@ export function learnedFrom(pairs, opts = {}) {
     .sort((a, b) => b.times - a.times).slice(0, 15);
   const quantityBias = [...qtyMap.values()]
     .filter((e) => e.count >= min)
-    .map((e) => ({ word: e.key, name: e.name, factor: Number(Math.min(cap, Math.max(1 / cap, median(e.values.map((v) => v.factor)) || 1)).toFixed(2)),
-      seen: e.count, evidence: `${e.count} baskets differed, median bought/planned ${median(e.values.map((v) => v.factor)).toFixed(2)}` }))
+    .map((e) => {
+      const f = lowerMedian(e.values.map((v) => v.factor));
+      const differed = e.values.filter((v) => Math.abs(v.factor - 1) >= 0.2).length;
+      return {
+        word: e.key, name: e.name,
+        factor: Number(Math.min(cap, Math.max(1 / cap, f ?? 1)).toFixed(2)),
+        seen: e.count,
+        evidence: `lower median bought/planned ${(f ?? 1).toFixed(2)} over ${e.count} baskets, ${differed} of them differed`,
+      };
+    })
     .filter((e) => Math.abs(e.factor - 1) >= 0.2)
     .sort((a, b) => Math.abs(b.factor - 1) - Math.abs(a.factor - 1)).slice(0, 20);
   const recipes = [...recipeCounts.entries()].map(([url, times]) => ({ url, times }))

@@ -920,6 +920,50 @@ test("the learned multiplier scales the need and says so", () => {
   assert.equal(biasIntent({ query: "Bananer", need: "1 stk" }, [{ word: "skyr", factor: 1.5 }]).changed, false);
 });
 
+// --- the milk ratchet: agreed baskets hold the learned quantity down ---
+
+const MILK = [{ sku: "5", name: "Letmælk 1500 ml", qty: 2 }];
+const milkPlans = ["2026-02-01", "2026-02-12", "2026-02-23", "2026-03-06"]
+  .map((at) => ({ at, menu: ["/opskrifter/a"], items: MILK }));
+const milkBaskets = (qtys) => qtys.map((q, i) =>
+  ({ at: ["2026-02-03", "2026-02-14", "2026-02-25", "2026-03-08"][i], orderId: `M${i}`, lines: [{ sku: "5", name: "Letmælk 1500 ml", qty: q }] }));
+const milkLearned = (qtys) => learnedFrom(pairPlanToOrder(milkPlans, milkBaskets(qtys)), { minObservations: 2, maxQuantityFactor: 2 });
+const milkBias = (learned) => learned.quantityBias.find((q) => q.word === "letmælk");
+
+test("two big baskets out of four never raise the weekly milk line", () => {
+  assert.ok(!milkBias(milkLearned([3, 3, 2, 2])),
+    "agreed baskets must outvote the two extras: " + JSON.stringify(milkLearned([3, 3, 2, 2]).quantityBias));
+});
+
+test("buying more in every basket still teaches the planner", () => {
+  const milk = milkBias(milkLearned([3, 3, 3, 3]));
+  assert.ok(milk && milk.factor === 1.5, "consistent extra buying must show up: " + JSON.stringify(milk));
+  assert.match(milk.evidence, /4 baskets, 4 of them differed/);
+});
+
+test("buying less in every basket lowers the line", () => {
+  const milk = milkBias(milkLearned([1, 1, 1, 1]));
+  assert.ok(milk && milk.factor === 0.5, "a smaller habit must lower the need: " + JSON.stringify(milk));
+});
+
+test("one small basket among agreed ones changes nothing", () => {
+  assert.ok(!milkBias(milkLearned([1, 2, 2, 2])),
+    "the plan must not shrink on a single light basket: " + JSON.stringify(milkLearned([1, 2, 2, 2]).quantityBias));
+});
+
+test("two pack sizes of one product vote once per basket", () => {
+  const plans = ["2026-02-01", "2026-02-12"].map((at) => ({
+    at, menu: ["/opskrifter/a"],
+    items: [{ sku: "5", name: "Letmælk 1500 ml", qty: 1 }, { sku: "6", name: "Letmælk 800 ml", qty: 1 }],
+  }));
+  const orders = ["2026-02-03", "2026-02-14"].map((at, i) => ({
+    at, orderId: `D${i}`,
+    lines: [{ sku: "5", name: "Letmælk 1500 ml", qty: 1 }, { sku: "6", name: "Letmælk 800 ml", qty: 2 }],
+  }));
+  const milk = learnedFrom(pairPlanToOrder(plans, orders)).quantityBias.find((q) => q.word === "letmælk");
+  assert.ok(milk && milk.factor === 1.5 && milk.seen === 2, "sum per word, one vote per basket: " + JSON.stringify(milk));
+});
+
 test("a family add-on becomes an intent over the period", () => {
   const adds = addIntentsOf([{ query: "Rugbrød groft", medianQty: 1, times: 3, evidence: "you added it in 3 of 4 baskets" }], { gapDays: 9, days: 8 });
   assert.equal(adds.length, 1);
