@@ -18,6 +18,7 @@ import { loadFamily } from "./family.mjs";
 
 import { HOME as BASE } from "./paths.mjs";
 const LINES = BASE + "/data/order-lines-raw.jsonl";
+const HISTORY = BASE + "/data/history-raw.json";
 const POOL = BASE + "/profiles/recipe-pool.json";
 const OUT = BASE + "/profiles/amounts.json";
 
@@ -63,8 +64,22 @@ const FAMILIES_RAW = [
 // Patterns must be folded with the same map as the product name, or æ/ø/å never match.
 const FAMILIES = FAMILIES_RAW.map(([name, re]) => [name, new RegExp(String(re).slice(1, String(re).lastIndexOf("/")).replace(/[æ]/g, "ae").replace(/[ø]/g, "o").replace(/[å]/g, "a").replace(/[ÆØÅ]/g, (c) => c === "Æ" ? "AE" : "O"), "i")]);
 
-const fold = (s) => String(s || "").toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/\s+/g, " ").trim();
+const fold = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/\s+/g, " ").trim();
 const READ_JSONL = (p) => readFileSync(p, "utf8").split("\n").filter((l) => l.trim()).map((l) => JSON.parse(l));
+
+/** Prefer the miner's history-raw shape; keep the old JSONL as a fallback. */
+function readOrders() {
+  if (existsSync(HISTORY)) {
+    const raw = JSON.parse(readFileSync(HISTORY, "utf8"));
+    if (!Array.isArray(raw)) throw new Error(`${HISTORY} must hold an array of orders`);
+    return raw.map((o) => ({
+      ...o,
+      lines: (o.lines || []).map((l) => ({ ...l, ProductName: l.name, Quantity: l.qty,
+        Description: l.packSize, IsProductLine: true, IsRecipeLine: !!l.isRecipeLine })),
+    }));
+  }
+  return READ_JSONL(LINES);
+}
 const quant = (xs, q) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); return Number(s[Math.min(s.length - 1, Math.floor(q * s.length))]); };
 const median = (xs) => quant(xs, 0.5);
 
@@ -163,7 +178,7 @@ function perDinner(POOL_FILE) {
 }
 
 function main() {
-  const orders = READ_JSONL(LINES).sort((a, b) => String(a.iso).localeCompare(String(b.iso)));
+  const orders = readOrders().sort((a, b) => String(a.iso).localeCompare(String(b.iso)));
   const data = {
     schemaVersion: 1,
     at: new Date().toISOString(),

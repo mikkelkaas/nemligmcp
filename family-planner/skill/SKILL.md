@@ -201,6 +201,10 @@ Report every `FAIL` line with product name and error text.
 
 - Learn new staples: `node mine-history.mjs` then `node pantry.mjs --write`. Run after
   5 or more new orders. The miner is read-only against the shop.
+- Learn the menu from a corrected basket: `node tools/mine-menu.mjs --snapshot <basket> --dry`.
+  The basket's card list is the verdict: removed cards lose their like, kept cards gain one.
+  A new card is added to the pool only when its recipe name is close enough, and its protein
+  comes from the recipe URL as well as the title. The cap keeps liked cards first.
 - Re-pin favourite SKUs: `node pin-skus.mjs --write`.
 - Regression suite: `node --test test/*.test.mjs` (matcher, packs, learning, the traffic
   gate, the plan check, and the golden set of scored decisions - all without network).

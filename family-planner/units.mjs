@@ -20,6 +20,45 @@ export function num(s) {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+const VULGAR = { "½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 0.125 };
+const NUMBER_WORDS = { en: 1, et: 1, to: 2, tre: 3, fire: 4, fem: 5, seks: 6, syv: 7, otte: 8, ni: 9, ti: 10, halv: 0.5, halve: 0.5 };
+
+/** Normalise the number spellings a Danish recipe page uses: "1½", "1 1/2", "½",
+ *  "1/2", "ca. 2", "2-3". Returns text with plain decimal numbers, so a regex can
+ *  read it. A range becomes its lower end, the safe side of a shopping need. */
+export function normalizeAmountText(value, opts = {}) {
+  let raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "";
+  raw = raw.replace(/(\d)\s*([½¼¾⅓⅔⅛])/g, (_, n, v) => String(Number(n) + VULGAR[v]));
+  raw = raw.replace(/[½¼¾⅓⅔⅛]/g, (v) => String(VULGAR[v]));
+  raw = raw.replace(/^(ca\.?|cirka|approx\.?|~)\s*/i, "");
+  // A range is an amount. In a product name "8-12%" is a grade, not a range, so the
+  // query cleaner turns this pass off.
+  if (opts.range !== false) raw = raw.replace(/(\d+(?:[.,]\d+)?)\s*-\s*(\d+(?:[.,]\d+)?)/g, (_, a) => a);
+  raw = raw.replace(/(\d+)\s+(\d+)\s*\/\s*(\d+)/g, (_, a, b, c) => String(Number(a) + Number(b) / Number(c)));
+  raw = raw.replace(/(\d+)\s*\/\s*(\d+)/g, (_, a, b) => String(Number(a) / Number(b)));
+  return raw;
+}
+
+/** A recipe amount as a number: "1,5", "1½", "1 1/2", "1/2", "ca. 2", "2-3", or
+ *  a Danish number word. Returns null when no number can be read. */
+export function amountNumber(value) {
+  const raw = normalizeAmountText(value);
+  if (!raw) return null;
+  const word = NUMBER_WORDS[raw.trim()];
+  if (word) return word;
+  const m = /(\d+(?:[.,]\d+)?)/.exec(raw);
+  if (!m) return null;
+  const n = Number(m[1].replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Millilitres in one of the liquid units, or null. */
+export function liquidMl(unit) {
+  const u = String(unit || "").trim().toLowerCase().replace(/\.$/, "");
+  return { ml: 1, cl: 10, dl: 100, l: 1000, liter: 1000 }[u] || null;
+}
+
 // Words that look like a unit after a number but describe something else: a
 // measurement of the produce (Dild 7cm), a shelf-life, a year. Never a pack size.
 const NOT_A_SIZE = new Set(["cm", "mm", "m", "cm3", "år", "aar", "dag", "dage", "måned", "md"]);
@@ -38,6 +77,8 @@ export function baseUnit(unit) {
     pose: "pose", pos: "pose", bakke: "bakke", bk: "bakke",
     karton: "karton", kt: "karton", skive: "skive", skiver: "skive",
     glas: "glas", dåser: "dåse", flasker: "flaske", poser: "pose",
+    pakke: "pakke", pakker: "pakke", pk: "pakke", ps: "pakke", net: "net", bæger: "bæger",
+    bøtte: "bøtte", bøtter: "bøtte", bægre: "bæger", bakker: "bakke",
   };
   return map[u] || u || null;
 }
@@ -66,12 +107,13 @@ export function toBaseMeasure(qty, unit) {
 export function parsePack(text) {
   const raw = String(text || "").trim();
   if (!raw) return { qty: null, unit: null, raw };
-  const head = raw.split("/")[0].trim();
+  // Split on a SPACED slash: the brand follows " / ", while "1/2 kg" is a fraction.
+  const head = normalizeAmountText(raw.split(/\s+\/\s+/)[0].trim());
   // Multi-pack: "24 x 0,33 l" or "2 x 125 g".
   const multi = new RegExp("^" + NUM + "\\s*x\\s*" + NUM + "\\s*([a-zæøå.]+)", "i").exec(head);
   if (multi) {
-    const packs = num(multi[1]);
-    const each = num(multi[2]);
+    const packs = amountNumber(multi[1]);
+    const each = amountNumber(multi[2]);
     const m = toBaseMeasure(each, multi[3]);
     if (packs && each && m) {
       const scaled = m.measure === "g" || m.measure === "ml"
@@ -83,7 +125,7 @@ export function parsePack(text) {
   // Single amount: "1 kg", "0,25 l", "15 stk.", "8 rl."
   const single = new RegExp("^" + NUM + "\\s*([a-zæøå.]+)", "i").exec(head);
   if (single) {
-    const q = num(single[1]);
+    const q = amountNumber(single[1]);
     const m = toBaseMeasure(q, single[2]);
     if (q && m) {
       return { qty: round2(m.value), unit: unitName(m), raw };
@@ -92,7 +134,7 @@ export function parsePack(text) {
   // Count-only fallback: "Bland selv"-type lines with no leading number.
   const count = new RegExp(NUM + "\\s*([a-zæøå]+)\\.", "i").exec(head);
   if (count) {
-    const q = num(count[1]);
+    const q = amountNumber(count[1]);
     const m = toBaseMeasure(q, count[2]);
     if (q && m) return { qty: round2(m.value), unit: unitName(m), raw };
   }
@@ -103,7 +145,9 @@ export function parsePack(text) {
 // measured in: "2 stk kokosmælk" is 2 cans, not 2 grams and not 1 can.
 /** Units that measure a quantity (g, kg, ml, l) - as opposed to counting pieces. */
 export const MEASURE_UNITS = new Set(["g", "kg", "ml", "l"]);
-const COUNT_UNITS = new Set(["stk", "dåse", "flaske", "pose", "karton", "skive", "glas", "bakke", "bundt"]);
+/** A need in one of these is a number of PACKS, not pieces to weigh. */
+export const PACK_COUNT_UNITS = new Set(["dåse", "flaske", "pose", "karton", "glas", "bakke", "bundt", "pakke", "net", "bæger", "bøtte"]);
+const COUNT_UNITS = new Set(["stk", "skive", ...PACK_COUNT_UNITS]);
 
 /**
  * Typical gram weight of one piece of the produce we buy loose. Used when a need counts
@@ -129,7 +173,11 @@ export const PIECE_GRAMS = {
  * any other. A family that reads a number differently sets it in their profile under
  * `purchasing.pieceWeights`; a word that is not listed stays a piece, never a guess.
  */
-export const SUBUNIT_GRAMS = { fed: 5, skive: 25, skiver: 25, bådkartoffel: 120 };
+export const SUBUNIT_GRAMS = {
+  fed: 5, skive: 25, skiver: 25, bådkartoffel: 120, båd: 30, både: 30,
+  stilk: 20, stilke: 20, kvist: 5, kviste: 5, blad: 1, blade: 1,
+  håndfuld: 30, håndfulde: 30, nip: 1, drys: 1, klat: 10, skvæt: 5, sjat: 15,
+};
 
 /** A spoon is a measure, not a pack. The recipe page's own gram figure for a spoon is
  *  unreliable: 2 tsk of chili flakes arrived as 50 g and became ten 5 g packs. These
@@ -169,7 +217,7 @@ export function pieceGrams(name) {
  */
 export function pieceWeightOf(product) {
   const pack = (product && product.pack) || {};
-  const text = String((product && product.description) || pack.raw || "").trim();
+  const text = normalizeAmountText((product && product.description) || pack.raw || "");
   const D = "\\d+(?:[.,]\\d+)?";
   // The multi-pack first: in "24 x 0,33 l" the first number is the count, not a weight.
   const each = new RegExp("(" + D + ")\\s*x\\s*(" + D + ")\\s*(g|kg|ml|cl|l)(?![a-zæøå])", "i").exec(text);
@@ -217,6 +265,8 @@ function packMeasure(pack) {
 export function packsFor(need, pack, opts = {}) {
   if (!need || !pack) return 1;
   if (pack.qty > 0 && pack.unit === need.unit) return Math.max(1, Math.ceil(need.qty / pack.qty));
+  // "2 dåser" is two packs, whatever each pack weighs.
+  if (PACK_COUNT_UNITS.has(need.unit)) return Math.max(1, Math.ceil(need.qty));
   const grams = packMeasure(pack);
   if (grams && COUNT_UNITS.has(need.unit)) {
     // opts.pieceWeight is what the shop declared for this pack; opts.pieceGrams is a
@@ -335,7 +385,7 @@ export function eligibleOf(candidates, opts) {
 
 /** Lower case and Danish letters folded, so an avoid word matches the product name. */
 function foldWords(s) {
-  return s.toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/[^a-z0-9% ]/g, " ").replace(/\s+/g, " ").trim();
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/[^a-z0-9% ]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**

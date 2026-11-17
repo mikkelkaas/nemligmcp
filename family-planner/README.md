@@ -400,6 +400,8 @@ lines instead: no one cooks a fish salad for dinner.
 node mine-history.mjs            # after 5+ new orders
 node pantry.mjs --write --prune  # compile the rebuy list and its stock schedule
 node pin-skus.mjs --write        # re-pin favourite SKUs
+node tools/mine-menu.mjs --snapshot data/plans/basket-before-order-*.json --dry
+                                 # learn which dinners the corrected basket kept
 node --test test/*.test.mjs      # the suite, incl. a stubbed search (no network)
 node tools/scenario-check.mjs    # the battery: guards, arithmetic, notes, shop scenarios
 node tools/scenario-check.mjs --pure   # the half that needs no data/ - this is what CI runs

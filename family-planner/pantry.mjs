@@ -41,7 +41,7 @@ export const COOKING_WORDS = ["floede", "fløde", "creme fraiche", "tomatpure", 
 
 /** Lower case and fold the Danish letters, so one keyword matches every spelling. */
 export function fold(s) {
-  return String(s || "").toLowerCase()
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
     .replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a")
     .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 }

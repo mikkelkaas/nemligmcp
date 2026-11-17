@@ -13,11 +13,11 @@
 // price-per-kg ceiling this family uses.
 
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { subunitGrams, smallUnitGrams } from "./units.mjs";
+import { subunitGrams, smallUnitGrams, amountNumber, liquidMl, normalizeAmountText, baseUnit, PACK_COUNT_UNITS } from "./units.mjs";
 import { copenhagenNow } from "./slots.mjs";
 import { join } from "node:path";
 
-const fold = (s) => String(s || "").toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/[^a-z0-9% ]/g, " ").replace(/\s+/g, " ").trim();
+const fold = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a").replace(/[^a-z0-9% ]/g, " ").replace(/\s+/g, " ").trim();
 
 /** The family's calendar day, as the cooked log writes it. */
 const copenhagenDay = (ms) => copenhagenNow(new Date(ms)).slice(0, 10);
@@ -41,7 +41,8 @@ function hasWord(text, word) {
   const t = fold(text), w = fold(word);
   if (!w) return false;
   if (w.includes(" ")) return t.includes(w);
-  return new RegExp(`(^| )${w}e?(s|n|r|t)?( |$|%)`, "i").test(t) || t.startsWith(w + " ") || t.endsWith(" " + w);
+  const esc = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^| )${esc}e?(s|n|r|t)?( |$|%)`, "i").test(t) || t.startsWith(w + " ") || t.endsWith(" " + w);
 }
 const hitsWord = (text, list) => (list || []).find((w) => hasWord(text, w)) || null;
 
@@ -93,9 +94,11 @@ import { clashWith } from "./similarity.mjs";
 import { nightsOf, reheatOf, portionsPerNight } from "./nights.mjs";
 
 export function cleanQuery(text, asides = []) {
-  let t = String(text || "");
+  // Normalise the number first, then strip the amount. Splitting on a comma before
+  // this turned "1,5 dl fløde" into "1" and lost the product.
+  let t = normalizeAmountText(String(text || ""), { range: false });
+  t = t.replace(/\d+(?:[.,]\d+)?\s*(?:g|kg|ml|cl|dl|l|stk|pk|pakker?|poser?|net|bakker?|karton|glas|flasker?|bægre?|bøtter?|skiver?|både|bidder|blade|spsk|tsk|knivspids|dåser?|bdt|bundt|fed|stilk|stilke|kvist|håndfuld|drys|nip|klat|skvæt|sjat|år)\b/gi, " ");
   t = t.split(/\bfx\b| - |;|,| eller | gerne /)[0];
-  t = t.replace(/\d+([.,]\d+)?\s*(g|kg|ml|dl|l|stk|pk|skiver|både|bidder|dl|år)\b/gi, " ");
   t = t.replace(/\d+\s*$/, " ");
   // Cut before the noise words go, not after: dropping "evt" alone would leave
   // "glutenfri" behind, and "Sojasauce glutenfri" is a product this family did not ask for.
@@ -135,46 +138,59 @@ function meatRuleFor(text, rules) {
 }
 
 /** Amount text for Namlig: grams, litres or pieces, rounded to something buyable. */
-/** A recipe amount as a number: Danish "1,5", a fraction "1/2", or "ca. 2". */
+/** A recipe amount as a number. The parser handles Danish comma, fractions, vulgar
+ *  fractions and ranges; a line with no readable number counts as one. */
 function amountOf(value) {
-  const raw = String(value == null ? "" : value).trim();
-  const fraction = /^(\d+)\s*\/\s*(\d+)$/.exec(raw);
-  if (fraction) return Number(fraction[1]) / Number(fraction[2]);
-  const decimal = /(\d+(?:[.,]\d+)?)/.exec(raw);
-  const n = decimal ? Number(decimal[1].replace(",", ".")) : NaN;
-  return Number.isFinite(n) && n > 0 ? n : 1;
+  return amountNumber(value) ?? 1;
 }
 
 function needTextOf(ing, factor, pieceWeights) {
   const grams = Number(ing.grams) || 0;
   const litres = Number(ing.litres) || 0;
+  const amount = amountOf(ing.amount);
+  const rounded = Math.max(1, Math.ceil(amount * factor));
+  // A can, a pack or a bunch is a PACK COUNT. The page may also state grams, but two
+  // cans are two packs, not one 800 g pack.
+  const packUnit = baseUnit(ing.unit);
+  if (packUnit && PACK_COUNT_UNITS.has(packUnit) && !smallUnitGrams(ing.unit, pieceWeights)) {
+    return { need: `${rounded} ${packUnit}`, unit: packUnit, pieces: rounded };
+  }
   // A spoon or a pinch is a measure. The recipe page's gram figure for it is not trusted:
   // 2 tsk of chili flakes arrived as 50 g and the shelf sold ten 5 g packs. Use the
   // kitchen measure, and keep the family's own `pieceWeights` override if it has one.
   const small = smallUnitGrams(ing.unit, pieceWeights);
   if (small) {
-    const amount = amountOf(ing.amount);
     if (litres > 0) {
       const ml = amount * small * factor;
-      const rounded = Math.max(5, Math.ceil(ml / 5) * 5);
-      return { need: `${rounded} ml`, unit: "ml", litres: rounded / 1000 };
+      const roundedMl = Math.max(5, Math.ceil(ml / 5) * 5);
+      return { need: `${roundedMl} ml`, unit: "ml", litres: roundedMl / 1000 };
     }
     const g = amount * small * factor;
-    const rounded = Math.max(5, Math.ceil(g / 5) * 5);
-    return { need: `${rounded} g`, unit: "g", grams: rounded };
+    const roundedG = Math.max(5, Math.ceil(g / 5) * 5);
+    return { need: `${roundedG} g`, unit: "g", grams: roundedG };
+  }
+  const mlPer = liquidMl(ing.unit);
+  if (mlPer) {
+    const ml = amount * mlPer * factor;
+    const roundedMl = Math.max(5, Math.ceil(ml / 5) * 5);
+    return { need: `${roundedMl} ml`, unit: "ml", litres: roundedMl / 1000 };
   }
   if (grams > 0) {
     const g = grams * factor;
-    const rounded = g >= 1000 ? Math.ceil(g / 250) * 250 : Math.max(50, Math.ceil(g / 50) * 50);
-    return { need: `${rounded} g`, unit: "g", grams: rounded };
+    const roundedG = g >= 1000 ? Math.ceil(g / 250) * 250 : Math.max(50, Math.ceil(g / 50) * 50);
+    return { need: `${roundedG} g`, unit: "g", grams: roundedG };
   }
   if (litres > 0) {
     const l = litres * factor;
-    const rounded = l >= 1 ? Math.ceil(l * 4) / 4 : Math.ceil(l * 10) / 10;
-    return { need: `${rounded} l`, unit: "l", litres: rounded };
+    const roundedL = l >= 1 ? Math.ceil(l * 4) / 4 : Math.ceil(l * 10) / 10;
+    return { need: `${roundedL} l`, unit: "l", litres: roundedL };
   }
-  const pieces = amountOf(ing.amount);
-  const rounded = Math.max(1, Math.ceil(pieces * factor));
+  // A unit with no weight on the page but a measured name (kg) still converts.
+  if (packUnit === "g" || packUnit === "kg") {
+    const g = amount * (packUnit === "kg" ? 1000 : 1) * factor;
+    const roundedG = g >= 1000 ? Math.ceil(g / 250) * 250 : Math.max(50, Math.ceil(g / 50) * 50);
+    return { need: `${roundedG} g`, unit: "g", grams: roundedG };
+  }
   // "6 fed hvidløg" is six cloves off one head, not six packets, and the shelf sells a
   // head by the piece and a net bag by the kilo. Weighed here, at 5 g a clove, the need
   // reaches the pack rule as a measure and one 4 kr head can meet a 200 g bag. A recipe
@@ -427,8 +443,8 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
   const aliases = (exclusions.queryAliases || {}).words || {};
   for (const row of merged.values()) {
     const need = row.grams ? `${row.grams} g`
-      : row.litres ? (row.litres < 0.1 ? `${Math.round(row.litres * 1000)} ml` : `${row.litres} l`)
-        : `${row.pieces} stk`;
+      : row.litres ? (row.litres < 1 ? `${Math.round(row.litres * 1000)} ml` : `${row.litres} l`)
+        : PACK_COUNT_UNITS.has(row.unit) ? `${row.pieces} ${row.unit}` : `${row.pieces} stk`;
     const rule = meatRuleFor(row.text, meat.rules);
     // The shop writes "Parmesan", the family buys its own hard cheese: rewrite before searching.
     // A family rule may carry no query of its own: then the recipe's word, or the family's alias

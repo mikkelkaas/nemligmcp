@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { norm, tokens, score, nameMatches, shelfContext } from "../match.mjs";
-import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf, choosePack, subunitGrams, SUBUNIT_GRAMS, eligibleOf, nameHasWord } from "../units.mjs";
+import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf, choosePack, subunitGrams, SUBUNIT_GRAMS, eligibleOf, nameHasWord, amountNumber, normalizeAmountText } from "../units.mjs";
 import { saleBeatsPin, parseNeed } from "../catalog.mjs";
 import { consolidateIntents, searchIntentOf } from "../plan.mjs";
 import { pairPlanToOrder, observedDelta, learnedFrom, biasIntent, addIntentsOf } from "../learn.mjs";
@@ -324,7 +324,7 @@ test("chooseDinners alternates a new dish with one the family knows", async () =
 import { wantQtyOf, cardDecisions, cardLineOf, slotOutcomeOf } from "../apply.mjs";
 import { recipeIngredients, cardSelections, planItemForIngredient, cardPayload } from "../recipes.mjs";
 import { basketDelta } from "../tools/mine-basket.mjs";
-import { keptDinners } from "../tools/mine-menu.mjs";
+import { keptDinners, poolEntry, capPool } from "../tools/mine-menu.mjs";
 import { bestSku } from "../pin-skus.mjs";
 
 test("a plan quantity overwrites the amount a recipe card put in, down as well as up", () => {
@@ -657,6 +657,8 @@ test("the protein comes from the name, not from one garnish line", () => {
   assert.equal(mainProtein({ name: "Nudler med kylling og broccoli", ingredients: [{ text: "Vannamei rejer" }] }), "kylling");
   assert.equal(mainProtein({ name: "Bami goreng med okse", ingredients: [{ text: "Kyllingestrimler" }] }), "oksekod");
   assert.equal(mainProtein({ name: "Salatpizza med kebab og dressing", url: "/opskrifter/salatpizza-kyllingekebab-98004472" }), "kylling");
+  assert.equal(mainProtein({ name: "Forårsrulle", ingredients: [{ text: "Forårsløg" }] }), "vegetar",
+    "a spring onion is not a spring chicken");
   assert.equal(dishFormat({ name: "Æggekage med spinat og laks" }), "aeg");
 });
 
@@ -1112,7 +1114,7 @@ test("a recipe's part is weighed, not counted as packs", () => {
   assert.equal(subunitGrams("skiver"), 25, "a slice, in whatever plural the recipe wrote");
   assert.equal(subunitGrams("stk"), null, "a pack is not a part - that stays a count");
   assert.equal(subunitGrams("fed", { fed: 8 }), 8, "a family that reads a clove heavier says so in purchasing.pieceWeights");
-  assert.ok(Object.keys(SUBUNIT_GRAMS).length <= 8, "the built-in part table stays small and every entry defensible");
+  assert.ok(Object.keys(SUBUNIT_GRAMS).length <= 20, "the built-in part table stays small and every entry defensible");
 });
 
 test("a 4 kr head meets a 13,33 kr net bag: the whole shelf is compared", () => {
@@ -1390,4 +1392,128 @@ test("a new package sku wins when the old one has not been bought for months", (
   const steady = staples.map((s) => ({ ...s, lastDate: "2026-11-01" }));
   steady[0].orders = 10; steady[1].orders = 2;
   assert.equal(bestSku("Smør saltet", steady).sku, "old", "the regular sku still wins");
+});
+
+test("shared lines alone do not keep a dinner when the basket has no cards", () => {
+  const plan = {
+    dinnerMenu: [{ name: "Carbonara", url: "/carbonara" }, { name: "Bami", url: "/bami" }],
+    items: [
+      { sku: "1", name: "Bacon", packs: 1, sources: ["dinner:/carbonara", "dinner:/bami"] },
+      { sku: "2", name: "Æg", packs: 1, sources: ["dinner:/carbonara", "dinner:/bami"] },
+      { sku: "3", name: "Nudler", packs: 1, sources: ["dinner:/bami"] },
+    ],
+  };
+  const basket = { Lines: [{ Id: "1" }, { Id: "2" }], Recipes: [] };
+  assert.deepEqual(keptDinners(plan, basket).map((d) => d.name), [], "both dinners only have shared lines");
+  basket.Lines.push({ Id: "3" });
+  assert.deepEqual(keptDinners(plan, basket).map((d) => d.name), ["Bami"], "the signature line keeps Bami");
+});
+
+test("Danish recipe numbers: comma, fraction, vulgar fraction, range and words", () => {
+  assert.equal(amountNumber("1,5"), 1.5);
+  assert.equal(amountNumber("1½"), 1.5);
+  assert.equal(amountNumber("1 1/2"), 1.5);
+  assert.equal(amountNumber("1/2"), 0.5);
+  assert.equal(amountNumber("½"), 0.5);
+  assert.equal(amountNumber("ca. 2"), 2);
+  assert.equal(amountNumber("2-3"), 2, "the low end is the safe shopping need");
+  assert.equal(amountNumber("en"), 1);
+  assert.equal(amountNumber("to"), 2);
+  assert.equal(amountNumber("halv"), 0.5);
+  assert.equal(amountNumber("efter smag"), null);
+  assert.equal(normalizeAmountText("8-12%", { range: false }), "8-12%", "a fat grade is not a range");
+});
+
+test("pack sizes: rough amounts, fractions and ranges", () => {
+  assert.equal(parsePack("ca. 500 g").qty, 500);
+  assert.equal(parsePack("1½ l").qty, 1500);
+  assert.equal(parsePack("1/2 kg").qty, 500);
+  assert.equal(parsePack("2-3 stk.").qty, 2);
+  assert.equal(parsePack("24 x 0,33 l").qty, 7920);
+  assert.equal(parsePack("400 g / Glyngøre").qty, 400);
+});
+
+test("query cleaning strips a decimal amount before the comma split", () => {
+  assert.equal(cleanQuery("1,5 dl fløde", []), "Fløde");
+  assert.equal(cleanQuery("1½ dl fløde", []), "Fløde");
+  assert.equal(cleanQuery("1/2 kg hakket oksekød", []), "Oksekød");
+  assert.equal(cleanQuery("2 spsk olie", []), "Olie");
+  assert.equal(cleanQuery("1 fed hvidløg", []), "Hvidløg");
+  assert.equal(cleanQuery("Kylling, skåret i strimler", []), "Kylling");
+});
+
+test("compound product names keep the product and refuse the prepared dish", () => {
+  const scoreOf = (q, n) => score(q, n);
+  assert.equal(scoreOf("kylling", "Kyllingebrystfilet"), 1);
+  assert.equal(scoreOf("kylling", "Kyllingesalat"), 0);
+  assert.equal(scoreOf("tomat", "Cherrytomater"), 1);
+  assert.equal(scoreOf("tomat", "Tomatpuré"), 0);
+  assert.equal(scoreOf("fisk", "Fiskefars"), 1);
+  assert.equal(scoreOf("fisk", "Fiskesuppe"), 0);
+  assert.equal(scoreOf("spaghetti", "Spaghettoni"), 1);
+  assert.equal(scoreOf("agurk", "Agurkesalat"), 0);
+  assert.equal(scoreOf("kylling", "Kyllingepølse"), 0);
+  assert.equal(scoreOf("fløde", "Flødeost"), 0);
+  assert.equal(scoreOf("mælk", "Mælkeskum"), 0);
+});
+
+test("recipe amounts convert dl, spoons and cloves before they reach the shelf", () => {
+  const amounts = { household: { cookServings: 5 } };
+  const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] }, queryAsides: { words: [] } };
+  const recipe = { name: "Test", servings: 4, ingredients: [
+    { text: "Fløde", amount: "1,5", unit: "dl" },
+    { text: "Chiliflager", amount: "2", unit: "tsk", grams: 50 },
+    { text: "Hvidløg", amount: "2", unit: "fed" },
+    { text: "Tomater", amount: "2", unit: "dåse" },
+    { text: "Kartofler", amount: "1", unit: "kg" },
+  ] };
+  const out = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions });
+  const need = (q) => out.intents.find((i) => i.query === q).need;
+  assert.equal(need("Fløde"), "190 ml", "1,5 dl for 4 scales to 5 servings");
+  assert.equal(need("Chiliflager"), "15 g", "a teaspoon is 5 g, not the page's 50 g");
+  assert.equal(need("Hvidløg"), "25 g", "two cloves are 10 g before scaling");
+  assert.equal(need("Tomater"), "3 dåse", "two cans scale to three, and stay cans");
+  assert.equal(need("Kartofler"), "1250 g", "a kg with no page grams still converts");
+});
+
+test("a new card takes its protein from the recipe url, not only its title", () => {
+  const page = { content: [{ Header: "Salatpizza med kebab", NumberOfPersons: 4, TotalTime: "20 min",
+    RecipeTags: [], IngredientGroups: [{ Ingredients: [{ ProductSelectionId: "1", Text: "Kebab", Amount: "100", Unit: "g" }] }] }] };
+  const entry = poolEntry("/opskrifter/salatpizza-kyllingekebab-98004472", { name: "Salatpizza med kebab" }, page);
+  assert.equal(entry.protein, "kylling", "the url says chicken even when the title says kebab");
+  assert.equal(entry.minutes, 20);
+});
+
+test("the pool cap keeps a liked card before a higher-scored stranger", () => {
+  const entries = [
+    { url: "/a", name: "A", score: 100 },
+    { url: "/b", name: "B", score: 90 },
+    { url: "/liked", name: "Liked", score: 1 },
+  ];
+  const { pool, dropped } = capPool(entries, new Set(["/liked"]), 2);
+  assert.deepEqual(pool.map((p) => p.url), ["/liked", "/a"]);
+  assert.deepEqual(dropped.map((p) => p.url), ["/b"]);
+});
+
+test("two cans stay two packs, whatever each can weighs", () => {
+  assert.equal(packsFor({ qty: 2, unit: "dåse" }, { qty: 400, unit: "g" }), 2);
+  assert.equal(packsFor({ qty: 2, unit: "pakke" }, { qty: 500, unit: "g" }), 2);
+});
+
+test("accents do not hide a product", () => {
+  assert.equal(score("creme fraiche", "Crème fraiche"), 1);
+  assert.equal(score("pate", "Pâté"), 1);
+  assert.equal(cleanQuery("Crème fraiche", []), "Crème fraiche");
+});
+
+test("a card with no title is kept by its url", () => {
+  const plan = { dinnerMenu: [{ name: "Dinner A", url: "/a" }, { name: "Dinner B", url: "/b" }], items: [] };
+  const basket = { Lines: [], Recipes: [{ Id: "guid-a", Url: "/a", Title: "" }] };
+  assert.deepEqual(keptDinners(plan, basket).map((d) => d.name), ["Dinner A"]);
+});
+
+test("a card and a plan may spell the same recipe url differently", () => {
+  const plan = { dinnerMenu: [{ name: "Dinner A", url: "https://www.nemlig.com/opskrifter/a?from=plan" }], items: [] };
+  const basket = { Lines: [], Recipes: [{ Id: "guid", Url: "/opskrifter/a/", Title: "" }] };
+  assert.deepEqual(keptDinners(plan, basket).map((d) => d.name), ["Dinner A"]);
 });

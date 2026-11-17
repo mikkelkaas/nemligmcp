@@ -9,6 +9,7 @@
 // scored across name (3), tags (2) and ingredients (1), because a recipe that lists
 // "Rejer" in one line is still "Nudler med kylling og broccoli".
 export const FOLD = (s) => String(s || "")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
   .toLowerCase()
   .replace(/[øØ]/g, "o").replace(/[æÆ]/g, "ae").replace(/[åÅ]/g, "a")
   .replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
@@ -39,7 +40,7 @@ const FORMATS = [
  */
 const PROTEINS = [
   ["fisk", ["laks", "torsk", "morrej", "hvidfisk", "hvid fisk", "sej", "rødspætte", "makrel", "sild", "ørred", "fiskefars", "fiskefilet", "fiskedeller", "fisk", "rejer", "hummer", "muslinger", "blæksprutte", "tun", "fish"]],
-  ["kylling", ["kylling", "kyllinge", "kalkun", "fjerkræ", "kip", "andefilet", "forår"]],
+  ["kylling", ["kylling", "kyllinge", "kalkun", "fjerkræ", "kip"]],
   // A sauce named after its meat counts as that meat: "bolognese" is ground beef.
   ["oksekod", ["okse", "hakket", "kød", "kødboller", "kødbolle", "kødsovs", "kødsauce", "bolognese", "gullash", "gulasj", "boef", "kalv", "kofte", "kebab", "burger", "stroganoff", "entrecote", "mørbrad", "forloverit", "mørkebiff"]],
   ["svinepolse", ["svin", "flæsk", "ribben", "medister", "pølse", "skinke", "bacon", "nakke", "pendel", "spege", "medaljon", "marineret", "carbonara", "pølseret"]],

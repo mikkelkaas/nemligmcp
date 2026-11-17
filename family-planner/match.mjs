@@ -31,12 +31,13 @@ const QUALIFIER = new Set(["øko", "oko", "økologisk", "okologisk", "økologisk
 
 /** Lower-case, punctuation-free form used for cache keys and comparisons. */
 export function norm(s) {
-  return String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 /** Lower-case word list of a product name or query, filler words removed. */
 export function tokens(s) {
   return String(s || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .split(" ")
@@ -80,8 +81,15 @@ function hasPreparedExtra(nameTokens, queryTokens) {
 
 /** Danish inflection swaps the vowels: gulerod -> gulerødder. Fold before comparing. */
 function fold(token) {
-  return token.replace(/ø/g, "o").replace(/æ/g, "a").replace(/å/g, "a");
+  return token.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/ø/g, "o").replace(/æ/g, "a").replace(/å/g, "a");
 }
+
+// A compound whose tail names a different product, not a cut of the same one.
+// "Agurk" must miss "Agurkesalat"; "Fisk" must still find "Fiskefars".
+const PREPARED_COMPOUND = ["salat", "suppe", "sauce", "sovs", "dip", "mix", "postej", "paalaeg", "pålæg",
+  "mos", "creme", "dressing", "saft", "juice", "chips", "snack", "pulver", "koncentrat", "krydderi",
+  "olie", "eddike", "pure", "puré", "ketchup", "sylte", "syltetøj", "most", "kage", "pasta", "nudler", "pølse",
+  "flødeost", "flødeskum", "flødeis"];
 
 function tokenAccepts(rawName, rawQuery) {
   if (rawName === rawQuery) return true;
@@ -90,18 +98,39 @@ function tokenAccepts(rawName, rawQuery) {
   if (nameToken === queryToken) return true;
   const shorter = queryToken.length <= nameToken.length ? queryToken : nameToken;
   const longer = queryToken.length <= nameToken.length ? nameToken : queryToken;
-  if (shorter.length >= 4 && longer.startsWith(shorter) && shorter.length / longer.length >= 0.7) return true;
-  // Danish puts the product at the END of a compound: "Fløde" is sold as
-  // "Madlavningsfløde 4%" and "Piskefløde 38%", "Kylling" as "Kyllingebrystfilet".
-  // Only the suffix direction is safe: "Agurk" must still miss "Agurkesalat", where the
-  // query is the prefix.
-  // Four letters after folding, not five: "maelk" becomes "malk" when a-e collapses, and
-  // that is what has to find "minimaelk" and "soedmaelk".
+  // A Danish plural is the same product: "tomat" finds "cherrytomater".
+  if (shorter.length >= 4 && (longer.endsWith(shorter + "er") || longer.endsWith(shorter + "e") || longer.endsWith(shorter + "r"))) return true;
+  // Danish puts the product first in a compound: "Kylling" is sold as
+  // "Kyllingebrystfilet", "Spaghetti" as "Spaghettoni". The tail decides whether it is
+  // still the same product; a prepared tail is a different one.
+  if (shorter.length >= 4 && longer.startsWith(shorter)) {
+    const rest = longer.slice(shorter.length);
+    const dairy = ["flode", "floede", "creme", "malk", "maelk"].includes(shorter);
+    if (dairy && ["ost", "skum", "is"].some((w) => rest.endsWith(w))) return false;
+    if (rest.length >= 2 && !PREPARED_COMPOUND.some((w) => rest.includes(fold(w)))) return true;
+  }
+  // Product at the END: "Fløde" is "Madlavningsfløde"; "Mælk" is "Letmælk".
   if (shorter.length >= 4 && longer.endsWith(shorter)) return true;
-  // Long product names differ by one letter across producers: "Tortellini m. skinke"
-  // is sold as "Tortelloni m. skinke". A single letter change inside a long word
-  // that shares a 6-letter stem is still the same dish.
-  return oneLetterApart(nameToken, queryToken);
+  // Long product names differ by one or two letters across producers: "Tortellini"
+  // is sold as "Tortelloni", "Spaghetti" as "Spaghettoni".
+  return oneLetterApart(nameToken, queryToken) || twoEditsApart(nameToken, queryToken);
+}
+
+/** True when two long words share a six-letter stem and are at most two edits apart. */
+function twoEditsApart(a, b) {
+  if (a.length < 8 || b.length < 8 || Math.abs(a.length - b.length) > 2) return false;
+  if (a.slice(0, 6) !== b.slice(0, 6)) return false;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + cost);
+    }
+    if (Math.min(...row) > 2) return false;
+    prev = row;
+  }
+  return prev[b.length] <= 2;
 }
 
 /** True when both words are 8+ letters, share a 6-letter stem and differ once. */
