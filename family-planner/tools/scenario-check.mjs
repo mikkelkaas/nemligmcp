@@ -89,7 +89,8 @@ function closedEnvFile(home) {
 
 function applyRun(home, argv, label) {
   const file = closedEnvFile(home);
-  return nodeRun("apply.mjs", argv, { NEMLIG_HOME: home, NEMLIG_ENV: file }, NODE_TIMEOUT_FAST, label);
+  // The child env names CLOSED too: a shell export must not outvote the probe's own file.
+  return nodeRun("apply.mjs", argv, { NEMLIG_HOME: home, NEMLIG_ENV: file, NEMLIG_MCP_URL: CLOSED }, NODE_TIMEOUT_FAST, label);
 }
 
 /** A plan file copy, aged or emptied, for a guard probe. */
@@ -130,6 +131,16 @@ function checkGuards(dir) {
   }
   const missing = applyRun(dir, ["--plan", join(dir, "no-such-plan.json"), ...approve], "guard:missing file");
   record("guard:missing file", missing.code === 1 && /no plan file/.test(missing.out), `exit ${missing.code}, tells you to plan first`);
+
+  // A dead endpoint with a warm price cache: the plan must fail loud, not answer from the
+  // cache as if the shop were fine. This is the scenario the 17.11 evaluation found missing.
+  const latest = join(dir, "data", "plans", "plan-latest.json");
+  const before = existsSync(latest) ? readFileSync(latest, "utf8") : "";
+  const dead = nodeRun("plan.mjs", EIGHT_DAYS,
+    { NEMLIG_HOME: dir, NEMLIG_ENV: envFile(), NEMLIG_MCP_URL: CLOSED }, NODE_TIMEOUT_FAST, "guard:plan dead endpoint");
+  const after = existsSync(latest) ? readFileSync(latest, "utf8") : "";
+  record("guard:plan dead endpoint", dead.code !== 0 && /no MCP endpoint answered/.test(dead.out) && after === before,
+    `exit ${dead.code}, names the dead endpoint, leaves plan-latest untouched`);
 }
 
 /** What a plan file must satisfy, run through the validator apply.mjs itself uses. */
