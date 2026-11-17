@@ -60,11 +60,13 @@ function setArgv(args) {
 async function run() {
   const t0 = Date.now();
   const { planArgs, own } = split(process.argv.slice(2));
+  // --help answers before the approval check: it writes nothing and needs no token.
+  const wantHelp = planArgs.includes("--help") || planArgs.includes("-h");
   if (own.slot !== null && (!/^\d+$/.test(String(own.slot)) || Number(own.slot) <= 0)) {
     console.error(`FAILED: --slot "${own.slot}" is not a numeric timeslot id.`);
     process.exit(3);
   }
-  if (!own.dry && own.approve !== TOKEN) {
+  if (!wantHelp && !own.dry && own.approve !== TOKEN) {
     console.error(`FAILED: the full run needs --approve ${TOKEN} (or --dry to stop at the plan).`);
     console.error("Nothing was written to the basket.");
     process.exit(2);
@@ -76,7 +78,12 @@ async function run() {
     console.error("FAILED: the plan did not finish - nothing was written to the basket.");
     process.exit(typeof process.exitCode === "number" ? process.exitCode : 1);
   }
-  if (own.dry || planArgs.includes("--help") || planArgs.includes("-h")) {
+  if (wantHelp) {
+    console.log("usage: node run.mjs <plan.mjs flags> --approve I-APPROVE-THIS-BASKET [--slot <id>] [--dry] [--keep-going]");
+    console.log("Plans, then writes the basket, in one process. --dry stops at the plan. Nothing is ever ordered.");
+    return;
+  }
+  if (own.dry) {
     console.log(`run: dry mode stops here. Whole run ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
     return;
   }
