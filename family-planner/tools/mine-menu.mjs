@@ -35,6 +35,15 @@ function basketProducts(basket) {
 
 /** Plan dinners that still have at least one product in the basket. */
 export function keptDinners(plan, basket) {
+  const cards = Array.isArray(basket.Recipes) ? basket.Recipes : [];
+  if (cards.length > 0) {
+    // The basket names the cards it holds. A shared ingredient (bacon, eggs, cheese)
+    // must not keep a dinner whose card the family removed.
+    const ids = new Set(cards.map((c) => String(c.Id || c.Url || "")));
+    const titles = new Set(cards.map((c) => fold(c.Title || c.Name || "")));
+    return (plan.dinnerMenu || []).filter((dish) =>
+      ids.has(String(dish.url || dish.id)) || titles.has(fold(dish.name)));
+  }
   const have = basketProducts(basket);
   return (plan.dinnerMenu || []).filter((dish) => {
     const items = (plan.items || []).filter((item) =>
@@ -90,6 +99,9 @@ async function main() {
   cand.recipes = Array.isArray(cand.recipes) ? cand.recipes : [];
   const taste = existsSync(TASTE) ? JSON.parse(readFileSync(TASTE, "utf8")) : { liked: [], refused: [] };
   const liked = new Set(taste.liked || []);
+  // A corrected basket is the verdict on the plan it came from: a dinner the family
+  // removed is no longer liked, even if an older basket once kept it.
+  for (const dish of plan.dinnerMenu || []) liked.delete(dish.url || dish.id);
   const byName = new Map((pool.pool || []).map((r) => [fold(r.name), r]));
   const { mcp } = await connectGated({ concurrency: 1, minIntervalMs: 350, attempts: 1 });
 

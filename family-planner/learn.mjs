@@ -28,15 +28,29 @@ export function productWord(name) {
 
 /** One order, thinned to what the comparison needs. */
 export function thinOrder(raw) {
-  const lines = (raw.lines || []).filter((l) => l.IsProductLine !== false && l.ProductNumber);
+  // Two shapes: the API/order-lines file (ProductNumber, ProductName) and the
+  // history-raw file mine-history.mjs writes (sku, name, qty). Both are read here.
+  const lines = (raw.lines || raw.Lines || []).filter((l) =>
+    l.IsProductLine !== false && (l.ProductNumber || l.sku));
   return {
-    at: String(raw.iso || "").slice(0, 10),
-    orderId: String(raw.orderId || ""),
+    at: String(raw.iso || raw.at || "").slice(0, 10),
+    orderId: String(raw.orderId || raw.orderNumber || raw.Id || ""),
     lines: lines.map((l) => ({
-      sku: String(l.ProductNumber), name: l.ProductName || "", qty: Number(l.Quantity) || 0,
-      recipeUrl: l.RecipeUrl || l.MealBoxRecipePdfUrl || null,
+      sku: String(l.ProductNumber ?? l.sku), name: l.ProductName || l.name || "", qty: Number(l.Quantity ?? l.qty) || 0,
+      recipeUrl: l.RecipeUrl || l.MealBoxRecipePdfUrl || l.recipeUrl || null,
     })),
   };
+}
+
+/** The order history the miner wrote, or the older JSONL file when that is all there is. */
+export function readOrders() {
+  const rawFile = `${DATA}/history-raw.json`;
+  if (existsSync(rawFile)) {
+    const raw = JSON.parse(readFileSync(rawFile, "utf8"));
+    if (!Array.isArray(raw)) throw new Error(`${rawFile} must hold an array of orders`);
+    return raw.map(thinOrder).filter((o) => o.lines.length > 0);
+  }
+  return readJsonl(`${DATA}/order-lines-raw.jsonl`, 400).map(thinOrder).filter((o) => o.lines.length > 0);
 }
 
 /**
@@ -133,6 +147,9 @@ export function observedDelta(plan, orders) {
 function bump(map, key, value, name) {
   if (!key) return;
   const e = map.get(key) || { key, name, count: 0, values: [], dates: [] };
+  // Count baskets, not lines: three yoghurt flavours added in one order are one
+  // observation, not three. Otherwise one basket can teach a habit.
+  if (value.at && e.dates.includes(value.at)) return;
   e.count += 1; e.values.push(value); e.dates.push(value.at || "");
   e.name = e.name || name;
   map.set(key, e);
@@ -266,7 +283,7 @@ function main() {
     rate(url, verdict);
     return;
   }
-  const orders = readJsonl(`${DATA}/order-lines-raw.jsonl`, 400).map(thinOrder).filter((o) => o.lines.length > 0);
+  const orders = readOrders();
   const plans = readPlans(DATA + "/plans", Number.isFinite(limit) ? limit : 24);
   const pairs = pairPlanToOrder(plans, orders, { maxGapDays: 21 });
   const taste = tasteFile();

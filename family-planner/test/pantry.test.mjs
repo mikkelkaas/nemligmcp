@@ -50,6 +50,7 @@ const fancy = {
 const base = {
   schemaVersion: 1,
   cycleDays: 9,
+  mining: { minOrders: 6, minPct: 8, now: Date.parse("2026-10-01") },
   blocks: {
     breakfast: [{ id: "minimaelk", query: "Letmælk 1,5%", sku: "1",
       mode: "history", qtyPerCycle: 2, everyNDays: 25, note: "hand written" }],
@@ -111,8 +112,30 @@ test("a partial block override keeps the other default lists", () => {
   const oats = { ...toilet, sku: "10", name: "Havregryn fine", orders: 12, ordersPct: 18 };
   const { added } = buildPantry([oats, toilet], {
     ...base,
-    mining: { blocks: { household: ["papir"] } },
+    mining: { minPct: 8, now: Date.parse("2026-10-01"), blocks: { household: ["papir"] } },
   });
   assert.ok(added.some((a) => a.block === "breakfast"), "oats still use the breakfast default");
   assert.ok(added.some((a) => a.block === "household"), "the custom household word is used");
+});
+
+test("the default threshold only adds a staple bought in most orders", () => {
+  const { added } = buildPantry([toilet], { schemaVersion: 1, cycleDays: 9, blocks: {} });
+  assert.equal(added.length, 0, "18 percent is an occasional buy, not a pantry line");
+});
+
+test("a pruned auto line is removed, a manual line is kept", () => {
+  const auto = { ...toilet, sku: "88", name: "Peberfrugt grøn", orders: 12, ordersPct: 18 };
+  const existing = {
+    ...base,
+    blocks: {
+      breakfast: [{ id: "manual", query: "Havregryn", sku: "1", qtyPerCycle: 1 }],
+      kidLunchbox: [], snacks: [],
+      household: [{ id: "auto", query: "Peberfrugt rød", sku: "99", qtyPerCycle: 1,
+        scheduleSource: "mined", qtySource: "mined" }],
+    },
+  };
+  const { pantry, pruned } = buildPantry([milk, auto], existing, { prune: true });
+  assert.equal(pruned.length, 1);
+  assert.equal(pantry.blocks.breakfast.length, 1, "the manual line stays");
+  assert.equal(pantry.blocks.household.length, 0, "the auto line is gone");
 });

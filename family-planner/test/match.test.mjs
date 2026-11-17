@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { norm, tokens, score, nameMatches, shelfContext } from "../match.mjs";
-import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf, choosePack, subunitGrams, SUBUNIT_GRAMS } from "../units.mjs";
+import { parsePack, packsFor, cheapest, toBaseMeasure, pieceGrams, pieceWeightOf, choosePack, subunitGrams, SUBUNIT_GRAMS, eligibleOf, nameHasWord } from "../units.mjs";
 import { saleBeatsPin, parseNeed } from "../catalog.mjs";
 import { consolidateIntents, searchIntentOf } from "../plan.mjs";
 import { pairPlanToOrder, observedDelta, learnedFrom, biasIntent, addIntentsOf } from "../learn.mjs";
@@ -325,6 +325,7 @@ import { wantQtyOf, cardDecisions, cardLineOf, slotOutcomeOf } from "../apply.mj
 import { recipeIngredients, cardSelections, planItemForIngredient, cardPayload } from "../recipes.mjs";
 import { basketDelta } from "../tools/mine-basket.mjs";
 import { keptDinners } from "../tools/mine-menu.mjs";
+import { bestSku } from "../pin-skus.mjs";
 
 test("a plan quantity overwrites the amount a recipe card put in, down as well as up", () => {
   assert.equal(wantQtyOf({ packs: 2 }, 5, true), 2);
@@ -1347,4 +1348,46 @@ test("a malformed profile and missing data files do not crash the loader", () =>
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("a short exclusion word does not match the middle of a name", () => {
+  assert.equal(nameHasWord("Andebryst", "and"), true);
+  assert.equal(nameHasWord("Sandwich", "and"), false);
+  assert.equal(nameHasWord("Kyllingelår", "lår"), true);
+  assert.equal(nameHasWord("Lammekød", "lam"), true);
+  assert.equal(nameHasWord("Slam", "lam"), false);
+  const shelf = [
+    { id: "1", name: "Sandwich", unitPrice: 10, availability: {} },
+    { id: "2", name: "Andebryst", unitPrice: 10, availability: {} },
+  ];
+  const { eligible, rejected } = eligibleOf(shelf, { avoidWords: ["and"] });
+  assert.deepEqual(eligible.map((c) => c.name), ["Sandwich"]);
+  assert.equal(rejected[0].name, "Andebryst");
+});
+
+test("a removed card is not kept by its shared ingredients", () => {
+  const plan = {
+    dinnerMenu: [{ name: "Carbonara", url: "/carbonara" }, { name: "Bami", url: "/bami" }],
+    items: [
+      { sku: "1", name: "Bacon", packs: 1, sources: ["dinner:/carbonara", "dinner:/bami"] },
+      { sku: "2", name: "Æg", packs: 1, sources: ["dinner:/carbonara"] },
+      { sku: "3", name: "Nudler", packs: 1, sources: ["dinner:/bami"] },
+    ],
+  };
+  const basket = {
+    Lines: [{ Id: "1" }, { Id: "2" }, { Id: "3" }],
+    Recipes: [{ Id: "bami-guid", Title: "Bami" }],
+  };
+  assert.deepEqual(keptDinners(plan, basket).map((d) => d.name), ["Bami"]);
+});
+
+test("a new package sku wins when the old one has not been bought for months", () => {
+  const staples = [
+    { sku: "old", name: "Smør (saltet)", orders: 10, lastDate: "2026-01-01", medianUnitPrice: 20 },
+    { sku: "new", name: "Smør (saltet)", orders: 2, lastDate: "2026-11-17", medianUnitPrice: 21 },
+  ];
+  assert.equal(bestSku("Smør saltet", staples).sku, "new");
+  const steady = staples.map((s) => ({ ...s, lastDate: "2026-11-01" }));
+  steady[0].orders = 10; steady[1].orders = 2;
+  assert.equal(bestSku("Smør saltet", steady).sku, "old", "the regular sku still wins");
 });

@@ -274,6 +274,22 @@ export function fatPercentOf(name) {
   return one ? Number(one[1]) : null;
 }
 
+/** True when the folded name carries the folded word. A word of three letters or
+ *  fewer must start a token, so "and" finds Andebryst and not Sandwich, and "lam"
+ *  finds Lammekød and not slam. Longer words may sit inside a compound. */
+const SUFFIX_WORDS = new Set(["lar", "ben"]);   // lår and ben: body parts that end a compound
+
+function hitWord(text, word) {
+  if (!word) return false;
+  if (word.includes(" ") || word.length > 3) return text.includes(word);
+  return text.split(" ").some((t) => t === word || t.startsWith(word) || (SUFFIX_WORDS.has(word) && t.endsWith(word)));
+}
+
+/** The same test on raw text, for the exclusion editor and its tests. */
+export function nameHasWord(name, word) {
+  return hitWord(foldWords(String(name || "")), foldWords(String(word || "")));
+}
+
 /** Drop unavailable products and avoided brands; boost the preferred sku to the front.
  *  Exported: a trim decision runs the same filter over the rivals of the sku it is
  *  looking at, so a saving is never taken on a product the shop cannot deliver. */
@@ -298,7 +314,7 @@ export function eligibleOf(candidates, opts) {
     const brand = String(c.brand || "").toLowerCase();
     if (avoid.some((b) => brand.includes(b))) { rejected.push({ id: c.id, name: c.name, why: "brand " + c.brand }); continue; }
     const name = foldWords(String(c.name || ""));
-    const hit = avoidWords.find((w) => name.includes(w));
+    const hit = avoidWords.find((w) => hitWord(name, w));
     if (hit) { rejected.push({ id: c.id, name: c.name, why: 'name says "' + hit + '"' }); continue; }
     if (maxUnit !== null && Number(c.unitPrice) > maxUnit) {
       rejected.push({ id: c.id, name: c.name, why: `${Number(c.unitPrice).toFixed(1)} ${c.unitLabel || "per unit"} is above the ${maxUnit} limit` });

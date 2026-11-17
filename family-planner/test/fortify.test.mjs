@@ -119,3 +119,24 @@ test("the manual exclusion editor changes exact words, not substrings", async ()
   assert.deepEqual(changeWords(["x"], { remove: ["y"] }), ["x"], "removing a missing word is a no-op");
   assert.deepEqual(changeWords([], { add: ["a", "a", "b"] }), ["a", "b"]);
 });
+
+test("the exclusion editor learns from what the last orders bought", async () => {
+  const { learnExclusions, boughtWord } = await import("../exclusions.mjs");
+  assert.equal(boughtWord("Andebryst", "and"), true);
+  assert.equal(boughtWord("Sandwich", "and"), false);
+  assert.equal(boughtWord("Peberfrugt", "peber", "exact"), false);
+  assert.equal(boughtWord("Ingefær øko.", "frisk ingefær", "herb"), true);
+  const orders = [
+    { lines: [{ name: "Forårsløg" }, { name: "Ingefær øko." }] },
+    { lines: [{ name: "Peberfrugt" }] },
+  ];
+  const out = learnExclusions(
+    { never: ["and"], herbs: ["forårsløg", "frisk ingefær", "purløg"], pantry: ["peber", "salt"] },
+    orders,
+    { limit: 5 },
+  );
+  assert.deepEqual(out.removed.never, [], "no duck was bought");
+  assert.deepEqual(out.removed.herbs, ["forårsløg", "frisk ingefær"]);
+  assert.deepEqual(out.removed.pantry, [], "one purchase does not empty the pantry");
+  assert.deepEqual(out.herbs, ["purløg"]);
+});

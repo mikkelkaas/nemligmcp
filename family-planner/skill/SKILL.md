@@ -69,6 +69,8 @@ node exclusions.mjs --add "persille" --target herbs --write
 
 `--target` is `never`, `pantry`, `herbs` or `rotation`. A run without `--write` is a dry run.
 The editor prints the removed and added words, then writes `profiles/family-*.json`.
+Use `--learn` after an order, so a word the family actually bought leaves the list without
+a manual edit.
 
 ## Pantry and its schedule
 
@@ -77,13 +79,24 @@ It is compiled from the history, not typed by hand:
 
 ```bash
 node mine-history.mjs                 # refresh data/staples.json and data/patterns.json
-node pantry.mjs --write               # merge the evidence into profiles/pantry.json
+node pantry.mjs --write --prune       # merge the evidence into profiles/pantry.json
 ```
 
 `pantry.mjs` computes `everyNDays` as 80 % of the measured gap between purchases, capped
 at 180 days. An item bought every order gets no gate. A hand-written note, unit or
-`everyNDays` is kept. New lines are added only for a pinned sku, a known block, and a
-product that is not a cooking ingredient. Add a name to `rejected` to keep it out for good.
+`everyNDays` is kept. A new line needs a pinned sku, a known block, a product that is not a
+cooking ingredient, at least 40 percent of orders, and a purchase in the last 60 days.
+`--prune` removes an auto-added line that no longer passes; manual lines are never pruned.
+Add a name to `rejected` to keep it out for good.
+
+After an order, teach the exclusion lists from what was actually bought:
+
+```bash
+node exclusions.mjs --learn --write
+```
+
+A hard ban or a fresh herb is dropped after one purchase. A pantry assumption needs two
+of the last five orders. Only lists written in the family profile are touched.
 
 ## Step 2 — plan (dry run, always first)
 

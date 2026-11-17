@@ -16,12 +16,22 @@ import { PROFILES, DATA } from "./paths.mjs";
 const PANTRY = PROFILES + "/pantry.json";
 const STAPLES = DATA + "/staples.json";
 /** Best rebuy for one query, or null. Ties break on more orders, then more recent. */
-export function bestSku(query, staples, { minScore = 0.7 } = {}) {
-  let best = null;
+export function bestSku(query, staples, { minScore = 0.7, freshDays = 180 } = {}) {
+  const candidates = [];
   for (const s of staples) {
     const sc = score(query, s.name);
     if (sc < minScore) continue;
-    const cand = { score: sc, orders: s.orders, lastDate: s.lastDate || "", sku: s.sku, name: s.name, price: s.medianUnitPrice };
+    candidates.push({ score: sc, orders: s.orders, lastDate: s.lastDate || "", sku: s.sku, name: s.name, price: s.medianUnitPrice });
+  }
+  if (candidates.length === 0) return null;
+  // A package can get a new sku. If the old one has not been bought for six months,
+  // the family's current choice is the recent sku even when the old one has more orders.
+  const newest = candidates.reduce((d, c) => (c.lastDate > d ? c.lastDate : d), "");
+  const cutoff = newest ? Date.parse(newest) - freshDays * 86400000 : 0;
+  const recent = candidates.filter((c) => !newest || !c.lastDate || Date.parse(c.lastDate) >= cutoff);
+  const pool = recent.length > 0 ? recent : candidates;
+  let best = null;
+  for (const cand of pool) {
     if (!best
       || cand.orders > best.orders
       || (cand.orders === best.orders && cand.score > best.score)

@@ -398,7 +398,7 @@ lines instead: no one cooks a fish salad for dinner.
 
 ```bash
 node mine-history.mjs            # after 5+ new orders
-node pantry.mjs --write          # compile the rebuy list and its stock schedule
+node pantry.mjs --write --prune  # compile the rebuy list and its stock schedule
 node pin-skus.mjs --write        # re-pin favourite SKUs
 node --test test/*.test.mjs      # the suite, incl. a stubbed search (no network)
 node tools/scenario-check.mjs    # the battery: guards, arithmetic, notes, shop scenarios
@@ -495,7 +495,8 @@ Rebuild the generated data with these, in this order, about once a month:
 
 ```bash
 node mine-history.mjs            # order history to data/staples.json, history-raw.json, recipes.json, patterns.json
-node pantry.mjs --write          # merge the rebuy evidence into profiles/pantry.json
+node pantry.mjs --write --prune  # merge the rebuy evidence into profiles/pantry.json
+node exclusions.mjs --learn --write  # drop a word the last orders actually bought
 node mine-recipes.mjs            # every order's raw lines, recipe lines included
 node mine-recipes-fetch.mjs      # the recipe page of every recipe you have ordered
 node mine-recipes-analyze.mjs    # recipe ingredients vs what you actually bought

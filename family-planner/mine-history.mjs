@@ -287,7 +287,9 @@ async function main() {
   writeFileSync(outDir + "/patterns.json", JSON.stringify(buildPatterns(orders, staples), null, 1));
   if (!offline) {
     writeFileSync(outDir + "/history-raw.json", JSON.stringify(orders, null, 1));
-    writeFileSync(outDir + "/recipes.json", JSON.stringify(recipes, null, 1));
+    // The order detail does not always carry RecipeUrl. An empty result must not erase
+    // the recipe usage a previous run, or the recipe miner, already wrote.
+    if (recipes.length > 0) writeFileSync(outDir + "/recipes.json", JSON.stringify(recipes, null, 1));
   }
   log(`wrote ${offline ? 2 : 4} data files to ${outDir}`);
   console.log(`\nOrders: ${orders.length} | distinct products: ${staples.length} | distinct recipes: ${recipes.length}`);

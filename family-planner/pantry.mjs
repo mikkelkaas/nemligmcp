@@ -11,7 +11,7 @@
 // by this tool (scheduleSource "mined"). A removed entry stays removed when its name
 // is in the pantry's "rejected" list.
 //
-// Usage: node pantry.mjs [--write] [--min-orders N] [--min-pct N] [--data DIR]
+// Usage: node pantry.mjs [--write] [--prune] [--min-orders N] [--min-pct N] [--data DIR]
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { DATA, PROFILES } from "./paths.mjs";
 
@@ -116,7 +116,9 @@ export function buildPantry(staples, existing = {}, opts = {}) {
   const mining = existing.mining && typeof existing.mining === "object" ? existing.mining : {};
   const cycleDays = Number(existing.cycleDays || opts.cycleDays || 9);
   const minOrders = Number(opts.minOrders ?? mining.minOrders ?? 6);
-  const minPct = Number(opts.minPct ?? mining.minPct ?? 8);
+  const minPct = Number(opts.minPct ?? mining.minPct ?? 40);
+  const maxAgeDays = Number(opts.maxAgeDays ?? mining.maxAgeDays ?? 60);
+  const now = Number(opts.now ?? mining.now) || Date.now();
   const maxPerBlock = Number(opts.maxPerBlock ?? mining.maxPerBlock ?? 12);
   const custom = { ...(mining.blocks || {}), ...(opts.rules || {}) };
   const rules = {};
@@ -140,6 +142,8 @@ export function buildPantry(staples, existing = {}, opts = {}) {
   const added = [];
   const updated = [];
   const skipped = [];
+  const pruned = [];
+  const keepAuto = new Set();
   const seenUpdated = new Set();
   const heads = new Map(BLOCKS.map((b) => [b, new Set()]));
   for (const block of BLOCKS) for (const e of pantry.blocks[block]) heads.get(block).add(headOf(e.query || e.name));
@@ -151,6 +155,7 @@ export function buildPantry(staples, existing = {}, opts = {}) {
     if (!block || rejected.has(fold(s.name))) continue;
     const hit = bySku.get(String(s.sku)) || byName.get(fold(s.name));
     if (hit) {
+      if (hit.scheduleSource === "mined" && hit.qtySource === "mined" && hit.sku) keepAuto.add(String(hit.sku));
       const before = `${hit.everyNDays}|${hit.minedOrders}|${hit.medianGapDays}`;
       hit.minedOrders = Number(s.orders);
       hit.skuOrders = Number(s.orders);
@@ -169,6 +174,13 @@ export function buildPantry(staples, existing = {}, opts = {}) {
       continue;
     }
     if (COOKING_WORDS.some((w) => mentions(fold(s.name), w))) continue;
+    if (s.lastDate) {
+      const age = Math.round((now - Date.parse(s.lastDate)) / 86400000);
+      if (Number.isFinite(age) && age > maxAgeDays) {
+        skipped.push({ block, name: s.name, why: `last bought ${age} d ago` });
+        continue;
+      }
+    }
     if (heads.get(block).has(headOf(s.name))) {
       skipped.push({ block, name: s.name, why: "variant of an existing line" });
       continue;
@@ -195,11 +207,24 @@ export function buildPantry(staples, existing = {}, opts = {}) {
     const gate = scheduleFor(s.medianGapDays, cycleDays);
     if (gate) entry.everyNDays = gate;
     pantry.blocks[block].push(entry);
+    keepAuto.add(String(entry.sku));
     heads.get(block).add(headOf(entry.query));
     usedIds.add(id);
     added.push({ block, id, name: entry.query });
   }
-  return { pantry, added, updated, skipped };
+  if (opts.prune) {
+    for (const block of BLOCKS) {
+      const before = pantry.blocks[block].length;
+      pantry.blocks[block] = pantry.blocks[block].filter((e) => {
+        if (e.scheduleSource !== "mined" || e.qtySource !== "mined") return true;
+        if (keepAuto.has(String(e.sku))) return true;
+        pruned.push({ block, id: e.id, name: e.query });
+        return false;
+      });
+      if (pantry.blocks[block].length !== before) heads.get(block).clear();
+    }
+  }
+  return { pantry, added, updated, skipped, pruned };
 }
 
 function arg(name, dflt) {
@@ -216,13 +241,15 @@ function main() {
   if (!Array.isArray(staples)) throw new Error(`${dataDir}/staples.json is missing or not an array`);
   const minOrders = arg("min-orders", null);
   const minPct = arg("min-pct", null);
-  const { pantry, added, updated, skipped } = buildPantry(staples, existing, {
+  const { pantry, added, updated, skipped, pruned } = buildPantry(staples, existing, {
     minOrders: minOrders === null ? undefined : Number(minOrders),
     minPct: minPct === null ? undefined : Number(minPct),
+    prune: process.argv.includes("--prune"),
   });
-  console.log(`pantry: ${added.length} added, ${updated.length} updated, ${skipped.length} variant(s) skipped, ${staples.length} products mined`);
+  console.log(`pantry: ${added.length} added, ${updated.length} updated, ${pruned.length} pruned, ${skipped.length} skipped, ${staples.length} products mined`);
   for (const a of added) console.log(`  + ${a.block}/${a.id}  ${a.name}`);
   for (const u of updated) console.log(`  ~ ${u.block}/${u.id}  ${u.name}`);
+  for (const p of pruned) console.log(`  - ${p.block}/${p.id}  ${p.name}`);
   for (const s of skipped.slice(0, 8)) console.log(`  . ${s.block}  ${s.name} - ${s.why}`);
   if (!write) {
     console.log(`Dry run: ${PROFILES}/pantry.json was not changed. Add --write to apply.`);

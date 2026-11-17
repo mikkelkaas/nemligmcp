@@ -19,15 +19,19 @@
     "Every value here is invented. The quantities are the shape of the file, not advice.",
     "After mine-history.mjs, run `node pantry.mjs --write`: it updates the evidence on each",
     "line, computes everyNDays at 80 % of the measured purchase gap, and adds frequent",
-    "staples whose block is known. A name in `rejected` is never added again."
+    "staples whose block is known. A name in `rejected` is never added again.",
+    "A pantry line is a regular rebuy, not every ingredient a recipe once used. The miner",
+    "therefore adds only a product bought in at least 40 percent of orders and in the last",
+    "60 days; `--prune` removes an auto-added line that no longer passes."
   ],
   "schemaVersion": 1,
   "cycleDays": 14,
   "mining": {
     "minOrders": 6,
-    "minPct": 8,
+    "minPct": 40,
+    "maxAgeDays": 60,
     "maxPerBlock": 12,
-    "_note": "Thresholds for pantry.mjs. Edit them, or the block word lists under mining.blocks, for a household with other habits."
+    "_note": "Only a product bought in at least 40 percent of orders, and in the last 60 days, is added automatically. Manual lines are never pruned."
   },
   "rejected": [],
   "blocks": {
