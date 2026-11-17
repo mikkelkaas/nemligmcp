@@ -82,6 +82,11 @@ node mine-history.mjs                 # refresh data/staples.json and data/patte
 node pantry.mjs --write --prune       # merge the evidence into profiles/pantry.json
 ```
 
+`pantry.mjs` marks a mined line `stoppedBuying: true` when the history holds six or more
+orders that all passed it by while it was two cycles past due - that is a choice against
+it, not an overdue buy. The planner then lists the line as stale and leaves it out.
+Buy the product once and the next run clears the flag; delete the flag to keep the line.
+
 `pantry.mjs` computes `everyNDays` as 80 % of the measured gap between purchases, capped
 at 180 days. An item bought every order gets no gate. A hand-written note, unit or
 `everyNDays` is kept. A new line needs a pinned sku, a known block, a product that is not a

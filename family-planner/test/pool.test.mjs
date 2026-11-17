@@ -235,6 +235,20 @@ const oneLine = (extra) => [{ id: "x", query: "Æble", qtyPerCycle: 1, unit: "st
 // different, hand-checkable count and no rounding can hide a wrong factor.
 const lineFor = (extra, people) => blockIntents(oneLine(extra), "lunchbox", 8, 9, noHistory, noHistory, saleOff, people)[0];
 
+test("a stopped-buying flag is a stop; plain overdue stays urgent", () => {
+  const ago = (d) => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  const bySku = new Map([["9", { sku: "9", lastDate: ago(200), ordersSince: 8 }]]);
+  const line = { id: "x", query: "Cheerios", sku: "9", qtyPerCycle: 1, everyNDays: 30 };
+  const due = blockIntents([line], "breakfast", 8, 9, noHistory, bySku, saleOff, 3)[0];
+  assert.equal(due.skipped, undefined, "long overdue without evidence stays urgent");
+  assert.match(due.note, /due: last bought 20[01] d ago/);
+  const stopped = blockIntents([{ ...line, stoppedBuying: true }], "breakfast", 8, 9, noHistory, bySku, saleOff, 3)[0];
+  assert.match(stopped.skipped, /stale: last bought 20[01] d ago, absent from 8 orders since/);
+  const noted = blockIntents([{ ...line, staleAfterCycles: 4 }], "breakfast", 8, 9, noHistory, bySku, saleOff, 3)[0];
+  assert.match(noted.skipped, /stale/, "four cycles of silence on the line itself is a stop");
+  assert.equal(blockIntents([{ ...line, staleAfterCycles: 8 }], "breakfast", 8, 9, noHistory, bySku, saleOff, 3)[0].skipped, undefined);
+});
+
 test("a pantry line states the basis its quantity is written on", () => {
   assert.equal(lineFor({}, 3).need, "1 stk", "a mined line is what the household buys per cycle");
   assert.match(lineFor({}, 3).note, /1 stk per cycle x 8 d \/ 9 d cycle/, "the old wording is unchanged");

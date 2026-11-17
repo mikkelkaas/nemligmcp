@@ -150,7 +150,26 @@ export function buildPantry(staples, existing = {}, opts = {}) {
   const rows = Array.isArray(staples) ? [...staples] : [];
   rows.sort((a, b) => Number(b.orders) - Number(a.orders));
   for (const s of rows) {
-    if (!s || !s.sku || Number(s.orders) < minOrders || Number(s.ordersPct) < minPct) continue;
+    if (!s || !s.sku) continue;
+    // The merge of a line that already exists runs first: its evidence (last date,
+    // orders passed, stopped-buying flag) must refresh even when the add threshold
+    // is too high for this product. The threshold gates NEW lines only. The flag
+    // branch matches on the pinned sku alone: same-name variants (three toilet
+    // papers) must not stamp each other's dates. Stopped means two full cycles
+    // gone AND six orders walked past it - one undelivered basket is not a stop.
+    const hitSku = bySku.get(String(s.sku));
+    const since0 = Number(s.ordersSince || 0);
+    if (hitSku && (Number(s.orders) < minOrders || Number(s.ordersPct) < minPct)) {
+      const due0 = !hitSku.everyNDays || (s.lastDate && Number.isFinite(now - Date.parse(s.lastDate))
+        && Math.round((now - Date.parse(s.lastDate)) / 86400000) >= 2 * Number(hitSku.everyNDays));
+      hitSku.lastDate = s.lastDate;
+      hitSku.minedOrders = Number(s.orders);
+      hitSku.skuOrders = Number(s.orders);
+      if (due0 && since0 >= 6) hitSku.stoppedBuying = true;
+      else delete hitSku.stoppedBuying;
+      continue;
+    }
+    if (Number(s.orders) < minOrders || Number(s.ordersPct) < minPct) continue;
     const block = blockOf(s.name, rules);
     if (!block || rejected.has(fold(s.name))) continue;
     const hit = bySku.get(String(s.sku)) || byName.get(fold(s.name));
@@ -162,6 +181,14 @@ export function buildPantry(staples, existing = {}, opts = {}) {
       hit.medianUnitPrice = Number(s.medianUnitPrice);
       hit.lastDate = s.lastDate;
       hit.medianGapDays = s.medianGapDays ?? null;
+      // Evidence they stopped buying: two full cycles gone and six orders passed
+      // while past due. The flag lives on mined lines; delete it by hand to keep a
+      // line anyway, and a new purchase clears it on the next run.
+      const sinceOrders = Number(s.ordersSince || 0);
+      const pastDue = !hit.everyNDays || (s.lastDate && Number.isFinite(now - Date.parse(s.lastDate))
+        && Math.round((now - Date.parse(s.lastDate)) / 86400000) >= 2 * Number(hit.everyNDays));
+      if (pastDue && sinceOrders >= 6) hit.stoppedBuying = true;
+      else delete hit.stoppedBuying;
       if (hit.scheduleSource === "mined") {
         const gate = scheduleFor(s.medianGapDays, cycleDays);
         if (gate) hit.everyNDays = gate;

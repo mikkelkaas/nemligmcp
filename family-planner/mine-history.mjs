@@ -155,6 +155,10 @@ function buildStaples(orders) {
       medianUnitPrice: Number(median(e.unitPrices).toFixed(2)),
       recipeLinePct: Number((e.recipeLines / e.orders * 100).toFixed(0)),
       firstDate: e.firstDate, lastDate: e.lastDate, lastOrder: e.lastOrder,
+      // Orders that passed since the item was last in one: the evidence the pantry
+      // compiler reads to tell "overdue" (few orders, none won) from "stopped buying"
+      // (many orders walked past it). A brand-new family history answers 0.
+      ordersSince: orders.filter((o) => e.lastDate && o.iso && o.iso > e.lastDate).length,
       medianGapDays: gaps.length ? median(gaps) : null,
     };
   }).sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name));
