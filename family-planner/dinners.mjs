@@ -409,7 +409,7 @@ export function chooseDinners(pool, opts) {
 }
 
 /** One recipe to shopping intents, with what was left out and why. */
-export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix = "dinner", portions = null, standardPortions = null, note = "", pieceWeights = null }) {
+export function recipeIntents(recipe, { amounts, meat, exclusions, purchasing = {}, sourcePrefix = "dinner", portions = null, standardPortions = null, note = "", pieceWeights = null }) {
   let factor = scaleFactor(recipe, amounts.household || {});
   // A dinner that runs one night cooks half the pot of a dinner that runs two.
   const needPortions = Number(portions) || Number(amounts.household?.cookServings) || 0;
@@ -430,6 +430,13 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, sourcePrefix 
     const never = hitsWord(text, exclusions.neverBought?.words);
     if (never) { leftOut.push({ text, reason: "we never buy " + never }); continue; }
     const size = needTextOf(ing, factor, pieceWeights);
+    // A family may cook proteins by the pack, not by the recipe gram: the profile names
+    // the main-protein words and the multiplier; toppings (bacon, kebab) keep the recipe.
+    // Danish names are compounds ("kyllingebrystfilet"), so a word also hits at the front.
+    if (size.grams && purchasing.proteinNightFactor > 1 &&
+        (purchasing.proteinScaleWords || []).find((w) => hasWord(text, w) || fold(text).startsWith(fold(w)))) {
+      size.grams = Math.round(size.grams * Number(purchasing.proteinNightFactor));
+    }
     const key = fold(text) + "|" + size.unit;
     // Start the row empty and then add: copying `size` in and adding it again doubles
     // the first occurrence, which once turned 425 g of chicken into 850 g.

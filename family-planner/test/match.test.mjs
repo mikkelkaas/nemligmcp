@@ -295,6 +295,27 @@ test("recipeIntents scales to 5 servings, merges repeats and skips pantry words"
   assert.deepEqual(out.leftOut.map((l) => l.text), ["Persille", "Kapers"]);
 });
 
+test("a family that cooks by the pack scales named proteins, and toppings keep the recipe", async () => {
+  const amounts = { household: { cookServings: 5 } };
+  const exclusions = { pantryWords: { words: [] }, freshHerbs: { words: [] }, neverBought: { words: [] } };
+  const recipe = { name: "Pack", servings: 4, ingredients: [
+    { text: "Hakket oksekød", amount: "250", unit: "g", grams: 250 },
+    { text: "Bacon i tern", amount: "100", unit: "g", grams: 100 },
+  ] };
+  const grams = (n) => Number(String(n).match(/\d+/)[0]);
+  const plain = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions });
+  const packed = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions,
+    purchasing: { proteinNightFactor: 1.8, proteinScaleWords: ["hakket"] } });
+  assert.equal(packed.intents.length, plain.intents.length, "nothing is skipped or added");
+  assert.equal(grams(packed.intents[0].need), Math.round(grams(plain.intents[0].need) * 1.8),
+    "the named main protein grows by the profile factor");
+  assert.equal(packed.intents[1].need, plain.intents[1].need, "an unnamed topping keeps the recipe size");
+  const off = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions,
+    purchasing: { proteinNightFactor: 1, proteinScaleWords: ["hakket"] } });
+  assert.deepEqual(off.intents.map((i) => i.need), plain.intents.map((i) => i.need),
+    "factor 1 changes nothing for a family that says nothing");
+});
+
 test("a liked dish leads the queue even when it was cooked recently", () => {
   const pool = [
     { url: "/liked", name: "Liked", protein: "kylling", format: "gryde", score: 5 },

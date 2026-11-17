@@ -316,6 +316,14 @@ function purchasingOf(p) {
       Object.entries(raw.pieceWeights || {})
         .filter(([w, g]) => /^[\p{L}]{2,14}$/u.test(String(w).trim()) && Number(g) > 0 && Number(g) <= 2000)
         .map(([w, g]) => [String(w).trim().toLowerCase(), Number(g)])),
+    // Cooking protein by the pack: some families scale a main protein to more than the
+    // recipe gram (one 500 g pack a night). 1 keeps the recipe amount, so a family that
+    // says nothing is sized exactly as before. Only a word on this list scales: a
+    // topping nobody named (bacon, kebab, sausage) never grows.
+    proteinNightFactor: num(raw.proteinNightFactor, 1, 1, 3),
+    proteinScaleWords: Array.isArray(raw.proteinScaleWords)
+      ? raw.proteinScaleWords.slice(0, 30).map((w) => String(w).toLowerCase())
+      : [],
   };
 }
 

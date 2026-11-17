@@ -232,7 +232,11 @@ export function blockIntents(items, blockName, days, cycleDays, staplesByName, s
     let gate = null;
     if (it.everyNDays) {
       const known = (it.sku ? staplesBySku.get(String(it.sku)) : null) || staplesByName.get(norm(it.query)) || staplesByName.get(norm(it.name));
-      const since = known ? daysAgo(known.lastDate) : null;
+      // A hand-written lastBought (a delivery nobody has ordered yet, a shelf full from
+      // a bulk run) counts: the newest of history and note wins the gate.
+      const seen = [known ? daysAgo(known.lastDate) : null, it.lastBought ? daysAgo(String(it.lastBought).slice(0, 10)) : null]
+        .filter((x) => Number.isFinite(x));
+      const since = seen.length ? Math.min(...seen) : null;
       const elapsed = since === null ? it.everyNDays : since;
       if (elapsed < it.everyNDays) {
         gate = `skipped: last bought ${since === null ? "unknown" : since + " d ago"}, cycle ${it.everyNDays} d`;
@@ -770,7 +774,7 @@ function collectIntents(dinners, pantry, staplesByName, staplesBySku, options, h
  * its own evenings and its own portions, and the two asks merge on the sku later on. Every
  * cooking prints the line that says what the rotation chose and how it got there.
  */
-function cookingIntents(pick, { amounts, meat, exclusions, household, rules, lastUsed }) {
+function cookingIntents(pick, { amounts, meat, exclusions, purchasing = {}, household, rules, lastUsed }) {
   let intents = [], leftOut = [];
   // The base a real ask is divided by is the pot the recipe amounts were already scaled
   // to: household.cookServings in profiles/amounts.json, measured from this family's own
@@ -787,7 +791,7 @@ function cookingIntents(pick, { amounts, meat, exclusions, household, rules, las
     // evenings. Pairing by position keeps the printed evenings the ones that were bought for.
     const entry = (pick.menu || [])[i] || {};
     const portionsForThis = Number((portionsPerNight * (entry.nights || entry.covers || 2)).toFixed(1));
-    const built = recipeIntents(r, { amounts, meat, exclusions, sourcePrefix: "dinner",
+    const built = recipeIntents(r, { amounts, meat, exclusions, purchasing, sourcePrefix: "dinner",
       pieceWeights: ((household || {}).purchasing || {}).pieceWeights || null,
       portions: portionsForThis, standardPortions: stdPortions, note: `${entry.nights || entry.covers || 2} ${entry.nights === 1 ? "night" : "nights"}, ${portionNote}` });
     for (const it of built.intents) intents.push({ ...it, preferSale: rules.preferSale, saleTolerancePct: rules.saleTolerancePct });
@@ -823,7 +827,7 @@ function poolDinnerIntents(options, wanted, rules, household) {
     if (!fam.pool.pool.length) console.log("  cores: no recipe pool - run node pick-recipe-pool.mjs first");
     return { usedPool: false, intents: [], menu: null, leftOut: [], dinnerIds: null, source: "cores" };
   }
-  const { amounts, meat, exclusions } = fam;
+  const { amounts, meat, exclusions, purchasing } = fam;
   const rot = household.rotation || {};
   const COOKED = BASE + "/data/cooked-log.jsonl";
   const cookedTimes = readCookHistory({ linesFile: BASE + "/data/order-lines-raw.jsonl", rotationFile: BASE + "/data/rotation.json", cookedFile: COOKED });
@@ -859,7 +863,7 @@ function poolDinnerIntents(options, wanted, rules, household) {
   }
   // What each cooking needs, and the lines that say what the rotation chose and why.
   const { intents, leftOut } = cookingIntents(pick, { amounts, meat, exclusions,
-    household, rules, lastUsed });
+    purchasing: purchasing || {}, household, rules, lastUsed });
   return {
     usedPool: true, intents, leftOut, dinnerIds: pick.chosen.map((c) => c.url), source: "recipe pool",
     menu: { menu: pick.menu, uncoveredDays: pick.uncoveredDays, daysPerDinner: pick.daysPerDinner,
