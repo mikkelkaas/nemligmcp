@@ -956,6 +956,12 @@ async function resolveAll(live, options) {
     maxCalls: limiter.maxCalls,
   };
   console.log(timingLine(timing));
+  // A warm cache answers everything, so the run says out loud what the shop was and was
+  // not asked for. A dead server never reaches this line: connect() above already failed
+  // the run with "no MCP endpoint answered" - the scenario battery guards exactly that.
+  if (live.length > 0 && fromCache === live.length) {
+    console.log(`Note: every price came from the 24 h cache. The shop was reached (${(connectMs / 1000).toFixed(1)}s handshake) but asked nothing. --fresh asks now.`);
+  }
   return { mcp, resolved, oldestCacheMs, timing };
 }
 

@@ -63,7 +63,8 @@ them.
    `npm_default`, which must exist already: create it with `docker network create npm_default`,
    or point `PROXY_NETWORK` at a network you have. Without it, Compose stops before any
    container starts, with a message such as `network npm_default ... could not be found`.
-   If the endpoint is not on container DNS, set `NEMLIG_MCP_URL` to where it runs.
+   If the endpoint is not on container DNS, set `NEMLIG_MCP_URL` to where it runs - in the
+   `.env` file or exported in the shell; for the endpoint, the shell value wins for that run.
 7. Build your profile from your own orders, then check and plan:
 
    ```bash

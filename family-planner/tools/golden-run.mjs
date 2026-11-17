@@ -45,9 +45,12 @@ export function skuHash(skus) {
   return h.digest("hex").slice(0, 12);
 }
 
-/** Keep a credential out of any log line, even a child that prints one by accident. */
+/** Keep a credential out of any log line, even a child that prints one by accident.
+ *  The long-hex rule covers a real MCP_SECRET that strayed into a path or a message:
+ *  real secrets are hex, test secrets spell themselves out. */
 function redact(text) {
   return String(text || "").replace(/golden-test-secret-[0-9a-z]+/g, "<MCP_SECRET>")
+    .replace(/\/[0-9a-f]{32,}/g, "/<MCP_SECRET>")
     .replace(/(NEMLIG_PASS=)\S+/g, "$1<hidden>");
 }
 
@@ -139,7 +142,7 @@ export async function runCase(name) {
   if (served.healthz < 2) throw new Error(`${name}: the child did not probe the stub /healthz - it did not use the loopback shop`);
   if (served.rejected > 0) throw new Error(`${name}: ${served.rejected} request(s) arrived with a non-loopback Host header`);
   const strayPath = served.paths.find((x) => x !== "/mcp" && x !== "/mcp/<secret>");
-  if (strayPath) throw new Error(`${name}: the child posted to an unexpected path ${strayPath}`);
+  if (strayPath) throw new Error(`${name}: the child posted to an unexpected path ${redact(strayPath)}`);
   const unknownTool = Object.keys(served.byTool).filter((t) => t !== "search_products" && t !== "get_basket");
   if (unknownTool.length > 0) throw new Error(`${name}: the child called a tool this harness does not serve: ${unknownTool.join(", ")}`);
   if (served.byTool.get_basket !== 1) throw new Error(`${name}: expected one get_basket call served by the stub, saw ${served.byTool.get_basket || 0}`);

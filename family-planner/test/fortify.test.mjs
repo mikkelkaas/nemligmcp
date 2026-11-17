@@ -3,10 +3,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { Limiter, reportFailure, pickEndpoint } from "../lib.mjs";
+import { Limiter, reportFailure, pickEndpoint, loadEnv } from "../lib.mjs";
 import { search } from "../catalog.mjs";
 import { householdMode, unknownFlags, extraIntents } from "../plan.mjs";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -107,6 +107,31 @@ test("an explicit NEMLIG_MCP_URL is the only endpoint the client will try", asyn
       return true;
     },
   );
+});
+
+test("a shell endpoint outranks the file for one run; the rest of the file stands", () => {
+  const dir = mkdtempSync(join(tmpdir(), "env-layer-"));
+  const file = join(dir, "t.env");
+  writeFileSync(file, "NEMLIG_MCP_URL=http://from-file:3000/mcp\nNEMLIG_USER=u\nMCP_SECRET=from-file\nNEMLIG_PASS=from-file\n");
+  const saved = {};
+  try {
+    for (const k of ["NEMLIG_MCP_URL", "MCP_SECRET", "NEMLIG_PASS"]) saved[k] = process.env[k];
+    process.env.NEMLIG_MCP_URL = "http://from-shell:9/mcp";
+    process.env.MCP_SECRET = "from-shell";                // the golden suite isolates on the file's secret
+    process.env.NEMLIG_PASS = "from-shell";
+    const env = loadEnv(file);
+    assert.equal(env.NEMLIG_MCP_URL, "http://from-shell:9/mcp", "an endpoint you name in the shell cannot be silently ignored");
+    assert.equal(env.MCP_SECRET, "from-file", "the secret stays in the file, whatever the shell says");
+    assert.equal(env.NEMLIG_PASS, "from-file", "a password is never overridable");
+    assert.equal(env.NEMLIG_USER, "u", "the untouched lines come from the file");
+    delete process.env.NEMLIG_MCP_URL;
+    assert.equal(loadEnv(file).NEMLIG_MCP_URL, "http://from-file:3000/mcp", "with no shell value the file is the source");
+  } finally {
+    for (const k of ["NEMLIG_MCP_URL", "MCP_SECRET", "NEMLIG_PASS"]) {
+      if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("the manual exclusion editor changes exact words, not substrings", async () => {

@@ -30,7 +30,14 @@ const MAX_INIT_RETRY = 3;
 const CALL_TIMEOUT_MS = 60000;
 const INIT_TIMEOUT_MS = 20000;
 
-/** Parse the .env (see paths.mjs envFile) into an object. Comments and blanks are ignored. */
+// The key the shell may set for one run. An endpoint you name in the shell must never be
+// silently ignored while the file still points at the real shop: that is how an offline
+// test reaches live credentials. Only the endpoint travels this way - the secret stays in
+// the file, because the offline golden suite builds its isolation on the file's secret.
+const SHELL_OVERRIDABLE = ["NEMLIG_MCP_URL"];
+
+/** Parse the .env (see paths.mjs envFile) into an object. Comments and blanks are ignored.
+ *  A shell environment value wins over the file for the endpoint keys (SHELL_OVERRIDABLE). */
 export function loadEnv(path = ENV_PATH) {
   const out = {};
   for (const rawLine of readFileSync(path, "utf8").split("\n")) {
@@ -39,6 +46,10 @@ export function loadEnv(path = ENV_PATH) {
     const eq = line.indexOf("=");
     if (eq < 1) continue;
     out[line.slice(0, eq)] = line.slice(eq + 1).trim();
+  }
+  for (const key of SHELL_OVERRIDABLE) {
+    const v = process.env[key];
+    if (v !== undefined && v !== "") out[key] = v;
   }
   return out;
 }
