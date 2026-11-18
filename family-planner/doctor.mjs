@@ -106,7 +106,7 @@ function checkData(out) {
     ["staples.json", true, "data/", "node mine-history.mjs"],
     ["order-lines-raw.jsonl", true, "data/", "node mine-history.mjs"],
     ["recipe-pool.json", false, "profiles/", "node pick-recipe-pool.mjs, after mine-recipes.mjs and mine-recipes-fetch.mjs"],
-    ["rotation.json", false, "data/", "written by the first apply.mjs that succeeds"],
+    ["rotation.json", false, "data/", "legacy; cooked history comes from the order's recipe cards (mine-history.mjs) and log-dinner.mjs"],
   ];
   for (const [file, needed, dir, next] of wanted) {
     const where = dir === "profiles/" ? PROFILES : DATA;

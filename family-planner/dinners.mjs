@@ -12,7 +12,7 @@
 // Protein goes through profiles/meat.json: the fat band, the cheap cut per kg and the
 // price-per-kg ceiling this family uses.
 
-import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { subunitGrams, smallUnitGrams, amountNumber, liquidMl, normalizeAmountText, baseUnit, PACK_COUNT_UNITS } from "./units.mjs";
 import { copenhagenNow } from "./slots.mjs";
 import { join } from "node:path";
@@ -495,11 +495,12 @@ export function recipeIntents(recipe, { amounts, meat, exclusions, purchasing = 
   return { intents, leftOut };
 }
 
-/** url to the last date the recipe was cooked: applied plans first, then order history. */
+/** url to the last date the recipe was cooked: the cooked log first, then order history. */
 /**
- * Every date a dish was actually cooked: applied plans (rotation.json and the cooked
- * log) and recipe cards the family bought. Plans that were only printed are not there -
- * a dry run is not dinner. Map: url -> { last, dates: [ISO days, oldest first] }.
+ * Every date a dish was actually cooked: the cooked log (`log-dinner.mjs`), a legacy
+ * rotation file read when present, and the recipe cards the family bought. Plans that
+ * were only printed are not there - a dry run is not dinner.
+ * Map: url -> { last, dates: [ISO days, oldest first] }.
  */
 export function readCookHistory({ linesFile, rotationFile, cookedFile }) {
   const out = new Map();
@@ -540,8 +541,9 @@ export function readCookHistory({ linesFile, rotationFile, cookedFile }) {
  * It used to be, "so a dry run moves the queue" - and that made the menu different on every
  * run of the same command against the same home, because each run wrote a plan file the next
  * run read as a cooked meal. Fourteen plan files produced six menus. A dry run is not dinner:
- * the queue moves when the family buys the basket (`apply.mjs` writes both files below) or
- * tells the planner they ate it (`log-dinner.mjs`). Determinism and rotation both need that.
+ * the queue moves when the family buys the basket and the order's recipe cards are mined
+ * (`mine-history.mjs`), or when they tell the planner they ate it (`log-dinner.mjs`).
+ * Determinism and rotation both need that.
  */
 export function readRotation({ linesFile, rotationFile, cookedFile }) {
   const out = {};
@@ -549,13 +551,4 @@ export function readRotation({ linesFile, rotationFile, cookedFile }) {
   return out;
 }
 
-/** Remember what this plan cooked, so the next plan rotates away from it. */
-export function writeRotation(rotationFile, urls, dayIso) {
-  let stored = { schemaVersion: 1, used: {} };
-  try { stored = JSON.parse(readFileSync(rotationFile, "utf8")); } catch { /* first run */ }
-  stored.used = stored.used || {};
-  stored.at = new Date().toISOString();
-  for (const u of urls) stored.used[u] = dayIso;
-  writeFileSync(rotationFile, JSON.stringify(stored, null, 1));
-  return stored;
-}
+

@@ -14,7 +14,7 @@
 import { dishFormat } from "./similarity.mjs";
 
 /** Format -> keeping quality. Used when the profile does not say otherwise. */
-export const REHEAT_BY_FORMAT = {
+const REHEAT_BY_FORMAT = {
   gryde: "great", suppe: "great", fad: "great", pastasalat: "fresh", salat: "fresh",
   pizza: "fresh", aeg: "fresh", pandekage: "fresh", wrap: "fresh", ovn: "fresh",
   pasta: "ok", spaghetti: "ok", nudler: "ok", ris: "ok", kartoffel: "ok", kal: "ok", andet: "ok",
@@ -48,11 +48,6 @@ export function portionsPerNight(members, fallback = 3) {
   if (!list) return Number(fallback) || 3;
   const sum = list.reduce((n, m) => n + (Number(m.count) || 0) * (Number(m.appetite) || 1), 0);
   return sum > 0 ? Number(sum.toFixed(2)) : (Number(fallback) || 3);
-}
-
-/** Portions to cook for one dinner: one night, times the nights it runs for. */
-export function cookPortions(members, dish, opts) {
-  return Number((portionsPerNight(members) * nightsOf(dish, opts)).toFixed(2));
 }
 
 /** Evenings the chosen dinners cover, and the recipe count that follows from them. */

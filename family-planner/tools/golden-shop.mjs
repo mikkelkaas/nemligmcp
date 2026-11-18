@@ -31,7 +31,7 @@ const MAX_BODY_BYTES = 2000000;
 const MAX_PRODUCTS = 500;
 
 /** Read and check the shelf file: { products: [...], basket: {...} }. */
-export function loadShelf(path) {
+function loadShelf(path) {
   let parsed;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -75,7 +75,7 @@ function words(s) {
  * The real gate is still match.mjs in the planner — this only decides what is on
  * the shelf page, like a shop's own search engine would.
  */
-export function searchShelf(products, query, take) {
+function searchShelf(products, query, take) {
   const q = words(query);
   if (q.length === 0) return [];
   const head = q[0];

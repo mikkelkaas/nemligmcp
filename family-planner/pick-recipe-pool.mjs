@@ -158,7 +158,7 @@ function scoreRecipe(r, analysisBy, vocab) {
 }
 
 /** Take the best dishes under the protein caps, at most `provenLimit` of them proven. */
-export function takeUnderCaps(list, pool, used, provenLimit, provenInPool, roundLimit, lim = L, caps = PROTEIN_CAPS) {
+function takeUnderCaps(list, pool, used, provenLimit, provenInPool, roundLimit, lim = L, caps = PROTEIN_CAPS) {
   const skipped = [];
   for (const s of list) {
     if (pool.length >= Math.min(lim.poolSize, roundLimit)) break;

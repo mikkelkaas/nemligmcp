@@ -71,7 +71,7 @@ export function copenhagenNow(date = new Date()) {
 }
 
 /** Namlig deadlines carry no time zone: they are Copenhagen time. Compare as strings. */
-export function deadlinePassed(deadline, nowIso) {
+function deadlinePassed(deadline, nowIso) {
   const d = String(deadline || "").slice(0, 16);
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(d)) return false;
   return d <= String(nowIso).slice(0, 16);

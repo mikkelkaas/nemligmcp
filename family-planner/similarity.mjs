@@ -132,20 +132,6 @@ export function conflicts(a, b, { proteinOf = mainProtein, formatOf = dishFormat
   return fa === fb && pa === pb;
 }
 
-/** Every clashing pair in a list, best dish first in each pair. */
-export function conflictPairs(list, opts = {}) {
-  const out = [];
-  for (let i = 0; i < list.length; i++) {
-    for (let j = i + 1; j < list.length; j++) {
-      if (conflicts(list[i], list[j], opts)) {
-        const [keep, drop] = (list[i].score || 0) >= (list[j].score || 0) ? [list[i], list[j]] : [list[j], list[i]];
-        out.push({ keep: keep.name, drop: drop.name, format: keep.format || dishFormat(keep), protein: keep.protein || mainProtein(keep) });
-      }
-    }
-  }
-  return out;
-}
-
 /** The first dish in `chosen` that `candidate` clashes with, or null. */
 export function clashWith(chosen, candidate, opts = {}) {
   for (const c of chosen) if (conflicts(c, candidate, opts)) return c;

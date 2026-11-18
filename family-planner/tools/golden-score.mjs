@@ -20,10 +20,10 @@ import { join } from "node:path";
 import { validatePlan } from "../apply.mjs";
 import { CASE_DIR, caseNames } from "./golden-build.mjs";
 
-export const WEIGHTS = { accuracy: 0.4, completeness: 0.3, format: 0.2, determinism: 0.1 };
-export const THRESHOLDS = { accuracy: 0.8, completeness: 0.7, format: 0.9, determinism: 1 };
-export const PASS_WEIGHTED = 0.85;
-export const REQUIRED_FIELDS = ["items", "dinnerMenu", "planTotal", "timing", "options", "createdAt"];
+const WEIGHTS = { accuracy: 0.4, completeness: 0.3, format: 0.2, determinism: 0.1 };
+const THRESHOLDS = { accuracy: 0.8, completeness: 0.7, format: 0.9, determinism: 1 };
+const PASS_WEIGHTED = 0.85;
+const REQUIRED_FIELDS = ["items", "dinnerMenu", "planTotal", "timing", "options", "createdAt"];
 
 /** Read one number out of a run result, null when absent. */
 function num(v) {
@@ -32,7 +32,7 @@ function num(v) {
 }
 
 /** Accuracy: how many of the expected skus are still in the plan. */
-export function accuracyOf(expectedSkus, skus) {
+function accuracyOf(expectedSkus, skus) {
   const want = [...new Set((expectedSkus || []).map(String))];
   if (want.length === 0) return 0;
   const have = new Set((skus || []).map(String));
@@ -42,7 +42,7 @@ export function accuracyOf(expectedSkus, skus) {
 }
 
 /** Completeness: the six fields a plan must carry, each present and non-empty. */
-export function completenessOf(plan) {
+function completenessOf(plan) {
   if (!plan || typeof plan !== "object") return 0;
   let ok = 0;
   for (const f of REQUIRED_FIELDS) {
@@ -68,7 +68,7 @@ export function formatOf(plan, problems = null) {
 }
 
 /** Determinism: a second run of the same case answers with the same skus and total. */
-export function determinismOf(first, second) {
+function determinismOf(first, second) {
   if (!first || !second) return 0;
   const a = (first.skus || []).map(String).join(",");
   const b = (second.skus || []).map(String).join(",");
@@ -106,7 +106,7 @@ export function passes(dims) {
 }
 
 /** The printed table: one row per case, then the set row. ASCII only, fixed columns. */
-export function tableLines(rows) {
+function tableLines(rows) {
   const head = "case                    items  total     acc    comp   fmt    det    weight  pass";
   const lines = [head, "-".repeat(head.length)];
   for (const r of rows) {

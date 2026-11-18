@@ -31,7 +31,7 @@ export const CACHE_PATH = join(DATA, "product-cache.json");
  * sets NEMLIG_ENV. A missing file is reported by the caller, which says what it looked for.
  */
 /** The places envFile() looks, in order. Exported so a caller can name them. */
-export const ENV_CANDIDATES = [
+const ENV_CANDIDATES = [
   process.env.NEMLIG_ENV,
   join(HOME, ".env"),
   join(dirname(HOME), ".env"),
@@ -99,7 +99,3 @@ function staleLock(file, maxAgeMs) {
   }
 }
 
-/** A path inside the planner folder. */
-export function inHome(...parts) {
-  return join(HOME, ...parts);
-}

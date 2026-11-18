@@ -42,11 +42,11 @@ import { fileURLToPath } from "node:url";
 import { norm } from "../match.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-export const HOME_ROOT = join(ROOT, "test", "golden", "home");
+const HOME_ROOT = join(ROOT, "test", "golden", "home");
 export const CASE_DIR = join(ROOT, "test", "golden", "cases");
 // The committed fixture inputs. Nothing is ever copied from profiles/ or data/: a fresh
 // clone runs the whole golden suite with no family data and no live files.
-export const FIXTURES = join(ROOT, "test", "golden", "fixtures");
+const FIXTURES = join(ROOT, "test", "golden", "fixtures");
 // Which fixture file lands where in a case home. staples.json is data, the rest are profiles.
 const FIXTURE_STAPLES = "staples.json";
 const SHELF_NAME = "data/golden-shelf.json";
@@ -86,7 +86,7 @@ function writeJson(path, value) {
 }
 
 /** One JSON merge patch (RFC 7386): objects merge, null deletes, arrays replace. */
-export function mergePatch(target, patch, depth = 0) {
+function mergePatch(target, patch, depth = 0) {
   if (depth > MAX_PATCH_DEPTH) throw new Error("merge patch nests deeper than " + MAX_PATCH_DEPTH);
   if (patch === null || Array.isArray(patch) || typeof patch !== "object") return patch;
   const base = target && typeof target === "object" && !Array.isArray(target) ? target : {};
@@ -169,7 +169,7 @@ function baseOf(qty, unit) {
  * checked result — a product whose stated price per unit does not match its pack price is
  * a bug in this table, and the build stops on it.
  */
-export function buildShelfProducts(table = SHELF_TABLE) {
+function buildShelfProducts(table = SHELF_TABLE) {
   const out = [];
   for (const [i, row] of table.entries()) {
     if (!row || typeof row !== "object") throw new Error("shelf row " + i + " is not an object");
@@ -204,7 +204,7 @@ export function buildShelfProducts(table = SHELF_TABLE) {
 }
 
 /** Apply a case shelf spec (remove / set / add) and keep the count at exactly 40. */
-export function applyShelfSpec(base, spec = {}) {
+function applyShelfSpec(base, spec = {}) {
   let products = base.slice();
   const removed = new Set((spec.remove || []).map(String));
   if (removed.size > 0) products = products.filter((p) => !removed.has(String(p.Id)));
@@ -245,7 +245,7 @@ function bestProductFor(products, query) {
  * mode, qtyPerCycle, unit and cycle, and takes the shelf product's name and sku, so the
  * fixture profile never carries a real product name or a real sku.
  */
-export function alignPantry(pantry, products, pinMissing = []) {
+function alignPantry(pantry, products, pinMissing = []) {
   const missing = new Set(pinMissing.map(String));
   let aligned = 0;
   let unpinned = 0;
@@ -270,7 +270,7 @@ export function alignPantry(pantry, products, pinMissing = []) {
 }
 
 /** Fixture rule 1: one fixed lastDate, so a stock cycle is due on every run of every day. */
-export function normalizeStaples(staples) {
+function normalizeStaples(staples) {
   if (!Array.isArray(staples)) throw new Error("staples.json is not a list");
   for (const s of staples) if (s && typeof s === "object") s.lastDate = "2020-01-01";
   return staples;

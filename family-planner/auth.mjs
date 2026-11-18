@@ -11,7 +11,7 @@
 import { randomUUID } from "node:crypto";
 import { loadEnv } from "./lib.mjs";
 
-export const BASE_URL = "https://www.nemlig.com";
+const BASE_URL = "https://www.nemlig.com";
 const CLIENT_VERSION = "11.201.0";
 const TIMEOUT_MS = 30000;
 const MAX_REDIRECTS = 4;
@@ -31,7 +31,7 @@ function baseHeaders() {
 }
 
 /** Minimal cookie jar: name -> value, fed from every Set-Cookie we see. */
-export function createJar() {
+function createJar() {
   const cookies = new Map();
   return {
     header() {

@@ -144,7 +144,7 @@ export function parsePack(text) {
 // A need given in pieces always means that many PACKS, whatever the pack is
 // measured in: "2 stk kokosmælk" is 2 cans, not 2 grams and not 1 can.
 /** Units that measure a quantity (g, kg, ml, l) - as opposed to counting pieces. */
-export const MEASURE_UNITS = new Set(["g", "kg", "ml", "l"]);
+const MEASURE_UNITS = new Set(["g", "kg", "ml", "l"]);
 /** A need in one of these is a number of PACKS, not pieces to weigh. */
 export const PACK_COUNT_UNITS = new Set(["dåse", "flaske", "pose", "karton", "glas", "bakke", "bundt", "pakke", "net", "bæger", "bøtte"]);
 const COUNT_UNITS = new Set(["stk", "skive", ...PACK_COUNT_UNITS]);
@@ -154,7 +154,7 @@ const COUNT_UNITS = new Set(["stk", "skive", ...PACK_COUNT_UNITS]);
  * pieces and the shelf sells weight: "8 pærer" has to meet a 1 kg bag, not buy 3 of them.
  * Weights are the middle of what Namlig sells loose, so a plan is never off by a factor.
  */
-export const PIECE_GRAMS = {
+const PIECE_GRAMS = {
   pære: 190, æble: 170, citron: 100, lime: 70, appelsin: 150, mandarin: 90, banana: 120, banan: 120,
   avocado: 200, agurk: 600, peberfrugt: 150, gulerod: 90, løg: 110, kartoffel: 90,
   chili: 15, broccoli: 400, blomkål: 900, majs: 220, melon: 1200, fennikel: 150, radise: 10,
@@ -182,7 +182,7 @@ export const SUBUNIT_GRAMS = {
 /** A spoon is a measure, not a pack. The recipe page's own gram figure for a spoon is
  *  unreliable: 2 tsk of chili flakes arrived as 50 g and became ten 5 g packs. These
  *  defaults are the ones a kitchen uses; a family can override them in pieceWeights. */
-export const SMALL_UNIT_GRAMS = { tsk: 5, spsk: 15, knivspids: 1 };
+const SMALL_UNIT_GRAMS = { tsk: 5, spsk: 15, knivspids: 1 };
 
 export function smallUnitGrams(unit, extra = {}) {
   const w = String(unit || "").toLowerCase().replace(/\.$/, "").trim();
@@ -316,7 +316,7 @@ export function cheapest(candidates, opts = {}) {
 
 /** The highest fat percentage a product name states, or null when it states none.
  *  "8-12%" is 12, "12-19%" is 19, "4%" is 4. The upper end is what the family eats. */
-export function fatPercentOf(name) {
+function fatPercentOf(name) {
   const text = String(name || "");
   const range = /(\d{1,2})\s*-\s*(\d{1,2})\s*%/.exec(text);
   if (range) return Math.max(Number(range[1]), Number(range[2]));

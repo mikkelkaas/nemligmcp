@@ -37,13 +37,13 @@ function readJson(path, fallback) {
 }
 
 /** The Umbraco number at the end of a recipe URL, e.g. ".../kaalruller-saeson-98002578". */
-export function recipeNumber(urlName) {
+function recipeNumber(urlName) {
   const m = /-(\d{6,9})$/.exec(String(urlName || "").split("?")[0]);
   return m ? m[1] : null;
 }
 
 /** Ask the search API for a recipe by name and take the GUID of the matching URL. */
-export async function findRecipeId(mcp, name, urlName) {
+async function findRecipeId(mcp, name, urlName) {
   const wanted = String(urlName).split("-").slice(0, 3).join("-").toLowerCase();
   const res = await mcp.call("search_products", { query: name, recipeCount: 5 });
   const text = String(res.text ?? "");

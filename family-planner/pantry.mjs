@@ -15,12 +15,12 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { DATA, PROFILES } from "./paths.mjs";
 
-export const BLOCKS = ["breakfast", "kidLunchbox", "snacks", "household"];
+const BLOCKS = ["breakfast", "kidLunchbox", "snacks", "household"];
 
 /** Words that place a product in a block. A family can override any list under
  *  pantry.mining.blocks in profiles/pantry.json, so a household with other habits
  *  is not forced through this family's Danish shelf. */
-export const BLOCK_WORDS = {
+const BLOCK_WORDS = {
   household: ["toiletpapir", "koekkenrulle", "kokkenrulle", "serviet", "bleer", "opvask",
     "affald", "tandpasta", "shampoo", "sae", "sabe", "vaskepulver", "rengoring", "plaster", "batteri"],
   breakfast: ["maelk", "milk", "skyr", "yoghurt", "havregryn", "musli", "muesli", "cheerios",
@@ -34,7 +34,7 @@ export const BLOCK_WORDS = {
 
 /** Names that are cooking ingredients, not a rebuy staple. A recipe buys these; the
  *  pantry must not add a second pack on top of the recipe line. */
-export const COOKING_WORDS = ["floede", "fløde", "creme fraiche", "tomatpure", "tomatpuré", "passata",
+const COOKING_WORDS = ["floede", "fløde", "creme fraiche", "tomatpure", "tomatpuré", "passata",
   "mascarpone", "mozzarella", "grana", "parmesan", "tortellini", "pizzadej", "ris", "pasta",
   "nudler", "sauce", "bouillon", "mel", "sukker", "olie", "eddike", "ketchup", "sennep",
   "karry", "pesto", "spaghetti", "lasagne"];
@@ -83,7 +83,7 @@ export function slugId(name, sku) {
 
 /** The head noun: "Yoghurt m. æble" and "Yoghurt m. jordbær" are one shelf habit,
  *  not two lines in the same order. */
-export function headOf(name) {
+function headOf(name) {
   return fold(name).split(" ")[0] || "";
 }
 

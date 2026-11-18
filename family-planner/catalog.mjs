@@ -43,7 +43,7 @@ export function parseNeed(text) {
 }
 
 /** Map a raw Namlig search product to the shape the planner uses. */
-export function mapProduct(p) {
+function mapProduct(p) {
   return {
     id: String(p.Id ?? ""),
     name: String(p.Name ?? "").trim(),
@@ -217,7 +217,7 @@ function qualifierWords(intent) {
 
 /** How far below the family's own bar the shop's answer still counts as the right product
  *  with the wrong wording. Further down the answer is a different product, not a name. */
-export const NEAR_MISS_BAND = 0.15;
+const NEAR_MISS_BAND = 0.15;
 
 /** The buyable products that came within NEAR_MISS_BAND of the bar, best score first, at most
  *  two. Never bought: a near miss is printed with the one flag that takes it, so an

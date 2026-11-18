@@ -55,7 +55,7 @@ export function loadEnv(path = ENV_PATH) {
 }
 
 /** Build the endpoint URL from env. Throws if the secret is missing or short. */
-export function endpointFromEnv(env = loadEnv(), base = null) {
+function endpointFromEnv(env = loadEnv(), base = null) {
   const b = base || env.NEMLIG_MCP_URL || CANDIDATE_BASES[0];
   const secret = env.MCP_SECRET;
   if (!secret || secret.length < 32) {
@@ -238,11 +238,6 @@ export function localStamp(now = new Date()) {
 
 export function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-/** Print redacted endpoint info for logs. */
-export function logTarget(endpoint) {
-  return endpoint.safeUrl;
 }
 
 /** A positive integer inside a fixed range, with a default when the value is absent. */

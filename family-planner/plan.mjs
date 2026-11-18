@@ -343,7 +343,7 @@ export function consolidateIntents(intents) {
  * evidence next to it. A line the family typed with --extra is never dropped: they asked
  * for it today.
  */
-export function applyLearning(intents, fam, options, rules) {
+function applyLearning(intents, fam, options, rules) {
   const out = { enabled: fam.learning.enabled, pairs: 0, avoided: [], biased: 0, adds: [], taste: fam.taste ? fam.taste.liked.length + fam.taste.refused.length : 0 };
   const learned = fam.learned;
   if (!out.enabled || !learned) return out;

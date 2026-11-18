@@ -33,13 +33,13 @@ import { validatePlan } from "../apply.mjs";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PLAN = join(ROOT, "plan.mjs");
 const EXPECTED_DIR = join(ROOT, "test", "golden", "expected");
-export const CHILD_TIMEOUT_MS = 120000;
-export const REGRESSION_DROP = 0.05;
+const CHILD_TIMEOUT_MS = 120000;
+const REGRESSION_DROP = 0.05;
 export const TOTAL_TOLERANCE_KR = 0.5;
 const OUTPUT_CAP = 60000;
 
 /** Short hash of the sorted sku list — the case fingerprint in one line. */
-export function skuHash(skus) {
+function skuHash(skus) {
   const h = createHash("sha256");
   h.update([...new Set((skus || []).map(String))].sort().join(","));
   return h.digest("hex").slice(0, 12);

@@ -28,7 +28,7 @@ export function productWord(name) {
 }
 
 /** One order, thinned to what the comparison needs. */
-export function thinOrder(raw) {
+function thinOrder(raw) {
   // Two shapes: the API/order-lines file (ProductNumber, ProductName) and the
   // history-raw file mine-history.mjs writes (sku, name, qty). Both are read here.
   const lines = (raw.lines || raw.Lines || []).filter((l) =>
@@ -59,7 +59,7 @@ export function readOrders() {
  * New plans store atIso; older ones are read from the file name
  * ("plan-2026-11-12084205.json"), which is a UTC stamp and always present.
  */
-export function planDate(path, plan) {
+function planDate(path, plan) {
   const iso = String((plan && plan.atIso) || "");
   if (/^\d{4}-\d{2}-\d{2}/.test(iso)) return iso.slice(0, 10);
   const m = String(path).match(/plan-(\d{4})-(\d{2})-(\d{2})/);
@@ -69,7 +69,7 @@ export function planDate(path, plan) {
 }
 
 /** Plans, oldest first, thinned to items and menu. Missing or broken files are skipped. */
-export function thinPlan(path) {
+function thinPlan(path) {
   try {
     const p = JSON.parse(readFileSync(path, "utf8"));
     const menu = p.dinnerMenu || p.menu || {};
@@ -84,14 +84,14 @@ export function thinPlan(path) {
   }
 }
 
-export function readJsonl(path, limit = 500) {
+function readJsonl(path, limit = 500) {
   if (!existsSync(path)) return [];
   return readFileSync(path, "utf8").split("\n").filter(Boolean).slice(-limit).map((l) => {
     try { return JSON.parse(l); } catch { return null; }
   }).filter(Boolean);
 }
 
-export function readPlans(dir = DATA + "/plans", limit = 24) {
+function readPlans(dir = DATA + "/plans", limit = 24) {
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir).filter((f) => /^plan-\d+.*\.json$/.test(f)).sort().slice(-limit);
   return files.map((f) => thinPlan(`${dir}/${f}`)).filter(Boolean);
@@ -244,7 +244,7 @@ export function learnedFrom(pairs, opts = {}) {
 }
 
 /** The learned multiplier for a query: "madmel" matches the learned word "madmel". */
-export function biasFor(query, list, opts = {}) {
+function biasFor(query, list, opts = {}) {
   const cap = Number(opts.maxQuantityFactor) || 2;
   const w = productWord(query);
   if (!w) return 1;
