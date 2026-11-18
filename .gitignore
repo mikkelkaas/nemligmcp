@@ -3,3 +3,9 @@ dist/
 .env
 *.log
 .DS_Store
+
+# Harness state: the Maestro context file and its decision log belong to the machine
+# an agent runs on, not to the library.
+.maestro.md
+.maestro/
+family-planner/.maestro/

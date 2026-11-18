@@ -1,0 +1,201 @@
+{
+  "comment": "pins: a meat-free table - the pool is replaced by four invented vegetarian dishes, so no meat rule fires and every dinner ask is a vegetable, a starch or a dairy product. The four do not fill eight evenings under rotation.maxPerProtein, so that cap bends and the fourth dinner's three lines are bought: two evenings that used to go without a dinner.",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "no",
+    "--household",
+    "off",
+    "--soft-cap",
+    "1200"
+  ],
+  "profilePatch": {
+    "recipe-pool.json": {
+      "pool": [
+        {
+          "url": "/opskrifter/demo-veg-grød-900201",
+          "name": "Demo kartoffelrøre med ost",
+          "minutes": 25,
+          "servings": 4,
+          "historyOrders": 0,
+          "fromHistory": false,
+          "protein": "vegetar",
+          "format": "grød",
+          "score": 12,
+          "ingredients": [
+            {
+              "text": "Kartofler Brune kartofler",
+              "amount": 800,
+              "unit": "g",
+              "grams": 800,
+              "litres": null
+            },
+            {
+              "text": "Mælk Standardmælk 1,8%",
+              "amount": 0.4,
+              "unit": "l",
+              "grams": null,
+              "litres": 0.4
+            },
+            {
+              "text": "Ost Havelhavarti skåret",
+              "amount": 100,
+              "unit": "g",
+              "grams": 100,
+              "litres": null
+            },
+            {
+              "text": "Smør Havesmør",
+              "amount": 50,
+              "unit": "g",
+              "grams": 50,
+              "litres": null
+            },
+            {
+              "text": "Peberfrugt Mini peberfrugter",
+              "amount": 200,
+              "unit": "g",
+              "grams": 200,
+              "litres": null
+            }
+          ]
+        },
+        {
+          "url": "/opskrifter/demo-veg-ris-900202",
+          "name": "Demo ris med broccoli",
+          "minutes": 30,
+          "servings": 4,
+          "historyOrders": 0,
+          "fromHistory": false,
+          "protein": "vegetar",
+          "format": "ris",
+          "score": 11,
+          "ingredients": [
+            {
+              "text": "Ris Grødris",
+              "amount": 500,
+              "unit": "g",
+              "grams": 500,
+              "litres": null
+            },
+            {
+              "text": "Broccoli Grove broccoli",
+              "amount": 300,
+              "unit": "g",
+              "grams": 300,
+              "litres": null
+            },
+            {
+              "text": "Hvidløg Hoveder hvidløg",
+              "amount": 50,
+              "unit": "g",
+              "grams": 50,
+              "litres": null
+            },
+            {
+              "text": "Fløde Fløde til madlavning 8%",
+              "amount": 0.2,
+              "unit": "l",
+              "grams": null,
+              "litres": 0.2
+            },
+            {
+              "text": "Kryderurt frisk",
+              "amount": 15,
+              "unit": "g",
+              "grams": 15,
+              "litres": null
+            }
+          ]
+        },
+        {
+          "url": "/opskrifter/demo-veg-omelet-900203",
+          "name": "Demo omelet med spinat",
+          "minutes": 20,
+          "servings": 4,
+          "historyOrders": 0,
+          "fromHistory": false,
+          "protein": "ostaeq",
+          "format": "omelet",
+          "score": 10,
+          "ingredients": [
+            {
+              "text": "Æg Spiseæg str. L",
+              "amount": 3,
+              "unit": "stk",
+              "grams": null,
+              "litres": null
+            },
+            {
+              "text": "Spinat Friskbladet spinat",
+              "amount": 300,
+              "unit": "g",
+              "grams": 300,
+              "litres": null
+            },
+            {
+              "text": "Løg Skal løg",
+              "amount": 100,
+              "unit": "g",
+              "grams": 100,
+              "litres": null
+            },
+            {
+              "text": "Mælk Standardmælk 1,8%",
+              "amount": 0.3,
+              "unit": "l",
+              "grams": null,
+              "litres": 0.3
+            }
+          ]
+        },
+        {
+          "url": "/opskrifter/demo-veg-suppe-900204",
+          "name": "Demo tomatsuppe med rugbrød",
+          "minutes": 20,
+          "servings": 4,
+          "historyOrders": 0,
+          "fromHistory": false,
+          "protein": "vegetar",
+          "format": "suppe",
+          "score": 9,
+          "ingredients": [
+            {
+              "text": "Tomat Tomater på vine",
+              "amount": 500,
+              "unit": "g",
+              "grams": 500,
+              "litres": null
+            },
+            {
+              "text": "Tomatpuré Tomatpuré på hylde",
+              "amount": 100,
+              "unit": "g",
+              "grams": 100,
+              "litres": null
+            },
+            {
+              "text": "Løg Skal løg",
+              "amount": 150,
+              "unit": "g",
+              "grams": 150,
+              "litres": null
+            },
+            {
+              "text": "Rugbrød Kornvang rugbrød",
+              "amount": 200,
+              "unit": "g",
+              "grams": 200,
+              "litres": null
+            }
+          ]
+        }
+      ],
+      "poolSize": 4
+    }
+  },
+  "shelf": {}
+}

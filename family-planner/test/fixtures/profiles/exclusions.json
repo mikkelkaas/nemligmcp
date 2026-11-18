@@ -1,0 +1,40 @@
+{
+  "_comment": "invented for the test fixture",
+  "schemaVersion": 2,
+  "at": "2026-11-11",
+  "source": "fixture",
+  "freshHerbs": {
+    "words": [
+      "persille",
+      "purløg"
+    ],
+    "action": "leave out of the basket; list under 'Left out of the recipes' in the plan file"
+  },
+  "pantryWords": {
+    "words": [
+      "salt",
+      "peber"
+    ],
+    "action": "never added, not even named"
+  },
+  "keepEvenThoughCommon": {
+    "words": [
+      "hvidløg",
+      "ingefær"
+    ],
+    "action": ""
+  },
+  "neverBought": {
+    "words": [
+      "kapers",
+      "capers"
+    ],
+    "action": "leave out and name in the plan file"
+  },
+  "openQuestion": "invented for the test fixture",
+  "queryAliases": {
+    "words": {
+      "parmesan": "Ost E"
+    }
+  }
+}

@@ -1,0 +1,146 @@
+{
+  "_readme": [
+    "Copy this file to profiles/pantry.json and edit the lines: nothing in this repository",
+    "writes that file, so a clone has none and plan.mjs then buys no breakfast and no lunch",
+    "boxes - it says so in its output rather than failing silently.",
+    "One line per staple you rebuy. cycleDays is how long a block's cycle is; qtyPerCycle is",
+    "how much you go through in that cycle. A line may name a sku you always take; run",
+    "pin-skus.mjs after mine-history.mjs and it fills the skus from your own history.",
+    "",
+    "`per` says what qtyPerCycle counts, and it matters the moment the household changes:",
+    "  cycle        (default) what THIS household buys per cycle - what a number measured",
+    "               out of your own orders means. Days scale it; head-counts do not.",
+    "  person-day   one unit per person per day: the apple that goes in a lunch box.",
+    "  person-cycle one unit per person per cycle: the slice of cheese in that same box.",
+    "Head-counts come from dinners.members in your family profile (a lunch box is counted",
+    "for the child roles, breakfast for everyone, the paper block for nobody). When that",
+    "guess is wrong - adults who take a lunch box, say - set household.blockPeople in the",
+    "family profile: { \"breakfast\": 3, \"kidLunchbox\": 3, \"snacks\": 2, \"household\": 1 }.",
+    "Every value here is invented. The quantities are the shape of the file, not advice.",
+    "After mine-history.mjs, run `node pantry.mjs --write`: it updates the evidence on each",
+    "line, computes everyNDays at 80 % of the measured purchase gap, and adds frequent",
+    "staples whose block is known. A name in `rejected` is never added again.",
+    "A pantry line is a regular rebuy, not every ingredient a recipe once used. The miner",
+    "therefore adds only a product bought in at least 40 percent of orders and in the last",
+    "60 days; `--prune` removes an auto-added line that no longer passes."
+  ],
+  "schemaVersion": 1,
+  "cycleDays": 14,
+  "mining": {
+    "minOrders": 6,
+    "minPct": 40,
+    "maxAgeDays": 60,
+    "maxPerBlock": 12,
+    "_note": "Only a product bought in at least 40 percent of orders, and in the last 60 days, is added automatically. Manual lines are never pruned."
+  },
+  "rejected": [],
+  "blocks": {
+    "breakfast": [
+      {
+        "id": "milk",
+        "query": "Mælk Letmælk 1,5%",
+        "mode": "history",
+        "qtyPerCycle": 2,
+        "note": "two 1 l cartons a cycle; mined, so counted for the household"
+      },
+      {
+        "id": "oats",
+        "query": "Havregryn",
+        "mode": "cheapest",
+        "qtyPerCycle": 1,
+        "unit": "g",
+        "note": "500 g of porridge oats a cycle"
+      },
+      {
+        "id": "butter",
+        "query": "Smør",
+        "mode": "history",
+        "qtyPerCycle": 1,
+        "everyNDays": 25,
+        "note": "only when the last tub was bought 25 days ago or more"
+      }
+    ],
+    "kidLunchbox": [
+      {
+        "id": "rugbrød",
+        "query": "Rugbrød",
+        "mode": "cheapest",
+        "qtyPerCycle": 1,
+        "note": "one loaf a cycle for the box; mined, so household-sized"
+      },
+      {
+        "id": "cheese-slices",
+        "query": "Ost skåret",
+        "mode": "cheapest",
+        "qtyPerCycle": 1,
+        "per": "person-cycle",
+        "unit": "stk",
+        "note": "one pack per person who packs a box, per cycle"
+      },
+      {
+        "id": "apple",
+        "query": "Apple",
+        "mode": "cheapest",
+        "qtyPerCycle": 1,
+        "per": "person-day",
+        "unit": "stk",
+        "note": "one piece of fruit per box per day: 8 days x 1 person = 8 pieces"
+      },
+      {
+        "id": "carrot",
+        "query": "Gulerod",
+        "mode": "cheapest",
+        "qtyPerCycle": 1,
+        "per": "person-day",
+        "unit": "stk",
+        "note": "a handful of baby carrots goes in the same box"
+      }
+    ],
+    "snacks": [
+      {
+        "id": "fruit-pouch",
+        "query": "Frugtgrød",
+        "mode": "cheapest",
+        "qtyPerCycle": 2,
+        "per": "person-cycle",
+        "unit": "stk",
+        "note": "two pouches per child per cycle; a snack is counted per person, not per household"
+      },
+      {
+        "id": "crispbread",
+        "query": "Knusbrød",
+        "mode": "history",
+        "qtyPerCycle": 1,
+        "note": "what this household gets through a cycle, mined"
+      }
+    ],
+    "household": [
+      {
+        "id": "toilet-paper",
+        "query": "Toiletpapir",
+        "mode": "cheapest",
+        "qtyPerCycle": 1,
+        "note": "the household block counts nobody: per is left out on purpose"
+      },
+      {
+        "id": "bin-bags",
+        "query": "Affaldsposer",
+        "mode": "cheapest",
+        "qtyPerCycle": 1,
+        "everyNDays": 40
+      },
+      {
+        "id": "dishwasher-tabs",
+        "query": "Opvaskemiddel",
+        "mode": "history",
+        "qtyPerCycle": 1
+      },
+      {
+        "id": "kitchen-towel",
+        "query": "Køkkenrulle",
+        "mode": "cheapest",
+        "qtyPerCycle": 2
+      }
+    ]
+  }
+}

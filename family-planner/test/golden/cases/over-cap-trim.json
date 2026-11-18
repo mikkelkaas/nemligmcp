@@ -1,0 +1,25 @@
+{
+  "comment": "pins: the soft cap and --avoid together - 14 days against a 300 kr cap with one invented brand refused, so the two products carrying that brand go unsolved while the plan is still written whole with the over-cap warning set",
+  "argv": [
+    "--days",
+    "14",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--household",
+    "auto",
+    "--soft-cap",
+    "300",
+    "--avoid",
+    "Nordvang"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "budget": {
+        "softCapKr": 300
+      }
+    }
+  },
+  "shelf": {}
+}

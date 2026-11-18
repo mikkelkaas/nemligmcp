@@ -1,0 +1,52 @@
+{
+ "_readme": "Invented demo dinner cores. Only used when plan.mjs runs with --cores.",
+ "schemaVersion": 1,
+ "people": 5,
+ "coversDays": 2,
+ "maxMinutes": 35,
+ "cores": [
+  {
+   "id": "demo-pasta-ost",
+   "name": "Demo pasta med ost og tomat",
+   "minutes": 25,
+   "_evidence": "invented demo core",
+   "ingredients": [
+    {
+     "query": "Pasta Spaghetti med korn",
+     "need": "500 g",
+     "alt": [
+      "Pasta Spaghetti med korn"
+     ]
+    },
+    {
+     "query": "Tomatpuré Tomatpuré på hylde",
+     "need": "200 g",
+     "alt": []
+    },
+    {
+     "query": "Alperost Fast alperost",
+     "need": "150 g",
+     "alt": []
+    }
+   ]
+  },
+  {
+   "id": "demo-kartofel-poelse",
+   "name": "Demo pølse med kartofler",
+   "minutes": 20,
+   "_evidence": "invented demo core",
+   "ingredients": [
+    {
+     "query": "Pølse Kumle pølser",
+     "need": "400 g",
+     "alt": []
+    },
+    {
+     "query": "Kartofler Brune kartofler",
+     "need": "800 g",
+     "alt": []
+    }
+   ]
+  }
+ ]
+}

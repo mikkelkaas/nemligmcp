@@ -1,0 +1,46 @@
+{
+  "comment": "pins: one adult - one member at appetite 1.1 over the demo pot of 6 servings, so the ask is 2.2 portions and every demo recipe and every pack comes out smaller than the standing case. The pot size is NOT hand-set any more: appetite is what moves it.",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "no",
+    "--household",
+    "off",
+    "--soft-cap",
+    "700"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "household": {
+        "adults": 1,
+        "children": 0,
+        "peopleToShopFor": 1
+      },
+      "dinners": {
+        "members": [
+          {
+            "role": "adult",
+            "count": 1,
+            "appetite": 1.1
+          }
+        ],
+        "servingsPerDinner": 3
+      },
+      "budget": {
+        "softCapKr": 700
+      }
+    },
+    "amounts.json": {
+      "household": {
+        "people": 1,
+        "adults": 1,
+        "children": 0
+      },
+      "_comment": "the demo pot stays at its own size here on purpose: the appetite of the members is the only thing allowed to change what a dinner buys"
+    }
+  },
+  "shelf": {}
+}

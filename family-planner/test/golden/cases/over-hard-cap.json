@@ -1,0 +1,24 @@
+{
+  "comment": "pins: a hard ceiling decides on its own - budget.maxKrPerPlan 1200 kr against the 8 days the standing case plans for 1277,57 kr. minSwapKr 1 lets the brand swap through, so the plan first buys a cheaper rival of a pinned favourite and then puts the dearest household line back. No --max-kr here: the number comes from the family budget block.",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--snacks",
+    "yes",
+    "--household",
+    "auto"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "budget": {
+        "maxKrPerPlan": 1200,
+        "minSwapKr": 1
+      }
+    }
+  },
+  "shelf": {}
+}

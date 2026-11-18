@@ -1,0 +1,19 @@
+{
+  "comment": "pins: the standing path - 8 days off the demo recipe pool with breakfast, lunch box and household on, and the pinned demo mayonnaise sku still wins against the cheaper rival on the shelf",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--snacks",
+    "no",
+    "--household",
+    "auto",
+    "--soft-cap",
+    "900"
+  ],
+  "profilePatch": {},
+  "shelf": {}
+}

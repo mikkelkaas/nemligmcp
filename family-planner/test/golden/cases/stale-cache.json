@@ -1,0 +1,35 @@
+{
+  "comment": "pins: stale inputs lose - a 48 h old price cache holding a ghost product is seeded, and the plan is still built from the shelf the shop answers; two demo basket lines are read, one of them at quantity zero",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--household",
+    "auto",
+    "--soft-cap",
+    "900"
+  ],
+  "profilePatch": {},
+  "seedStaleCache": true,
+  "shelf": {
+    "basket": {
+      "Lines": [
+        {
+          "ProductNumber": "9000020",
+          "Name": "Kartofler Brune kartofler",
+          "Quantity": 0
+        },
+        {
+          "ProductNumber": "9000077",
+          "Name": "Noget helt andet i kurven",
+          "Quantity": 2
+        }
+      ],
+      "TotalProductsPrice": 92,
+      "MinimumOrderTotal": 350
+    }
+  }
+}

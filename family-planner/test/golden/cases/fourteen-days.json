@@ -1,0 +1,19 @@
+{
+  "comment": "pins: the longest period - 14 days across the demo rotation with the snack block on, so the four snack products the shelf does not carry are named instead of guessed",
+  "argv": [
+    "--days",
+    "14",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--snacks",
+    "yes",
+    "--household",
+    "auto",
+    "--soft-cap",
+    "1300"
+  ],
+  "profilePatch": {},
+  "shelf": {}
+}

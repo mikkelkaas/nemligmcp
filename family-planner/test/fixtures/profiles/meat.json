@@ -1,0 +1,94 @@
+{
+  "_comment": "invented for the test fixture",
+  "schemaVersion": 1,
+  "at": "2026-11-11",
+  "source": "data/recipes-analysis.json (meat section) and data/order-lines-raw.jsonl",
+  "policy": {
+    "always": "compare price per kg (Namlig UnitPriceCalc), not the pack price",
+    "fat": "lean mince: 8-12% for beef and pork, 7-10% for poultry; never buy the 19-23% mince",
+    "quality": "no organic premium unless it is within 10% of the conventional price per kg",
+    "cut": "the cut we buy is the cheap one per kg: chicken breast instead of tenderloin, dark fish fillet instead of salmon, unless salmon is on sale",
+    "child": "no whole bones in a dinner for a small child: mince, fillet or strips only"
+  },
+  "rules": [
+    {
+      "id": "hakket-okse",
+      "match": [
+        "hakket oksekød",
+        "oksekød hakket",
+        "hakket kød",
+        "kødboller"
+      ],
+      "query": "Hakket oksekød 8-12%",
+      "alt": [
+        "Hakket oksekød 4-7%",
+        "Hakket oksekød",
+        "Hakket oksekød øko"
+      ],
+      "avoid": [
+        "19-23",
+        "19-23%",
+        "12-19%",
+        "kødgrød",
+        "hakket oksekød 23"
+      ],
+      "fatBands": [
+        "8-12%",
+        "4-7%"
+      ],
+      "maxKrPerKg": 99,
+      "evidence": "invented for the test fixture",
+      "packG": 500
+    },
+    {
+      "id": "hakket-kylling",
+      "match": [
+        "hakket kyllingekød",
+        "kylling hakket",
+        "kyllingefars"
+      ],
+      "query": "Hakket kyllingekød 7-10%",
+      "alt": [
+        "Hakket kyllingekød 3-7%",
+        "Hakket kyllingekød"
+      ],
+      "avoid": [
+        "15%",
+        "skind"
+      ],
+      "fatBands": [
+        "7-10%",
+        "3-7%"
+      ],
+      "maxKrPerKg": 99,
+      "evidence": "invented for the test fixture",
+      "packG": 500
+    },
+    {
+      "id": "hakket-svin",
+      "match": [
+        "hakket grisekød",
+        "hakket svinekød",
+        "grisekød"
+      ],
+      "query": "Hakket grisekød 8-12%",
+      "alt": [
+        "Hakket svine og oksekød",
+        "Hakket grisekød"
+      ],
+      "avoid": [
+        "19-23",
+        "23%"
+      ],
+      "fatBands": [
+        "8-12%"
+      ],
+      "maxKrPerKg": 99,
+      "evidence": "invented for the test fixture",
+      "packG": 500
+    }
+  ],
+  "leftoversFromHistory": {
+    "note": "invented for the test fixture"
+  }
+}

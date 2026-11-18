@@ -1,0 +1,46 @@
+{
+  "comment": "pins: two big appetites - two members at appetite 1.7 over the same demo pot of 6 servings, so the ask is 6.8 portions and the same demo dishes need more packs and a dearer basket than the standing case. The pot size is NOT hand-set any more.",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--household",
+    "auto",
+    "--soft-cap",
+    "1200"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "household": {
+        "adults": 2,
+        "children": 2,
+        "peopleToShopFor": 6
+      },
+      "dinners": {
+        "members": [
+          {
+            "role": "teenager",
+            "count": 2,
+            "appetite": 1.7
+          }
+        ],
+        "servingsPerDinner": 7
+      },
+      "budget": {
+        "softCapKr": 1200
+      }
+    },
+    "amounts.json": {
+      "household": {
+        "people": 2,
+        "adults": 2,
+        "children": 0
+      },
+      "_comment": "the demo pot stays at its own size here on purpose: the appetite of the members is the only thing allowed to change what a dinner buys"
+    }
+  },
+  "shelf": {}
+}

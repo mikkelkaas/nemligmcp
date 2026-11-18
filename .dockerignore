@@ -1,5 +1,19 @@
+# .dockerignore - what never goes near the image build.
+# The Dockerfile copies package*.json, tsconfig.json and src/ only. Everything below is
+# either a credential, one family's data, or a build artefact: uploading it to the daemon
+# would send a password across for no reason.
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.maestro
+.maestro.md
 node_modules
 dist
-.env
-.git
 *.log
+.tmp*
+data
+family-planner/data
+family-planner/profiles/family-*.json
+family-planner/test/golden/home

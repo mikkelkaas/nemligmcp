@@ -1,0 +1,22 @@
+{
+  "comment": "pins: a stale favourite - the pinned demo mayonnaise and spegepølse skus are pointed at one the shelf does not carry, so the plan names the missed pin and buys the cheaper rival the standing case refuses",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "yes",
+    "--lunchbox",
+    "yes",
+    "--household",
+    "auto",
+    "--soft-cap",
+    "900"
+  ],
+  "profilePatch": {},
+  "shelf": {
+    "pinMissing": [
+      "husets-mayonnaise",
+      "brune-spegepoelser"
+    ]
+  }
+}

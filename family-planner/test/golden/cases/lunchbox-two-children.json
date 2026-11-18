@@ -1,0 +1,138 @@
+{
+  "comment": "pins: two children packing lunch boxes, with two lines marked per person - one apple per box per day and one cheese pack per child per cycle. Heads come from dinners.members (2 children), not from appetite: a lunch box is a fixed kit. The same run with the same family on the old default basis is the pair case lunchbox-two-children-household-basis, so the pair documents what `per` changes.",
+  "argv": [
+    "--days",
+    "8",
+    "--breakfast",
+    "no",
+    "--lunchbox",
+    "yes",
+    "--snacks",
+    "no",
+    "--household",
+    "off"
+  ],
+  "profilePatch": {
+    "family-demo.json": {
+      "dinners": {
+        "members": [
+          {
+            "role": "adult",
+            "count": 2,
+            "appetite": 1.1
+          },
+          {
+            "role": "child",
+            "count": 2,
+            "appetite": 0.7
+          }
+        ]
+      }
+    },
+    "pantry.json": {
+      "blocks": {
+        "kidLunchbox": [
+          {
+            "id": "kornvang-rugbroed",
+            "query": "Rugbrød Kornvang rugbrød",
+            "sku": "9000009",
+            "mode": "cheapest",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line"
+          },
+          {
+            "id": "brune-spegepoelser",
+            "query": "Spegepølse Brune spegepølser",
+            "sku": "9000010",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line"
+          },
+          {
+            "id": "havelhavarti",
+            "query": "Ost Havelhavarti skåret",
+            "sku": "9000008",
+            "mode": "cheapest",
+            "qtyPerCycle": 1,
+            "_note": "one pack of sliced cheese per child per cycle",
+            "per": "person-cycle"
+          },
+          {
+            "id": "smaegulerodder",
+            "query": "Gulerod Små gulerødder",
+            "sku": "9000011",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line"
+          },
+          {
+            "id": "minipeberfrugter",
+            "query": "Peberfrugt Mini peberfrugter",
+            "sku": "9000012",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "everyNDays": 20
+          },
+          {
+            "id": "lang-agurk",
+            "query": "Agurk Lang agurk",
+            "sku": "9000013",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "unit": "stk"
+          },
+          {
+            "id": "tomater-paa-vine",
+            "query": "Tomat Tomater på vine",
+            "sku": "9000014",
+            "mode": "cheapest",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "unit": "stk",
+            "everyNDays": 20
+          },
+          {
+            "id": "roede-aebler",
+            "query": "Æble Røde æbler",
+            "sku": "9000015",
+            "mode": "cheapest",
+            "qtyPerCycle": 1,
+            "_note": "one piece of fruit per box, per child, per day",
+            "unit": "stk",
+            "per": "person-day"
+          },
+          {
+            "id": "groenne-paerer",
+            "query": "Pære Grønne pærer",
+            "sku": "9000016",
+            "mode": "cheapest",
+            "qtyPerCycle": 3,
+            "_note": "invented demo line",
+            "unit": "stk"
+          },
+          {
+            "id": "makrelbiter",
+            "query": "Makrel Makrelbiter i sauce",
+            "sku": "9000017",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "everyNDays": 21
+          },
+          {
+            "id": "husets-mayonnaise",
+            "query": "Mayonnaise Husets mayonnaise",
+            "sku": "9000018",
+            "mode": "history",
+            "qtyPerCycle": 1,
+            "_note": "invented demo line",
+            "everyNDays": 45
+          }
+        ]
+      }
+    }
+  },
+  "shelf": {}
+}

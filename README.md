@@ -59,6 +59,21 @@ Once connected to an MCP client like Claude, you can ask things like:
 - "Reorder everything from my last delivery."
 - "Add the wienerpølser and danskvand from my previous order back to the basket."
 
+## Family planner
+
+The `family-planner/` folder adds a set of plain Node scripts that build on these
+tools. They plan your next 7-8 days from your own order history: dinners, breakfast,
+kid lunch boxes and household basics. You see the plan first; after you approve, it
+goes to the basket. Nothing is ever ordered.
+
+The planner talks to this server over its MCP tools and has no dependencies. Start
+with its [README](family-planner/README.md); on a fresh clone
+`node family-planner/doctor.mjs` lists exactly what is missing. No real household
+data ships here: profiles, history and mined files are generated on your own
+machine, and every committed fixture is invented. The `Quality` workflow
+runs the planner's offline test suite, golden shelves and battery checks on every
+pull request.
+
 ## Install
 
 The easiest way is via `npx` — no clone or build needed, it always fetches the

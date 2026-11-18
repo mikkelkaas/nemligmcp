@@ -1,0 +1,167 @@
+// fortify.test.mjs — degradation and refusal: a stale shelf, the breaker on shop errors,
+// the call budget, the flags a person typo, and how a failure is printed.
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { Limiter, reportFailure, pickEndpoint, loadEnv } from "../lib.mjs";
+import { search } from "../catalog.mjs";
+import { householdMode, unknownFlags, extraIntents } from "../plan.mjs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const hour = 3600 * 1000;
+const shelf = [{ id: "1", name: "Mælk", price: 12, pack: { qty: 1, unit: "l", raw: "1 l" } }];
+
+test("a shelf the shop cannot answer falls back to the one from last time", async () => {
+  const dead = { call: async () => { throw new Error("HTTP 503 from tools/call"); } };
+  // 30 h old: past the 24 h freshness, inside the 7 day keep window.
+  const cache = { "mælk|12": { ts: Date.now() - 30 * hour, products: shelf } };
+  const r = await search(dead, "mælk", { take: 12, cache });
+  assert.equal(r.products.length, 1, "the old shelf is used");
+  assert.equal(r.stale, true, "and it is marked stale");
+  assert.ok(r.ageMs > 29 * hour, "with its age");
+});
+
+test("a shelf older than a week is a guess, so it is refused", async () => {
+  const dead = { call: async () => { throw new Error("HTTP 503 from tools/call"); } };
+  const cache = { "mælk|12": { ts: Date.now() - 9 * 24 * hour, products: shelf } };
+  await assert.rejects(() => search(dead, "mælk", { take: 12, cache }), /HTTP 503/);
+});
+
+test("a shop that answers every call with an error is stopped by the breaker", () => {
+  const gate = new Limiter({ maxConsecutiveFailures: 3 });
+  gate.noteToolError("search_products", "MCP error -32603: backend exploded");
+  gate.noteToolError("search_products", "MCP error -32603: backend exploded");
+  assert.equal(gate.broken, null, "two errors are not the threshold");
+  gate.noteToolError("search_products", "MCP error -32603: backend exploded");
+  assert.match(String(gate.broken), /answered 3 calls in a row with an error/);
+});
+
+test("after the cooldown the breaker lets one call try again", async () => {
+  const gate = new Limiter({ maxConsecutiveFailures: 2 });
+  gate.noteToolError("get_basket", "boom");
+  gate.noteToolError("get_basket", "boom");
+  assert.ok(gate.broken, "open");
+  gate.brokenAt = Date.now() - 60000;   // the cooldown has passed
+  assert.equal(await gate.run(async () => "through"), "through", "half-open probe got through");
+  assert.equal(gate.broken, null, "and a success closes the breaker");
+});
+
+test("a run cannot ask the shop more often than the budget", async () => {
+  const gate = new Limiter({ maxCalls: 2, minIntervalMs: 0, concurrency: 1 });
+  await gate.run(async () => 1);
+  await gate.run(async () => 2);
+  await assert.rejects(() => gate.run(async () => 3), /the limit is 2/);
+});
+
+test("the household block is only off when the value says off", () => {
+  assert.equal(householdMode("off"), "off");
+  assert.equal(householdMode("no"), "off");
+  assert.equal(householdMode("auto"), "auto");
+  assert.equal(householdMode(undefined), "auto");
+  assert.equal(householdMode("nonsense"), "auto", "an unknown value warns and stays on");
+});
+
+test("a typo in a flag is named instead of ignored", () => {
+  assert.deepEqual(unknownFlags(["node", "plan.mjs", "--dayz", "8", "--days", "8"], ["days"]), ["dayz"]);
+  assert.deepEqual(unknownFlags(["--days", "8"], ["days"]), []);
+});
+
+test("an extra line without a product name is skipped and said so", () => {
+  const rules = { preferSale: true, saleTolerancePct: 10 };
+  const out = extraIntents(["Mælk:1l", ":1", "Æg", "  "], null, rules);
+  assert.deepEqual(out.map((i) => i.query), ["Mælk", "Æg"]);
+  assert.equal(out[0].need, "1l");
+});
+
+test("an extra file that is missing or a directory is a warning, not a crash", () => {
+  const rules = { preferSale: true, saleTolerancePct: 10 };
+  const dir = mkdtempSync(join(tmpdir(), "extra-file-"));
+  try {
+    assert.deepEqual(extraIntents([], join(dir, "nope.txt"), rules), []);
+    assert.deepEqual(extraIntents([], dir, rules), [], "a directory is not an extra list");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a failure is printed as one line, and the stack stays behind --debug", () => {
+  const e = new Error("search failed\n    at x (/a/b.mjs:1:1)\n    at y");
+  e.stack = "Error: search failed\n    at x (/a/b.mjs:1:1)";
+  assert.equal(reportFailure(e, []), "search failed");
+  assert.ok(!reportFailure(e, []).includes("\n"), "never more than the first line");
+});
+
+test("an explicit NEMLIG_MCP_URL is the only endpoint the client will try", async () => {
+  // The offline golden set points the client at a stub on loopback. A fallback to the
+  // container name, to the host port or to docker inspect would let a failed probe plan
+  // against the real shop - one health check away. So an explicit URL stands alone.
+  await assert.rejects(
+    () => pickEndpoint({ NEMLIG_MCP_URL: "http://127.0.0.1:1/mcp" }),
+    (e) => {
+      const msg = String(e.message);
+      assert.match(msg, /no MCP endpoint answered/, "the failure names the probe that failed");
+      assert.equal(msg.split("|").length, 2, "one base, tried twice, nothing else: " + msg);
+      assert.doesNotMatch(msg, /docker|namligmcp:3000|127\.0\.0\.1:3900/, "no container name, no candidate list, no docker lookup");
+      return true;
+    },
+  );
+});
+
+test("a shell endpoint outranks the file for one run; the rest of the file stands", () => {
+  const dir = mkdtempSync(join(tmpdir(), "env-layer-"));
+  const file = join(dir, "t.env");
+  writeFileSync(file, "NEMLIG_MCP_URL=http://from-file:3000/mcp\nNEMLIG_USER=u\nMCP_SECRET=from-file\nNEMLIG_PASS=from-file\n");
+  const saved = {};
+  try {
+    for (const k of ["NEMLIG_MCP_URL", "MCP_SECRET", "NEMLIG_PASS"]) saved[k] = process.env[k];
+    process.env.NEMLIG_MCP_URL = "http://from-shell:9/mcp";
+    process.env.MCP_SECRET = "from-shell";                // the golden suite isolates on the file's secret
+    process.env.NEMLIG_PASS = "from-shell";
+    const env = loadEnv(file);
+    assert.equal(env.NEMLIG_MCP_URL, "http://from-shell:9/mcp", "an endpoint you name in the shell cannot be silently ignored");
+    assert.equal(env.MCP_SECRET, "from-file", "the secret stays in the file, whatever the shell says");
+    assert.equal(env.NEMLIG_PASS, "from-file", "a password is never overridable");
+    assert.equal(env.NEMLIG_USER, "u", "the untouched lines come from the file");
+    delete process.env.NEMLIG_MCP_URL;
+    assert.equal(loadEnv(file).NEMLIG_MCP_URL, "http://from-file:3000/mcp", "with no shell value the file is the source");
+  } finally {
+    for (const k of ["NEMLIG_MCP_URL", "MCP_SECRET", "NEMLIG_PASS"]) {
+      if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k];
+    }
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the manual exclusion editor changes exact words, not substrings", async () => {
+  const { changeWords } = await import("../exclusions.mjs");
+  assert.deepEqual(
+    changeWords(["kapers", "prosciutto", "ymer"], { remove: ["ProSciutto", "ymer"], add: ["Feta", "feta"] }),
+    ["kapers", "feta"],
+    "case is folded, duplicates collapse, and kapers is untouched",
+  );
+  assert.deepEqual(changeWords(["x"], { remove: ["y"] }), ["x"], "removing a missing word is a no-op");
+  assert.deepEqual(changeWords([], { add: ["a", "a", "b"] }), ["a", "b"]);
+});
+
+test("the exclusion editor learns from what the last orders bought", async () => {
+  const { learnExclusions, boughtWord } = await import("../exclusions.mjs");
+  assert.equal(boughtWord("Andebryst", "and"), true);
+  assert.equal(boughtWord("Sandwich", "and"), false);
+  assert.equal(boughtWord("Peberfrugt", "peber", "exact"), false);
+  assert.equal(boughtWord("Ingefær øko.", "frisk ingefær", "herb"), true);
+  const orders = [
+    { lines: [{ name: "Forårsløg" }, { name: "Ingefær øko." }] },
+    { lines: [{ name: "Peberfrugt" }] },
+  ];
+  const out = learnExclusions(
+    { never: ["and"], herbs: ["forårsløg", "frisk ingefær", "purløg"], pantry: ["peber", "salt"] },
+    orders,
+    { limit: 5 },
+  );
+  assert.deepEqual(out.removed.never, [], "no duck was bought");
+  assert.deepEqual(out.removed.herbs, ["forårsløg", "frisk ingefær"]);
+  assert.deepEqual(out.removed.pantry, [], "one purchase does not empty the pantry");
+  assert.deepEqual(out.herbs, ["purløg"]);
+});
