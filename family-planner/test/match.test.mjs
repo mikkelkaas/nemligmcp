@@ -305,9 +305,9 @@ test("a family that cooks by the pack scales named proteins, and toppings keep t
   const grams = (n) => Number(String(n).match(/\d+/)[0]);
   const plain = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions });
   const packed = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions,
-    purchasing: { proteinNightFactor: 1.8, proteinScaleWords: ["hakket"] } });
+    purchasing: { proteinNightFactor: 1.5, proteinScaleWords: ["hakket"] } });
   assert.equal(packed.intents.length, plain.intents.length, "nothing is skipped or added");
-  assert.equal(grams(packed.intents[0].need), Math.round(grams(plain.intents[0].need) * 1.8),
+  assert.equal(grams(packed.intents[0].need), Math.round(grams(plain.intents[0].need) * 1.5),
     "the named main protein grows by the profile factor");
   assert.equal(packed.intents[1].need, plain.intents[1].need, "an unnamed topping keeps the recipe size");
   const off = recipeIntents(recipe, { amounts, meat: { rules: [] }, exclusions,
@@ -635,9 +635,9 @@ test("a refused timeslot is a failure even when the HTTP call succeeded", () => 
 test("a refused window names the product and the day, not the shop's JSON", () => {
   const undeliv = slotOutcomeOf({ isError: false, text: "{ raw json }",
     json: { IsReserved: false, PriceChangeDiff: 0, ProductLineDiffs: [{ ProductName: "Bønnespirer øko.", Undeliverable: true, AmountDiff: 0 }] } },
-  2452582, "søndag 2026-11-22 kl. 12-16");
+  55501, "lør 2026-12-05 kl. 10-13");
   assert.equal(undeliv.isError, true);
-  assert.match(undeliv.human, /^Bønnespirer øko\. cannot be delivered then \(søndag 2026-11-22 kl\. 12-16\)$/);
+  assert.match(undeliv.human, /^Bønnespirer øko\. cannot be delivered then \(lør 2026-12-05 kl\. 10-13\)$/);
   assert.match(undeliv.text, /raw json/, "the raw answer stays for the log file");
   const priced = slotOutcomeOf({ isError: false, text: "",
     json: { IsReserved: false, PriceChangeDiff: 52, ProductLineDiffs: [{ ProductName: "Risnudler", AmountDiff: 4.5 }] } }, 1);

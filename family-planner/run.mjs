@@ -4,7 +4,7 @@
  * process with one start-up and the search cache warm from the plan.
  *
  *   node run.mjs --days 7 --breakfast yes --lunchbox yes --snacks no \
- *     --household auto --approve I-APPROVE-THIS-BASKET --slot 2452582
+ *     --household auto --approve I-APPROVE-THIS-BASKET --slot 55501
  *
  * Every flag plan.mjs knows belongs here unchanged. run.mjs owns four:
  *   --approve <token>  the same token apply.mjs demands; required without --dry
